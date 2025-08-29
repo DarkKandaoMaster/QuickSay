@@ -1,10 +1,9 @@
-//好的！那我们这个QuickSay也终于写到发布版本了。
-//现在我们要做的事：
-//1.把窗口标题、托盘提示换成QuickSay
-//2.把可执行文件图标换成我们新加的.ico文件
-//3.优化部分注释、提示文字
-//4.然后是Release、打包！
-//5.老天这怎么打包后还有一个bug...于是我又来实现了个当用户启动程序时，如果已经有实例正在运行，那么终止新实例并显示正在运行的那个实例的主窗口
+//什什什什什么鬼？微信电脑版的输入框使用QuickSay居然输入不进去？
+//可恶我本以为今天能够好好休息了...今天不是我死就是这个bug死。
+//更新内容：
+//1.在shuchu函数里加了个singleShot，让它延时个50毫秒再粘贴，这样才能成功在微信电脑版的输入框里输入
+//2.在文件夹里加上了QHotkey-1.5.0和SingleApplication-3.5.3，并在QuickSay.pro文件里把对它俩的include改成了相对路径
+//3.默认快捷键改成了Ctrl+Shift+V。虽然我还是更喜欢使用Ctrl+Shift+A啦...
 
 #include<QApplication>
 #include<QWidget>
@@ -33,6 +32,7 @@
 #include<QFileInfo>
 #include<QDir>
 #include<SingleApplication.h>
+#include<QTimer>
 
 #ifdef _WIN32
 #include<windows.h>
@@ -61,7 +61,7 @@ void loadConfig(const QString &configPath){ //读取config.json到程序设置�
         }
     }
     else{ //如果config.json不存在
-        config["hotkey"]="Ctrl+Shift+A";//默认全局快捷键【【【注：想修改默认设置在这里修改】】】
+        config["hotkey"]="Ctrl+Shift+V";//默认全局快捷键【【【注：想修改默认设置在这里修改】】】
         config["width"]=500;//默认窗口宽度
         config["height"]=500;//默认窗口高度
         config["tudingflag"]=false;//默认不钉住窗口，即已开启失去焦点时自动隐藏
@@ -80,17 +80,21 @@ void pressKey(WORD vk){ //自定义一个函数，实现按下+抬起某个按�
 void shuchu(const QListWidgetItem * item, QWidget * chuangkou){ //当按下liebiao中的某个选项时，这个选项里的文本就复制到剪贴板，然后chuangkou隐藏，然后模拟输入Ctrl+V
     QApplication::clipboard()->setText(item->text());//复制这个选项里的文本到剪贴板
     chuangkou->close();//隐藏窗口到托盘
+    QTimer::singleShot(50, //延时个50毫秒再粘贴，这样才能成功在微信电脑版的输入框里输入
+                       [](){
 #ifdef _WIN32
-    //模拟输入Ctrl+V
-    //ctrl键按下
-    INPUT ctrlDown={};ctrlDown.type=INPUT_KEYBOARD;ctrlDown.ki.wVk=VK_LCONTROL;
-    SendInput(1,&ctrlDown,sizeof(INPUT));
-    //V键按下+抬起
-    pressKey('V');
-    //ctrl键抬起
-    INPUT ctrlUp={};ctrlUp.type=INPUT_KEYBOARD;ctrlUp.ki.wVk=VK_LCONTROL;ctrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
-    SendInput(1,&ctrlUp,sizeof(INPUT));
+        //模拟输入Ctrl+V
+        //ctrl键按下
+        INPUT ctrlDown={};ctrlDown.type=INPUT_KEYBOARD;ctrlDown.ki.wVk=VK_LCONTROL;
+        SendInput(1,&ctrlDown,sizeof(INPUT));
+        //V键按下+抬起
+        pressKey('V');
+        //ctrl键抬起
+        INPUT ctrlUp={};ctrlUp.type=INPUT_KEYBOARD;ctrlUp.ki.wVk=VK_LCONTROL;ctrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
+        SendInput(1,&ctrlUp,sizeof(INPUT));
 #endif
+                       }
+                      );
 }
 
 void xianshi(QWidget &chuang){ //如果窗口当前不可见，那么显示窗口
