@@ -16,7 +16,7 @@ QuickSay全部使用操作.txt
 直接把 **QuickSay文件夹** 放到随便什么路径下（有中文空格都行），然后双击打开里面的exe文件就可以正常运行软件了。  
 那两个txt文件懒得看的话可以直接删除，没关系的（但其实还是建议看一下...）  
 #### 方法二：
-直接点进这个蓝奏云链接：https://wwlt.lanzoum.com/iIPcg34uxrfi 密码:2fzh  
+直接点进这个蓝奏云链接：https://wwlt.lanzoum.com/iAAOP34vaneb 密码:90pb  
 然后点下载按钮，于是开始下载  
 接下来的步骤同上  
 
