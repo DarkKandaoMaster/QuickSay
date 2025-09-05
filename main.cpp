@@ -1,9 +1,8 @@
-//什什什什什么鬼？微信电脑版的输入框使用QuickSay居然输入不进去？
-//可恶我本以为今天能够好好休息了...今天不是我死就是这个bug死。
 //更新内容：
-//1.在shuchu函数里加了个singleShot，让它延时个50毫秒再粘贴，这样才能成功在微信电脑版的输入框里输入
-//2.在文件夹里加上了QHotkey-1.5.0和SingleApplication-3.5.3，并在QuickSay.pro文件里把对它俩的include改成了相对路径
-//3.默认快捷键改成了Ctrl+Shift+V。虽然我还是更喜欢使用Ctrl+Shift+A啦...
+//1.“已开启失去焦点时自动隐藏”改为“已关闭失去焦点不隐藏”；“已关闭失去焦点时自动隐藏”改为“已开启失去焦点不隐藏”
+//2.默认钉住窗口，即已开启失去焦点不隐藏
+//3.程序启动时读取data.json到列表内容。如果data.json不存在，那么读取默认列表内容（也就是新手教程），同时写入默认列表内容到data.json
+//4.打开添加窗口或修改窗口后，把焦点给到输入框，而不是其他控件
 
 #include<QApplication>
 #include<QWidget>
@@ -33,7 +32,6 @@
 #include<QDir>
 #include<SingleApplication.h>
 #include<QTimer>
-
 #ifdef _WIN32
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
@@ -64,9 +62,52 @@ void loadConfig(const QString &configPath){ //读取config.json到程序设置�
         config["hotkey"]="Ctrl+Shift+V";//默认全局快捷键【【【注：想修改默认设置在这里修改】】】
         config["width"]=500;//默认窗口宽度
         config["height"]=500;//默认窗口高度
-        config["tudingflag"]=false;//默认不钉住窗口，即已开启失去焦点时自动隐藏
+        config["tudingflag"]=true;//默认钉住窗口，即已开启失去焦点不隐藏
         config["ziqidong"]=true;//默认开机自启动
         saveConfig(configPath);//写入默认设置到config.json
+    }
+}
+
+void saveListToJson(QListWidget &liebiao, const QString &dataPath){ //写入列表内容到data.json
+    QJsonArray jsonArray;//创建一个JSON数组
+    for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
+        QJsonObject obj;//创建一个JSON对象
+        obj["text"]=liebiao.item(i)->text();//把当前项的文本存到对象的"text"字段
+        jsonArray.append(obj);//把对象加入数组
+    }
+    QJsonDocument doc(jsonArray);//把数组包装成JSON文档
+    QFile file(dataPath);//打开指定路径的文件
+    if(file.open(QIODevice::WriteOnly | QIODevice::Text)){ //如果文件成功打开（写模式）
+        file.write(doc.toJson());//把JSON文档写入文件
+        file.close();//关闭文件
+    }
+}
+
+void loadListFromJson(QListWidget &liebiao, const QString &dataPath){ //读取data.json到列表内容。如果data.json不存在，那么读取默认列表内容（也就是新手教程），同时写入默认列表内容到data.json
+    QFile file(dataPath);//打开指定路径的文件
+    if(file.open(QIODevice::ReadOnly | QIODevice::Text)){ //如果文件成功打开（读模式）
+        QByteArray data=file.readAll();//把文件内容读到内存
+        file.close();//关闭文件
+        QJsonDocument doc=QJsonDocument::fromJson(data);//把数据解析成JSON文档
+        if(doc.isArray()){ //确认文档是一个数组
+            liebiao.clear();//清空当前列表
+            QJsonArray jsonArray=doc.array();//取出JSON数组
+            for(auto value:jsonArray){ //遍历数组中的每个元素
+                if(value.isObject()){ //确认元素是对象
+                    QJsonObject obj=value.toObject();//转换为对象
+                    QString text=obj["text"].toString();//取出"text"字段
+                    liebiao.addItem(text);//把内容添加到列表
+                }
+            }
+        }
+    }
+    else{ //如果data.json不存在
+        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）打开QuickSay\n点击语录：即可快速输入\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
+        liebiao.addItem("OK！这些就是QuickSay的基本使用操作啦 (￣▽￣)~*\n想看全部操作的话请看“2·QuickSay全部使用操作.txt”");
+        liebiao.addItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！");
+        liebiao.addItem("这里再放一个闲聊群💬：1026364290\n欢迎来玩！什么都可以聊哦 ヾ(≧▽≦*)o\n反馈建议的话，在这个群里@我或者私聊我，我回复得更快！\n如果在我能力范围内，马上修改，马上发布！");
+        liebiao.addItem("感谢您能听我唠叨到这里！让我们开始吧！把这些语录都删掉，然后新建一个语录");
+        saveListToJson(liebiao,dataPath);
     }
 }
 
@@ -128,41 +169,6 @@ bool isValidHotkey(const QKeySequence &seq){ //检查快捷键是否合规：1.�
         return false;
     }
 };
-
-void saveListToJson(QListWidget &liebiao, const QString &dataPath){ //写入列表到JSON文件
-    QJsonArray jsonArray;//创建一个JSON数组
-    for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
-        QJsonObject obj;//创建一个JSON对象
-        obj["text"]=liebiao.item(i)->text();//把当前项的文本存到对象的"text"字段
-        jsonArray.append(obj);//把对象加入数组
-    }
-    QJsonDocument doc(jsonArray);//把数组包装成JSON文档
-    QFile file(dataPath);//打开指定路径的文件
-    if(file.open(QIODevice::WriteOnly | QIODevice::Text)){ //如果文件成功打开（写模式）
-        file.write(doc.toJson());//把JSON文档写入文件
-        file.close();//关闭文件
-    }
-}
-
-void loadListFromJson(QListWidget &liebiao, const QString &dataPath){ //加载JSON文件到列表
-    QFile file(dataPath);//打开指定路径的文件
-    if(file.open(QIODevice::ReadOnly | QIODevice::Text)){ //如果文件成功打开（读模式）
-        QByteArray data=file.readAll();//把文件内容读到内存
-        file.close();//关闭文件
-        QJsonDocument doc=QJsonDocument::fromJson(data);//把数据解析成JSON文档
-        if(doc.isArray()){ //确认文档是一个数组
-            liebiao.clear();//清空当前列表
-            QJsonArray jsonArray=doc.array();//取出JSON数组
-            for(auto value:jsonArray){ //遍历数组中的每个元素
-                if(value.isObject()){ //确认元素是对象
-                    QJsonObject obj=value.toObject();//转换为对象
-                    QString text=obj["text"].toString();//取出"text"字段
-                    liebiao.addItem(text);//把内容添加到列表
-                }
-            }
-        }
-    }
-}
 
 void adjustAllWindows(int w,int h, //根据宽高，设置所有窗口大小和所有控件大小，以及所有控件位置
                       QWidget &chuangkou,QListWidget &liebiao,QPushButton &shezhi,QPushButton &tianjia,QPushButton &tuding, //主窗口
@@ -532,7 +538,7 @@ int main(int argc, char *argv[]){
     QListWidget liebiao(&chuangkou);
     liebiao.setFont(QFont("微软雅黑",10));
     QString dataPath=QCoreApplication::applicationDirPath()+"/data.json";//定义data.json文件路径
-    loadListFromJson(liebiao,dataPath);//程序启动时加载data.json文件到列表
+    loadListFromJson(liebiao,dataPath);//程序启动时调用loadListFromJson函数
     //当按下liebiao中的某个选项时，就调用shuchu函数
     QObject::connect(&liebiao,&QListWidget::itemClicked,
                      [&chuangkou](QListWidgetItem * item){
@@ -545,7 +551,7 @@ int main(int argc, char *argv[]){
     liebiao.setDropIndicatorShown(true);//显示拖动放下时的指示器
     liebiao.setDefaultDropAction(Qt::MoveAction);//设置默认拖放行为为移动，而不是复制
     liebiao.setDragDropMode(QAbstractItemView::InternalMove);//设置内部移动模式，用户只能在列表内部拖动
-    //监听模型的rowsMoved信号，当用户拖动完成后触发，保存当前列表到JSON文件
+    //监听模型的rowsMoved信号，当用户拖动完成后触发，写入列表内容到data.json
     QObject::connect(liebiao.model(),&QAbstractItemModel::rowsMoved,
                      [&liebiao,&dataPath](){
                          saveListToJson(liebiao,dataPath);
@@ -665,7 +671,7 @@ int main(int argc, char *argv[]){
                          QString text=tianjiakuang.toPlainText();//获取输入框里的内容
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
                              liebiao.addItem(text);//把输入内容添加到列表liebiao中
-                             saveListToJson(liebiao,dataPath);//添加后写入列表到JSON文件
+                             saveListToJson(liebiao,dataPath);//添加后写入列表内容到data.json
                          }
                          tianjiakuang.clear();
                          tianjiachuangkou.close();
@@ -684,6 +690,7 @@ int main(int argc, char *argv[]){
                          tianjiakuang.clear();
                          xianshi(tianjiachuangkou);
                          tianjiachuangkou.activateWindow();//让tianjiachuangkou获得输入焦点
+                         tianjiakuang.setFocus();//把焦点给到tianjiakuang，而不是其他控件
                      }
                     );
 
@@ -692,11 +699,11 @@ int main(int argc, char *argv[]){
     tuding.setObjectName("iconButton");//应用图标按钮样式
     if(config["tudingflag"].toBool()==false){ //如果没有钉住窗口
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//设置按钮图标为空心图钉
-        tuding.setToolTip("已开启失去焦点时自动隐藏");//设置鼠标悬停提示文字为“已开启失去焦点时自动隐藏”
+        tuding.setToolTip("已关闭失去焦点不隐藏");//设置鼠标悬停提示文字为“已关闭失去焦点不隐藏”
     }
     else{ //如果钉住窗口
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//设置按钮图标为实心图钉
-        tuding.setToolTip("已关闭失去焦点时自动隐藏");//设置鼠标悬停提示文字为“已关闭失去焦点时自动隐藏”
+        tuding.setToolTip("已开启失去焦点不隐藏");//设置鼠标悬停提示文字为“已开启失去焦点不隐藏”
     }
     tuding.setIconSize(QSize(20,20));//调整图标大小为20*20像素
     //当按下图钉按钮时，切换按钮图标
@@ -704,13 +711,13 @@ int main(int argc, char *argv[]){
                      [&tuding,&configPath](){
                          if(config["tudingflag"].toBool()==false){ //如果没有钉住窗口
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//切换按钮图标为实心图钉
-                             tuding.setToolTip("已关闭失去焦点时自动隐藏");//设置鼠标悬停提示文字为“已关闭失去焦点时自动隐藏”
+                             tuding.setToolTip("已开启失去焦点不隐藏");//设置鼠标悬停提示文字为“已开启失去焦点不隐藏”
                              config["tudingflag"]=true;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
                          else{ //如果钉住窗口
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//切换按钮图标为空心图钉
-                             tuding.setToolTip("已开启失去焦点时自动隐藏");//设置鼠标悬停提示文字为“已开启失去焦点时自动隐藏”
+                             tuding.setToolTip("已关闭失去焦点不隐藏");//设置鼠标悬停提示文字为“已关闭失去焦点不隐藏”
                              config["tudingflag"]=false;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
@@ -739,7 +746,7 @@ int main(int argc, char *argv[]){
                          QString text=xiugaikuang.toPlainText();//获取输入框里的内容
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
                              currentEditingItem->setText(text);//把输入内容修改到列表liebiao中
-                             saveListToJson(liebiao,dataPath);//修改后写入列表到JSON文件
+                             saveListToJson(liebiao,dataPath);//修改后写入列表内容到data.json
                          }
                          xiugaikuang.clear();
                          xiugaichuangkou.close();
@@ -765,10 +772,11 @@ int main(int argc, char *argv[]){
                                  xiugaikuang.setPlainText(item->text());//把原来的文本放进输入框
                                  xianshi(xiugaichuangkou);
                                  xiugaichuangkou.activateWindow();//让xiugaichuangkou获得输入焦点
+                                 xiugaikuang.setFocus();//把焦点给到xiugaikuang，而不是其他控件
                              }
                              else if(selectedAction==&shanchu){ //如果用户选了“删除”
                                  delete item;
-                                 saveListToJson(liebiao,dataPath);//删除后写入列表到JSON文件
+                                 saveListToJson(liebiao,dataPath);//删除后写入列表内容到data.json
                              }
                          }
                      }
