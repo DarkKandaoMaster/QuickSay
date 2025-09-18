@@ -1,8 +1,5 @@
 //更新内容：
-//1.“已开启失去焦点时自动隐藏”改为“已关闭失去焦点不隐藏”；“已关闭失去焦点时自动隐藏”改为“已开启失去焦点不隐藏”
-//2.默认钉住窗口，即已开启失去焦点不隐藏
-//3.程序启动时读取data.json到列表内容。如果data.json不存在，那么读取默认列表内容（也就是新手教程），同时写入默认列表内容到data.json
-//4.打开添加窗口或修改窗口后，把焦点给到输入框，而不是其他控件
+//右键语录菜单新增了一个按钮“快捷键”，点它可以弹出一个设置语录快捷键的窗口，设置完后就能通过快捷键输入当前语录，而不必呼出界面选择
 
 #include<QApplication>
 #include<QWidget>
@@ -32,6 +29,7 @@
 #include<QDir>
 #include<SingleApplication.h>
 #include<QTimer>
+#include<QVector>
 #ifdef _WIN32
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
@@ -68,11 +66,12 @@ void loadConfig(const QString &configPath){ //读取config.json到程序设置�
     }
 }
 
-void saveListToJson(QListWidget &liebiao, const QString &dataPath){ //写入列表内容到data.json
+void saveListToJson(QListWidget &liebiao,const QString &dataPath){ //写入列表内容到data.json
     QJsonArray jsonArray;//创建一个JSON数组
     for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
         QJsonObject obj;//创建一个JSON对象
         obj["text"]=liebiao.item(i)->text();//把当前项的文本存到对象的"text"字段
+        obj["hotkey"]=liebiao.item(i)->data(Qt::UserRole).toString();//把用户设置的当前项对应的快捷键字符串存到对象的"hotkey"字段，如果没有设置则为空字符串
         jsonArray.append(obj);//把对象加入数组
     }
     QJsonDocument doc(jsonArray);//把数组包装成JSON文档
@@ -83,7 +82,7 @@ void saveListToJson(QListWidget &liebiao, const QString &dataPath){ //写入列�
     }
 }
 
-void loadListFromJson(QListWidget &liebiao, const QString &dataPath){ //读取data.json到列表内容。如果data.json不存在，那么读取默认列表内容（也就是新手教程），同时写入默认列表内容到data.json
+void loadListFromJson(QListWidget &liebiao,const QString &dataPath){ //读取data.json到列表内容。如果data.json不存在，那么读取默认列表内容（也就是新手教程），同时写入默认列表内容到data.json
     QFile file(dataPath);//打开指定路径的文件
     if(file.open(QIODevice::ReadOnly | QIODevice::Text)){ //如果文件成功打开（读模式）
         QByteArray data=file.readAll();//把文件内容读到内存
@@ -96,13 +95,16 @@ void loadListFromJson(QListWidget &liebiao, const QString &dataPath){ //读取da
                 if(value.isObject()){ //确认元素是对象
                     QJsonObject obj=value.toObject();//转换为对象
                     QString text=obj["text"].toString();//取出"text"字段
-                    liebiao.addItem(text);//把内容添加到列表
+                    QString hotkeyStr=obj["hotkey"].toString();//取出"hotkey"字段
+                    QListWidgetItem * it=new QListWidgetItem(text);//new一个带有文本text的列表项对象，并把它的地址给it。不直接liebiao.addItem(text)是因为这样就用不了Qt::UserRole了；使用new是因为这样它就不会在当前函数结束时被销毁
+                    it->setData(Qt::UserRole,hotkeyStr);//把快捷键字符串保存到it的Qt::UserRole里
+                    liebiao.addItem(it);//把it添加到列表。没错直接addItem指针是完全可以的 //it的内存不用释放，因为此时liebiao会接管it的所有权，自动管理其内存
                 }
             }
         }
     }
     else{ //如果data.json不存在
-        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）打开QuickSay\n点击语录：即可快速输入\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
+        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n点击语录：即可快速输入\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
         liebiao.addItem("OK！这些就是QuickSay的基本使用操作啦 (￣▽￣)~*\n想看全部操作的话请看“2·QuickSay全部使用操作.txt”");
         liebiao.addItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！");
         liebiao.addItem("这里再放一个闲聊群💬：1026364290\n欢迎来玩！什么都可以聊哦 ヾ(≧▽≦*)o\n反馈建议的话，在这个群里@我或者私聊我，我回复得更快！\n如果在我能力范围内，马上修改，马上发布！");
@@ -118,24 +120,134 @@ void pressKey(WORD vk){ //自定义一个函数，实现按下+抬起某个按�
     SendInput(2,in,sizeof(INPUT));
 }
 
-void shuchu(const QListWidgetItem * item, QWidget * chuangkou){ //当按下liebiao中的某个选项时，这个选项里的文本就复制到剪贴板，然后chuangkou隐藏，然后模拟输入Ctrl+V
+void shuchu(const QListWidgetItem * item,QWidget * chuangkou){ //当按下liebiao中的某个选项时，这个选项里的文本就复制到剪贴板，然后chuangkou隐藏，然后模拟输入Ctrl+V
     QApplication::clipboard()->setText(item->text());//复制这个选项里的文本到剪贴板
     chuangkou->close();//隐藏窗口到托盘
     QTimer::singleShot(50, //延时个50毫秒再粘贴，这样才能成功在微信电脑版的输入框里输入
                        [](){
 #ifdef _WIN32
-        //模拟输入Ctrl+V
-        //ctrl键按下
-        INPUT ctrlDown={};ctrlDown.type=INPUT_KEYBOARD;ctrlDown.ki.wVk=VK_LCONTROL;
-        SendInput(1,&ctrlDown,sizeof(INPUT));
-        //V键按下+抬起
-        pressKey('V');
-        //ctrl键抬起
-        INPUT ctrlUp={};ctrlUp.type=INPUT_KEYBOARD;ctrlUp.ki.wVk=VK_LCONTROL;ctrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
-        SendInput(1,&ctrlUp,sizeof(INPUT));
+                           //模拟输入Ctrl+V
+                           //Ctrl键按下
+                           INPUT ctrlDown={};ctrlDown.type=INPUT_KEYBOARD;ctrlDown.ki.wVk=VK_LCONTROL;//定义一个INPUT结构体用于发送合成的键事件；指定这是键盘事件；指定虚拟键码为左Ctrl键
+                           SendInput(1,&ctrlDown,sizeof(INPUT));//发送合成的键事件（左Ctrl键按下）
+                           //V键按下+抬起
+                           pressKey('V');
+                           //Ctrl键抬起
+                           INPUT ctrlUp={};ctrlUp.type=INPUT_KEYBOARD;ctrlUp.ki.wVk=VK_LCONTROL;ctrlUp.ki.dwFlags=KEYEVENTF_KEYUP;//定义一个INPUT结构体用于发送合成的键事件；指定这是键盘事件；指定虚拟键码为左Ctrl键；指定这是键抬起事件
+                           SendInput(1,&ctrlUp,sizeof(INPUT));//发送合成的键事件（左Ctrl键抬起）
 #endif
                        }
                       );
+}
+
+void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,QApplication * a){ //先禁用当前已注册的QHotkey *对象，然后遍历liebiao中的列表项，为它们注册快捷键
+    for(auto hk:itemHotkeys){ //遍历动态数组中所有列表项对应的QHotkey *对象
+        if(hk){ //如果该QHotkey *对象不是nullptr
+            hk->setRegistered(false);//禁用当前已注册的这个QHotkey *对象
+            delete hk;//释放这个QHotkey *对象的内存
+        }
+    }
+    itemHotkeys.clear();//清空这个动态数组
+
+    for(int i=0;i<liebiao.count();i++){ //遍历liebiao中的列表项
+        QListWidgetItem * it=liebiao.item(i);//取出该列表项的指针，赋值给it
+        QString hkStr=it->data(Qt::UserRole).toString();//返回保存在该列表项的Qt::UserRole里的快捷键字符串，用hkStr接收
+        if(!hkStr.isEmpty()){ //如果hkStr不为空字符串
+            QHotkey * hk=new QHotkey(QKeySequence(hkStr),true,a);//定义一个QHotkey *对象，设置快捷键为hkStr，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号
+            //设置按下快捷键后会怎样，即输出该列表项里的文本
+            QObject::connect(hk,&QHotkey::activated,
+                             [it](){
+                                 QApplication::clipboard()->setText(it->text());//复制该列表项里的文本到剪贴板
+#ifdef _WIN32
+                                 //获取当前Ctrl、Alt、Shift、Meta键的物理按下状态，如果按下，那么合成对应键的抬起事件。不然模拟输入Ctrl+V时要出问题
+                                 bool wasLCtrlDown=( GetAsyncKeyState(VK_LCONTROL) & 0x8000 )!=0;//获取当前左Ctrl键的物理按下状态
+                                 bool wasRCtrlDown=( GetAsyncKeyState(VK_RCONTROL) & 0x8000 )!=0;//获取当前右Ctrl键的物理按下状态
+                                 if(wasLCtrlDown){
+                                     INPUT LCtrlUp={};LCtrlUp.type=INPUT_KEYBOARD;LCtrlUp.ki.wVk=VK_LCONTROL;LCtrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&LCtrlUp,sizeof(INPUT));
+                                 }
+                                 if(wasRCtrlDown){
+                                     INPUT RCtrlUp={};RCtrlUp.type=INPUT_KEYBOARD;RCtrlUp.ki.wVk=VK_RCONTROL;RCtrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&RCtrlUp,sizeof(INPUT));
+                                 }
+                                 bool wasLAltDown=( GetAsyncKeyState(VK_LMENU) & 0x8000 )!=0;//获取当前左Alt键的物理按下状态，如果按下则为true
+                                 bool wasRAltDown=( GetAsyncKeyState(VK_RMENU) & 0x8000 )!=0;//获取当前右Alt键的物理按下状态
+                                 if(wasLAltDown){
+                                     INPUT LAltUp={};LAltUp.type=INPUT_KEYBOARD;LAltUp.ki.wVk=VK_LMENU;LAltUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&LAltUp,sizeof(INPUT));
+                                 }
+                                 if(wasRAltDown){
+                                     INPUT RAltUp={};RAltUp.type=INPUT_KEYBOARD;RAltUp.ki.wVk=VK_RMENU;RAltUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&RAltUp,sizeof(INPUT));
+                                 }
+                                 bool wasLShiftDown=( GetAsyncKeyState(VK_LSHIFT) & 0x8000 )!=0;//获取当前左Shift键的物理按下状态
+                                 bool wasRShiftDown=( GetAsyncKeyState(VK_RSHIFT) & 0x8000 )!=0;//获取当前右Shift键的物理按下状态
+                                 if(wasLShiftDown){
+                                     INPUT LShiftUp={};LShiftUp.type=INPUT_KEYBOARD;LShiftUp.ki.wVk=VK_LSHIFT;LShiftUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&LShiftUp,sizeof(INPUT));
+                                 }
+                                 if(wasRShiftDown){
+                                     INPUT RShiftUp={};RShiftUp.type=INPUT_KEYBOARD;RShiftUp.ki.wVk=VK_RSHIFT;RShiftUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&RShiftUp,sizeof(INPUT));
+                                 }
+                                 bool wasLMetaDown=( GetAsyncKeyState(VK_LWIN) & 0x8000 )!=0;//获取当前左Meta键的物理按下状态
+                                 bool wasRMetaDown=( GetAsyncKeyState(VK_RWIN) & 0x8000 )!=0;//获取当前右Meta键的物理按下状态
+                                 if(wasLMetaDown){
+                                     INPUT LMetaUp={};LMetaUp.type=INPUT_KEYBOARD;LMetaUp.ki.wVk=VK_LWIN;LMetaUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&LMetaUp,sizeof(INPUT));
+                                 }
+                                 if(wasRMetaDown){
+                                     INPUT RMetaUp={};RMetaUp.type=INPUT_KEYBOARD;RMetaUp.ki.wVk=VK_RWIN;RMetaUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                     SendInput(1,&RMetaUp,sizeof(INPUT));
+                                 }
+                                 //模拟输入Ctrl+V
+                                 INPUT ctrlDown={};ctrlDown.type=INPUT_KEYBOARD;ctrlDown.ki.wVk=VK_LCONTROL;
+                                 SendInput(1,&ctrlDown,sizeof(INPUT));
+                                 pressKey('V');
+                                 INPUT ctrlUp={};ctrlUp.type=INPUT_KEYBOARD;ctrlUp.ki.wVk=VK_LCONTROL;ctrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
+                                 SendInput(1,&ctrlUp,sizeof(INPUT));
+                                 //根据之前获取到的状态，也就是说如果之前合成过键的抬起事件，那么合成对应键的按下事件
+                                 if(wasLCtrlDown){ //左Ctrl键
+                                     INPUT LCtrlDown={};LCtrlDown.type=INPUT_KEYBOARD;LCtrlDown.ki.wVk=VK_LCONTROL;
+                                     SendInput(1,&LCtrlDown,sizeof(INPUT));
+                                 }
+                                 if(wasRCtrlDown){ //右Ctrl键
+                                     INPUT RCtrlDown={};RCtrlDown.type=INPUT_KEYBOARD;RCtrlDown.ki.wVk=VK_RCONTROL;
+                                     SendInput(1,&RCtrlDown,sizeof(INPUT));
+                                 }
+                                 if(wasLAltDown){ //左Alt键
+                                     INPUT LAltDown={};LAltDown.type=INPUT_KEYBOARD;LAltDown.ki.wVk=VK_LMENU;
+                                     SendInput(1,&LAltDown,sizeof(INPUT));
+                                 }
+                                 if(wasRAltDown){ //右Alt键
+                                     INPUT RAltDown={};RAltDown.type=INPUT_KEYBOARD;RAltDown.ki.wVk=VK_RMENU;
+                                     SendInput(1,&RAltDown,sizeof(INPUT));
+                                 }
+                                 if(wasLShiftDown){ //左Shift键
+                                     INPUT LShiftDown={};LShiftDown.type=INPUT_KEYBOARD;LShiftDown.ki.wVk=VK_LSHIFT;
+                                     SendInput(1,&LShiftDown,sizeof(INPUT));
+                                 }
+                                 if(wasRShiftDown){ //右Shift键
+                                     INPUT RShiftDown={};RShiftDown.type=INPUT_KEYBOARD;RShiftDown.ki.wVk=VK_RSHIFT;
+                                     SendInput(1,&RShiftDown,sizeof(INPUT));
+                                 }
+                                 if(wasLMetaDown){ //左Meta键
+                                     INPUT LMetaDown={};LMetaDown.type=INPUT_KEYBOARD;LMetaDown.ki.wVk=VK_LWIN;
+                                     SendInput(1,&LMetaDown,sizeof(INPUT));
+                                 }
+                                 if(wasRMetaDown){ //右Meta键
+                                     INPUT RMetaDown={};RMetaDown.type=INPUT_KEYBOARD;RMetaDown.ki.wVk=VK_RWIN;
+                                     SendInput(1,&RMetaDown,sizeof(INPUT));
+                                 }
+#endif
+                             }
+                            );
+            itemHotkeys.append(hk);//把QHotkey *对象hk添加到动态数组中
+        }
+        else{ //如果hkStr为空字符串
+            itemHotkeys.append(nullptr);//那就把nullptr添加到动态数组中
+        }
+    }
 }
 
 void xianshi(QWidget &chuang){ //如果窗口当前不可见，那么显示窗口
@@ -145,37 +257,45 @@ void xianshi(QWidget &chuang){ //如果窗口当前不可见，那么显示窗�
 #endif
 }
 
-bool isValidHotkey(const QKeySequence &seq){ //检查快捷键是否合规：1.至少一个修饰键（Ctrl/Alt/Shift/Meta），当然也可以多个修饰键；2.必须且只能有一个主键；3.快捷键没有被占用（但其实如果快捷键被占用的话那快捷键输入框会直接失去焦点，导致输入不了最后一个主键，也就是输入为空；再加上如果检查快捷键有没有被占用的话，那么会出一个bug（输入不合规的快捷键并关闭窗口时会连续弹出两次警告）。所以我还是把它们注释掉吧）
-    if(seq.isEmpty() || seq.count()!=1){ //检查快捷键是否为空或包含多个组合键
-        return false;//快捷键为空或包含多个组合键时返回false
-    }
-    int key=seq[0];//获取快捷键的第一个组合键
-    bool hasModifier=false;//记录该组合键是否包含修饰键
-    UINT modifiers=0;//Windows全局热键需要的修饰符，用来检查快捷键有没有被占用
-    if (key & Qt::ControlModifier){ hasModifier=true;modifiers |= MOD_CONTROL; }//检查是否包含Ctrl修饰键，并设置对应Windows修饰符
-    if (key & Qt::AltModifier)    { hasModifier=true;modifiers |= MOD_ALT; }//检查是否包含Alt修饰键，并设置对应Windows修饰符
-    if (key & Qt::ShiftModifier)  { hasModifier=true;modifiers |= MOD_SHIFT; }//检查是否包含Shift修饰键，并设置对应Windows修饰符
-    if (key & Qt::MetaModifier)   { hasModifier=true;modifiers |= MOD_WIN; }//检查是否包含Meta修饰键（比如Win键），并设置对应Windows修饰符
-    int mainKey=key & ~(Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier);//通过去掉组合键中的所有修饰键，来提取主键
-    if( hasModifier&&mainKey!=0 ){ //如果该组合键含有修饰键并且主键不为无效按键（因为进行了位运算，所以这个0指的是无效按键）
-        // UINT vk=mainKey;//将Qt键值转换为Windows虚拟键值
-        // if(RegisterHotKey(NULL,1,modifiers,vk)){ //尝试注册全局热键，如果注册成功，那么说明快捷键没有被占用，进入条件语句
-        // UnregisterHotKey(NULL,1);//随后立即把这个快捷键注销
-        return true;
-        // }
-        // return false;
-    }
-    else{
+bool isValidHotkey(const QKeySequence & seq,QVector<QHotkey *> & itemHotkeys_,QKeySequenceEdit * edit_){ //检查快捷键是否合规，如果不合规那么弹出对应警告对话框。规则：1.包含至少一个修饰键（Ctrl/Alt/Shift/Meta）；2.有且只能有一个主键；3.快捷键不能已经存在动态数组itemHotkeys里，也就是说不能已被列表项使用；4.其他情况，比如用户输入了全局快捷键or已经被其他软件占用的快捷键，那么快捷键输入框会直接失去焦点，导致输入不了最后一个主键，也就是输入为空。这些情况就不用考虑了
+    if(seq.isEmpty()){ //如果快捷键为空 //这个if就是以防万一用的，正常情况下不可能触发这个if
+        QMessageBox::warning(edit_,"快捷键不合规","快捷键不能为空  ");//弹出警告对话框（多了两个空格是因为要留出空间，保持美观）
         return false;
     }
-};
+    if(seq.count()!=1){ //如果快捷键为多个快捷键的组合
+        QMessageBox::warning(edit_,"快捷键不合规","快捷键不能为多个快捷键的组合  ");
+        return false;
+    }
+    QString seqStr=seq.toString();
+    bool hasModifier=false;
+    if(   seqStr.contains("Ctrl")||seqStr.contains("Alt")||seqStr.contains("Shift")||seqStr.contains("Meta")   ) hasModifier=true;//判断是否包含至少一个修饰键（Ctrl/Alt/Shift/Meta）
+    QString lastseqStr=seqStr.split('+').last();//seqStr.split('+')返回一个字符串数组，然后我们用last()取出它的最后一个元素
+    bool hasPrimary=false;
+    if(   lastseqStr!="Ctrl"&&lastseqStr!="Alt"&&lastseqStr!="Shift"&&lastseqStr!="Meta"   ) hasPrimary=true;//如果最后一个元素不是修饰键，那么判断为包含主键 //因为快捷键输入框的特殊性，所以就不用判断是否只有一个主键了。要我说其实判断是否包含主键这步都可以省略
+    if(hasModifier&&hasPrimary){ //如果快捷键字符串满足要求
+        for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象 //这里使用的是引用遍历
+            if(hk){ //如果hk不为空指针
+                if(hk->shortcut()==seq){ //返回hk对应的QKeySequence对象，如果它和seq完全相同，那么说明快捷键已被使用
+                    QMessageBox::warning(edit_,"快捷键不合规","快捷键已被使用  ");
+                    return false;
+                }
+            }
+        }
+        return true;//如果遍历完成后都没有return，那么返回true
+    }
+    else{
+        QMessageBox::warning(edit_,"快捷键不合规","快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift/Meta）和一个主键  ");
+        return false;
+    }
+}
 
 void adjustAllWindows(int w,int h, //根据宽高，设置所有窗口大小和所有控件大小，以及所有控件位置
-                      QWidget &chuangkou,QListWidget &liebiao,QPushButton &shezhi,QPushButton &tianjia,QPushButton &tuding, //主窗口
-                      QWidget &shezhichuangkou, //设置窗口
-                      QWidget &tianjiachuangkou,QPlainTextEdit &tianjiakuang,QPushButton &tianjiaquxiao,QPushButton &tianjiaqueding, //添加窗口
-                      QWidget &xiugaichuangkou,QPlainTextEdit &xiugaikuang,QPushButton &xiugaiquxiao,QPushButton &xiugaiqueding //修改窗口
-                      ){
+                      QWidget & chuangkou,QListWidget & liebiao,QPushButton & shezhi,QPushButton & tianjia,QPushButton & tuding, //主窗口
+                      QWidget & shezhichuangkou, //设置窗口
+                      QWidget & tianjiachuangkou,QPlainTextEdit & tianjiakuang,QPushButton & tianjiaquxiao,QPushButton & tianjiaqueding, //添加窗口
+                      QWidget & xiugaichuangkou,QPlainTextEdit & xiugaikuang,QPushButton & xiugaiquxiao,QPushButton & xiugaiqueding, //修改窗口
+                      QWidget & kuaijiejianchuangkou,QLabel & kjjtishi,QKeySequenceEdit & kjjhotkeyEdit,QPushButton & kjjqingkong,QPushButton & kjjqueding //快捷键窗口
+                     ){
     //主窗口
     chuangkou.setFixedSize(w,h);
     liebiao.move(0,46);
@@ -207,6 +327,19 @@ void adjustAllWindows(int w,int h, //根据宽高，设置所有窗口大小和�
     xiugaiquxiao.setFixedSize(w/2,33);//250*33
     xiugaiqueding.move(w/2,h-37);//250,463
     xiugaiqueding.setFixedSize(w/2,33);//250*33
+
+    //快捷键窗口
+    int kjjw=240;//固定快捷键窗口的宽高，不然不好看
+    int kjjh=kjjw/3*2;//160 //还是3:2好看
+    kuaijiejianchuangkou.setFixedSize(kjjw,kjjh);
+    kjjtishi.move(10,0);
+    kjjtishi.setFixedSize(kjjw-20,70);//220*70
+    kjjhotkeyEdit.move(10,70);
+    kjjhotkeyEdit.setFixedSize(kjjw-20,40);//220*40
+    kjjqingkong.move(0,kjjh-36);//0,124
+    kjjqingkong.setFixedSize(kjjw/2,33);//120*33
+    kjjqueding.move(kjjw/2,kjjh-36);//120,124
+    kjjqueding.setFixedSize(kjjw/2,33);//120*33
 }
 
 //自定义一个事件过滤器类
@@ -219,9 +352,9 @@ private:
     QPushButton * editCancel;//指向修改窗口的取消按钮
     QListWidget * liebiao;//指向主窗口里的列表
 public:
-    MyEventFilter(QWidget * m, QWidget * a, QWidget * e, QPushButton * ac, QPushButton * ec, QListWidget * l):mainWin(m), addWin(a), editWin(e), addCancel(ac), editCancel(ec), liebiao(l){}
+    MyEventFilter(QWidget * m,QWidget * a,QWidget * e,QPushButton * ac,QPushButton * ec,QListWidget * l):mainWin(m),addWin(a),editWin(e),addCancel(ac),editCancel(ec),liebiao(l){}
 protected:
-    bool eventFilter(QObject * obj, QEvent * event) override{
+    bool eventFilter(QObject * obj,QEvent * event) override{
         if(event->type()==QEvent::KeyPress){ //如果是键盘按下事件
             QKeyEvent * keyEvent=static_cast<QKeyEvent*>(event);
             if(keyEvent->key()==Qt::Key_Escape){ //如果按下的是Esc键
@@ -246,30 +379,61 @@ protected:
                 }
             }
         }
-        return QObject::eventFilter(obj,event);//其他事件保持默认处理
+        return QObject::eventFilter(obj,event);//其他事件走默认处理
     }
 };
 
-//为快捷键输入框hotkeyEdit单独自定义一个事件过滤器类，用于拦截hotkeyEdit的焦点事件，实现：1.当hotkeyEdit获得焦点时立即禁用全局快捷键；2.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
+//为快捷键输入框kjjhotkeyEdit单独自定义一个事件过滤器类，用于拦截kjjhotkeyEdit的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
+class KjjHotkeyEditFilter:public QObject{
+private:
+    QKeySequenceEdit * edit_;//指向快捷键输入框kjjhotkeyEdit
+    QVector<QHotkey *> & itemHotkeys_;//引用动态数组itemHotkeys
+public:
+    KjjHotkeyEditFilter(QKeySequenceEdit * e,QVector<QHotkey *> & itemHotkeys,QObject * parent=nullptr):edit_(e),itemHotkeys_(itemHotkeys),QObject(parent){}
+protected:
+    bool eventFilter(QObject * obj,QEvent * event) override{ //重写eventFilter以拦截事件
+        if(obj==edit_ && event->type()==QEvent::FocusIn){ //当kjjhotkeyEdit获得焦点
+            for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象 //这里使用的是引用遍历
+                if(hk) hk->setRegistered(false);//如果hk不为空指针，那么禁用当前已注册的快捷键hk
+            }
+            return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点。此时用户可继续输入新快捷键
+        }
+        if(obj==edit_ && event->type()==QEvent::FocusOut){ //当kjjhotkeyEdit失去焦点
+            for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象
+                if(hk) hk->setRegistered(true);//如果hk不为空指针，那么恢复当前已注册的快捷键hk
+            }
+            return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点
+        }
+        return QObject::eventFilter(obj,event);//其他事件走默认处理
+    }
+};
+
+//为快捷键输入框hotkeyEdit单独自定义一个事件过滤器类，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复；2.当hotkeyEdit获得焦点时立即禁用当前已注册的全局快捷键；3.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
 class HotkeyEditFilter:public QObject{
 private:
     QKeySequenceEdit * edit_;//指向快捷键输入框hotkeyEdit
-    QHotkey * hotkey_;//指向hotkey，就是那个QHotkey对象
+    QHotkey * hotkey_;//指向hotkey，就是那个QHotkey *对象
     QString configPath_;//指向config.json文件路径
+    QVector<QHotkey *> & itemHotkeys_;//引用动态数组itemHotkeys
 public:
-    HotkeyEditFilter(QKeySequenceEdit * e, QHotkey * h, const QString &path, QObject * parent=nullptr):edit_(e), hotkey_(h), configPath_(path), QObject(parent){}
+    HotkeyEditFilter(QKeySequenceEdit * e,QHotkey * h,const QString & path,QVector<QHotkey *> & itemHotkeys,QObject * parent=nullptr):edit_(e),hotkey_(h),configPath_(path),itemHotkeys_(itemHotkeys),QObject(parent){}
 protected:
-    bool eventFilter(QObject * obj, QEvent * event) override{ //重写eventFilter以拦截事件
+    bool eventFilter(QObject * obj,QEvent * event) override{ //重写eventFilter以拦截事件
         if(obj==edit_ && event->type()==QEvent::FocusIn){ //当hotkeyEdit获得焦点
-            if(hotkey_) hotkey_->setRegistered(false);//禁用当前已注册的全局快捷键
-            return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点，此时用户可继续输入新快捷键
+            for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象
+                if(hk) hk->setRegistered(false);//如果hk不为空指针，那么禁用当前已注册的快捷键hk
+            }
+            if(hotkey_) hotkey_->setRegistered(false);//如果hotkey_不为空指针，那么禁用当前已注册的全局快捷键
+            return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点。此时用户可继续输入新快捷键
         }
         if(obj==edit_ && event->type()==QEvent::FocusOut){ //当hotkeyEdit失去焦点
-            QKeySequence seq=edit_->keySequence();//取出用户在输入框中输入的快捷键
+            for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象
+                if(hk) hk->setRegistered(true);//如果hk不为空指针，那么恢复当前已注册的快捷键hk
+            }
+            QKeySequence seq=edit_->keySequence();//取出用户在输入框里输入的快捷键
             if(!seq.isEmpty()){ //如果输入不为空
-                if(!isValidHotkey(seq)){ //如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规）
+                if(!isValidHotkey(seq,itemHotkeys_,edit_)){ //如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规）
                     edit_->setKeySequence( QKeySequence(config["hotkey"].toString()) );//恢复输入框为原始快捷键
-                    QMessageBox::warning(edit_,"快捷键不合规","快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift/Meta）和一个主键  ");//弹出警告对话框（多了两个空格是因为要留出空间）
                 }
                 else{ //如果快捷键合规
                     hotkey_->setShortcut(seq,true);//立即应用新快捷键
@@ -279,16 +443,15 @@ protected:
             }
             else{ //如果输入为空
                 edit_->setKeySequence( QKeySequence(config["hotkey"].toString()) );//恢复输入框为原始快捷键
-                QMessageBox::warning(edit_,"快捷键不合规","快捷键不能为空  ");//弹出警告对话框
             }
-            if(hotkey_) hotkey_->setRegistered(true);//重新启用全局快捷键
+            if(hotkey_) hotkey_->setRegistered(true);//如果hotkey_不为空指针，那么重新启用全局快捷键
             return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点
         }
         return QObject::eventFilter(obj,event);//其他事件走默认处理
     }
 };
 
-//为shezhichuangkou自定义一个继承自QWidget的子类，同时重写showEvent实现每次窗口show()的时候清除子控件的焦点，再把焦点交给窗口本身。这样窗口show()的时候就不会自动聚焦子控件了
+//为shezhichuangkou单独自定义一个继承自QWidget的子类，同时重写showEvent实现每次窗口show()的时候清除子控件的焦点，再把焦点交给窗口本身。这样窗口show()的时候就不会自动聚焦子控件了
 class bujihuoChuangkou:public QWidget{
 public:
     using QWidget::QWidget;//直接继承QWidget构造函数
@@ -539,6 +702,8 @@ int main(int argc, char *argv[]){
     liebiao.setFont(QFont("微软雅黑",10));
     QString dataPath=QCoreApplication::applicationDirPath()+"/data.json";//定义data.json文件路径
     loadListFromJson(liebiao,dataPath);//程序启动时调用loadListFromJson函数
+    QVector<QHotkey *> itemHotkeys;//创建一个动态数组，保存所有列表项对应的QHotkey *对象，并且保证它们的下标（0~n-1）与列表项的行号一一对应。因此如果对应列表项的快捷键字符串为空字符串，那么对应QHotkey *对象为nullptr
+    rebuildItemHotkeys(liebiao,itemHotkeys,&a);//程序启动时为liebiao中的列表项注册快捷键
     //当按下liebiao中的某个选项时，就调用shuchu函数
     QObject::connect(&liebiao,&QListWidget::itemClicked,
                      [&chuangkou](QListWidgetItem * item){
@@ -553,8 +718,9 @@ int main(int argc, char *argv[]){
     liebiao.setDragDropMode(QAbstractItemView::InternalMove);//设置内部移动模式，用户只能在列表内部拖动
     //监听模型的rowsMoved信号，当用户拖动完成后触发，写入列表内容到data.json
     QObject::connect(liebiao.model(),&QAbstractItemModel::rowsMoved,
-                     [&liebiao,&dataPath](){
+                     [&](){
                          saveListToJson(liebiao,dataPath);
+                         rebuildItemHotkeys(liebiao,itemHotkeys,&a);//拖动完成后为liebiao中的列表项注册快捷键
                      }
                     );
 
@@ -565,19 +731,19 @@ int main(int argc, char *argv[]){
     QFormLayout * formLayout=new QFormLayout(&shezhichuangkou);//创建一个表单布局，并直接作用于设置窗口
 
     //全局快捷键设置
-    QKeySequenceEdit * hotkeyEdit=new QKeySequenceEdit( QKeySequence(config["hotkey"].toString() ),&shezhichuangkou);//创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着config里的快捷键
-    formLayout->addRow("全局快捷键：",hotkeyEdit);//在表单布局中添加一行，左边是标签“全局快捷键：”，右边是快捷键输入框hotkeyEdit
-    QHotkey * hotkey=new QHotkey(QKeySequence(config["hotkey"].toString()),true,&a);//定义一个QHotkey对象，设置快捷键为config里的快捷键，全局可用 //这句代码里已经把a作为父对象传给了hotkey，a会自动管理其内存，不需要手动释放内存
-    //按下全局快捷键后，显示chuangkou
+    QKeySequenceEdit hotkeyEdit( QKeySequence(config["hotkey"].toString()) ,&shezhichuangkou);//创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着config里的快捷键
+    formLayout->addRow("全局快捷键：",&hotkeyEdit);//在表单布局中添加一行，左边是标签“全局快捷键：”，右边是快捷键输入框hotkeyEdit
+    QHotkey * hotkey=new QHotkey( QKeySequence(config["hotkey"].toString()) ,true,&a);//定义一个QHotkey *对象，设置快捷键为config里的快捷键，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号 //这句代码里已经把a作为父对象传给了hotkey，a会自动管理其内存，不需要手动释放内存
+    //设置按下全局快捷键后会怎样
     QObject::connect(hotkey,&QHotkey::activated,
                      [&chuangkou](){
-                         xianshi(chuangkou);
+                         xianshi(chuangkou);//显示chuangkou
                          chuangkou.activateWindow();//让chuangkou获得输入焦点
                      }
                     );
-    //使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当hotkeyEdit获得焦点时立即禁用全局快捷键；2.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
-    HotkeyEditFilter * hkFilter=new HotkeyEditFilter(hotkeyEdit,hotkey,configPath,&a);//创建事件过滤器对象
-    hotkeyEdit->installEventFilter(hkFilter);//把事件过滤器安装到hotkeyEdit上
+    //使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复；2.当hotkeyEdit获得焦点时立即禁用当前已注册的全局快捷键；3.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
+    HotkeyEditFilter * hkFilter=new HotkeyEditFilter(&hotkeyEdit,hotkey,configPath,itemHotkeys,&a);//创建事件过滤器对象
+    hotkeyEdit.installEventFilter(hkFilter);//把事件过滤器安装到hotkeyEdit上
 
     //默认窗口大小设置
     QWidget * sizeWidget=new QWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
@@ -672,6 +838,7 @@ int main(int argc, char *argv[]){
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
                              liebiao.addItem(text);//把输入内容添加到列表liebiao中
                              saveListToJson(liebiao,dataPath);//添加后写入列表内容到data.json
+                             rebuildItemHotkeys(liebiao,itemHotkeys,&a);//添加后为liebiao中的列表项注册快捷键
                          }
                          tianjiakuang.clear();
                          tianjiachuangkou.close();
@@ -747,22 +914,69 @@ int main(int argc, char *argv[]){
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
                              currentEditingItem->setText(text);//把输入内容修改到列表liebiao中
                              saveListToJson(liebiao,dataPath);//修改后写入列表内容到data.json
+                             rebuildItemHotkeys(liebiao,itemHotkeys,&a);//修改后为liebiao中的列表项注册快捷键
                          }
                          xiugaikuang.clear();
                          xiugaichuangkou.close();
                      }
                     );
 
-    //右键liebiao中的某个选项时，弹出一个菜单，上面有修改、删除两个选项
+    //创建kuaijiejianchuangkou窗口，里面有一个快捷键输入框，底下有一个“清空”按钮和一个“确定”按钮
+    QListWidgetItem * kjjcurrentEditingItem=nullptr;//记录用户点到的是liebiao中的哪个选项
+    QWidget kuaijiejianchuangkou;
+    kuaijiejianchuangkou.setWindowTitle("设置快捷键");
+    kuaijiejianchuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
+    QLabel kjjtishi("为当前语录设置快捷键，\n于是就能通过快捷键输入当前语录，\n而不必呼出界面选择：",&kuaijiejianchuangkou);
+    QKeySequenceEdit kjjhotkeyEdit(&kuaijiejianchuangkou);//创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着对应列表项的Qt::UserRole里的快捷键字符串，因为弹出窗口的时候就已经setKeySequence过了
+    QPushButton kjjqingkong("清空",&kuaijiejianchuangkou);
+    QPushButton kjjqueding("确定",&kuaijiejianchuangkou);
+    //当按下“清空”按钮时
+    QObject::connect(&kjjqingkong,&QPushButton::clicked,
+                     [&](){
+                         if(!kjjcurrentEditingItem){ //如果kjjcurrentEditingItem为nullptr //这个if就是以防万一用的，正常情况下不可能触发这个if
+                             kuaijiejianchuangkou.close();//关闭kuaijiejianchuangkou
+                             return ;//结束当前这个槽函数的执行
+                         }
+                         kjjcurrentEditingItem->setData(Qt::UserRole,QString(""));//把空字符串保存到对应列表项的Qt::UserRole里
+                         saveListToJson(liebiao,dataPath);//清空后写入列表内容到data.json
+                         rebuildItemHotkeys(liebiao,itemHotkeys,&a);//清空后为liebiao中的列表项注册快捷键
+                         kuaijiejianchuangkou.close();
+                     }
+                    );
+    //当按下“确定”按钮时
+    QObject::connect(&kjjqueding,&QPushButton::clicked,
+                     [&](){
+                         if(!kjjcurrentEditingItem){ //如果kjjcurrentEditingItem为nullptr //这个if也是以防万一用的，正常情况下不可能触发这个if
+                             kuaijiejianchuangkou.close();//关闭kuaijiejianchuangkou
+                             return ;//结束当前这个槽函数的执行
+                         }
+                         QKeySequence seq=kjjhotkeyEdit.keySequence();//取出用户在输入框里输入的快捷键
+                         if(!seq.isEmpty()){ //如果输入不为空
+                             if(!isValidHotkey(seq,itemHotkeys,&kjjhotkeyEdit)){ //如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规）
+                                 return ;//结束当前这个槽函数的执行，但是不关闭kuaijiejianchuangkou，于是用户可以重新在这个窗口输入快捷键
+                             }
+                             kjjcurrentEditingItem->setData(Qt::UserRole,seq.toString());//把用户输入的快捷键字符串保存到对应列表项的Qt::UserRole里
+                         }
+                         saveListToJson(liebiao,dataPath);//确定后写入列表内容到data.json
+                         rebuildItemHotkeys(liebiao,itemHotkeys,&a);//确定后为liebiao中的列表项注册快捷键
+                         kuaijiejianchuangkou.close();
+                     }
+                    );
+    //使用自定义的事件过滤器类KjjHotkeyEditFilter，用于拦截kjjhotkeyEdit的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
+    kjjhotkeyEdit.installEventFilter(   new KjjHotkeyEditFilter(&kjjhotkeyEdit,itemHotkeys,&a)   );//创建事件过滤器对象，并把它安装到kjjhotkeyEdit上
+
+    //右键liebiao中的某个选项时，弹出一个菜单，上面有修改、删除、快捷键三个选项
     QMenu menu1;
     QAction xiugai("修改",&menu1);
     menu1.addAction(&xiugai);
     QAction shanchu("删除",&menu1);
     menu1.addAction(&shanchu);
+    QAction kuaijiejian("快捷键",&menu1);
+    menu1.addAction(&kuaijiejian);
     liebiao.setContextMenuPolicy(Qt::CustomContextMenu);
     //当右键liebiao时，执行lambda表达式
     QObject::connect(&liebiao,&QListWidget::customContextMenuRequested,
-                     [&liebiao,&menu1,&xiugai,&shanchu,&currentEditingItem,&xiugaikuang,&xiugaichuangkou,&dataPath](const QPoint &pos){
+                     [&](const QPoint &pos){
                          QListWidgetItem * item=liebiao.itemAt(pos);//根据点击位置，找到对应的QListWidgetItem（如果点到空白区域则返回nullptr）
                          if(item){ //如果点到liebiao中的某个选项，那么弹出菜单，上面有修改、删除两个选项
                              QAction * selectedAction=menu1.exec(liebiao.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，并等待用户选择一个QAction
@@ -777,6 +991,15 @@ int main(int argc, char *argv[]){
                              else if(selectedAction==&shanchu){ //如果用户选了“删除”
                                  delete item;
                                  saveListToJson(liebiao,dataPath);//删除后写入列表内容到data.json
+                                 rebuildItemHotkeys(liebiao,itemHotkeys,&a);//删除后为liebiao中的列表项注册快捷键
+                             }
+                             else if(selectedAction==&kuaijiejian){ //如果用户选了“快捷键”
+                                 //那么弹出kuaijiejianchuangkou窗口，并且把快捷键字符串放进输入框
+                                 kjjcurrentEditingItem=item;//记录当前要修改的选项
+                                 kjjhotkeyEdit.setKeySequence( QKeySequence(item->data(Qt::UserRole).toString()) );//把这个列表项的Qt::UserRole里的快捷键字符串放进输入框
+                                 xianshi(kuaijiejianchuangkou);
+                                 kuaijiejianchuangkou.activateWindow();//让kuaijiejianchuangkou获得输入焦点
+                                 kjjhotkeyEdit.setFocus();//把焦点给到kjjhotkeyEdit，而不是其他控件
                              }
                          }
                      }
@@ -820,7 +1043,8 @@ int main(int argc, char *argv[]){
                      chuangkou,liebiao,shezhi,tianjia,tuding,
                      shezhichuangkou,
                      tianjiachuangkou,tianjiakuang,tianjiaquxiao,tianjiaqueding,
-                     xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding
+                     xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding,
+                     kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding
                     );
     //如果用户在设置-默认窗口大小里修改了宽度，那么写入程序设置到config.json，同时调整所有窗口大小和所有控件大小，以及所有控件位置
     QObject::connect(widthSpin,QOverload<int>::of(&QSpinBox::valueChanged),
@@ -833,7 +1057,8 @@ int main(int argc, char *argv[]){
                                           chuangkou,liebiao,shezhi,tianjia,tuding,
                                           shezhichuangkou,
                                           tianjiachuangkou,tianjiakuang,tianjiaquxiao,tianjiaqueding,
-                                          xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding
+                                          xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding,
+                                          kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding
                                          );
                      }
                     );
@@ -848,7 +1073,8 @@ int main(int argc, char *argv[]){
                                           chuangkou,liebiao,shezhi,tianjia,tuding,
                                           shezhichuangkou,
                                           tianjiachuangkou,tianjiakuang,tianjiaquxiao,tianjiaqueding,
-                                          xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding
+                                          xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding,
+                                          kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding
                                          );
                      }
                     );
