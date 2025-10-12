@@ -1,7 +1,10 @@
 //更新内容：
-//1.当用户移动窗口时记录窗口位置，使得呼出窗口时让窗口在记录的位置显示
-//2.输入语录快捷键并点击确定时，如果快捷键不合规，那么弹出警告窗口后恢复快捷键输入框为原始快捷键
-//3.用户可以把快捷键设置为一个单独的F1~F11、Insert
+//1.左上角新增了一个标签栏，于是点击不同的标签显示不同语录。支持添加/修改/删除标签、拖动改变标签顺序
+//2.左右方向键可以切换标签
+//3.鼠标滚轮也可以切换标签
+//4.修改图钉按钮功能为：开启/关闭窗口置顶、失去焦点不关闭
+//5.程序启动时根据当前选中标签过滤列表项，然后选中没有隐藏的第一个列表项
+//6.改了下新手教程
 
 #include<QApplication>
 #include<QWidget>
@@ -32,6 +35,9 @@
 #include<SingleApplication.h>
 #include<QTimer>
 #include<QVector>
+#include<QTabBar>
+#include<QWheelEvent>
+#include<QInputDialog>
 #ifdef _WIN32
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
@@ -62,19 +68,34 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
         config["hotkey"]="Ctrl+Shift+V";//默认全局快捷键【【【注：想修改默认设置在这里修改】】】
         config["width"]=500;//默认窗口宽度
         config["height"]=500;//默认窗口高度
-        config["tudingflag"]=true;//默认钉住窗口，即已开启失去焦点不关闭
+        config["tudingflag"]=true;//默认钉住窗口，即已开启窗口置顶、失去焦点不关闭
         config["ziqidong"]=true;//默认开机自启动
         config["chuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2;//chuangkou默认显示位置 //获取屏幕的宽高，然后 (屏幕宽度-窗口宽度)/2 ，于是就获得了能让窗口在x轴上居中显示的位置
         config["chuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
-        config["shezhichuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2;//shezhichuangkou默认显示位置
+        config["shezhichuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2+501;//shezhichuangkou默认显示位置。加上501是为了不让它和主窗口重叠
         config["shezhichuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
-        config["tianjiachuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2;//tianjiachuangkou默认显示位置
+        config["tianjiachuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2+501;//tianjiachuangkou默认显示位置
         config["tianjiachuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
-        config["xiugaichuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2;//xiugaichuangkou默认显示位置
+        config["xiugaichuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2+501;//xiugaichuangkou默认显示位置
         config["xiugaichuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
-        config["kuaijiejianchuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-240 )/2;//kuaijiejianchuangkou默认显示位置
+        config["kuaijiejianchuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-240 )/2+400;//kuaijiejianchuangkou默认显示位置
         config["kuaijiejianchuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-160 )/2;
+        config["beizhuchuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2+501;//beizhuchuangkou默认显示位置
+        config["beizhuchuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
         saveConfig(configPath);//写入默认设置到config.json
+    }
+}
+
+void updateItemDisplay(QListWidgetItem * it){ //更新对应列表项的显示，如果对应的备注不是空字符串，那么显示备注；否则显示语录
+    QString text=it->data(Qt::UserRole).toString();//取出语录
+    QString remark=it->data(Qt::UserRole+1).toString();//取出备注
+    if(!remark.isEmpty()){ //如果备注不是空字符串
+        it->setText(remark);//设置显示文本为备注
+        it->setForeground(QColor("#4A90E2"));//设置备注字体颜色：蓝色【【【注：想修改备注字体颜色在这里修改】】】
+    }
+    else{
+        it->setText(text);//设置显示文本为语录
+        it->setForeground(QColor("#323130"));//设置语录字体颜色：深灰色
     }
 }
 
@@ -82,12 +103,20 @@ void saveListToJson(QListWidget & liebiao,const QString & dataPath){ //写入列
     QJsonArray jsonArray;//创建一个JSON数组
     for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
         QJsonObject obj;//创建一个JSON对象
-        obj["text"]=liebiao.item(i)->text();//把当前项的文本存到对象的"text"字段
-        obj["hotkey"]=liebiao.item(i)->data(Qt::UserRole).toString();//把用户设置的当前项对应的快捷键字符串存到对象的"hotkey"字段，如果没有设置则为空字符串
+        if(liebiao.item(i)->data(Qt::UserRole).toString().isEmpty()){ //如果当前项的语录为空，那么说明当前项的Qt::UserRole还没设置
+            liebiao.item(i)->setData(Qt::UserRole,   liebiao.item(i)->text()   );//把当前项的文本存到当前项的Qt::UserRole
+        }
+        if(liebiao.item(i)->data(Qt::UserRole+2).toString().isEmpty()){ //如果当前项的标签为空，那么说明当前项的Qt::UserRole+2还没设置
+            liebiao.item(i)->setData(Qt::UserRole+2,"语录1");//把"语录1"存到当前项的Qt::UserRole+2
+        }
+        obj["text"]=liebiao.item(i)->data(Qt::UserRole).toString();//把当前项的语录存到"text"字段
+        obj["remark"]=liebiao.item(i)->data(Qt::UserRole+1).toString();//把当前项的备注存到"remark"字段
+        obj["tab"]=liebiao.item(i)->data(Qt::UserRole+2).toString();//把当前项的标签存到"tab"字段
+        obj["hotkey"]=liebiao.item(i)->data(Qt::UserRole+3).toString();//把当前项的快捷键字符串存到"hotkey"字段，如果没有设置则为空字符串
         jsonArray.append(obj);//把对象加入数组
     }
     QJsonDocument doc(jsonArray);//把数组包装成JSON文档
-    QFile file(dataPath);//打开指定路径的文件
+    QFile file(dataPath);//打开指定路径的文件data.json
     if(file.open( QIODevice::WriteOnly | QIODevice::Text )){ //如果文件成功打开（写模式）
         file.write(doc.toJson());//把JSON文档写入文件
         file.close();//关闭文件
@@ -95,34 +124,102 @@ void saveListToJson(QListWidget & liebiao,const QString & dataPath){ //写入列
 }
 
 void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取data.json到列表内容。如果data.json不存在，那么读取默认列表内容（也就是新手教程），同时写入默认列表内容到data.json
-    QFile file(dataPath);//打开指定路径的文件
+    QFile file(dataPath);//打开指定路径的文件data.json
     if(file.open( QIODevice::ReadOnly | QIODevice::Text )){ //如果文件成功打开（读模式）
         QByteArray data=file.readAll();//把文件内容读到内存
         file.close();//关闭文件
         QJsonDocument doc=QJsonDocument::fromJson(data);//把数据解析成JSON文档
         if(doc.isArray()){ //确认文档是一个数组
-            liebiao.clear();//清空当前列表
+            liebiao.clear();//清空列表
             QJsonArray jsonArray=doc.array();//取出JSON数组
             for(auto value:jsonArray){ //遍历数组中的每个元素
                 if(value.isObject()){ //确认元素是对象
                     QJsonObject obj=value.toObject();//转换为对象
-                    QString text=obj["text"].toString();//取出"text"字段
-                    QString hotkeyStr=obj["hotkey"].toString();//取出"hotkey"字段
-                    QListWidgetItem * it=new QListWidgetItem(text);//new一个带有文本text的列表项对象，并把它的地址给it。不直接liebiao.addItem(text)是因为这样就用不了Qt::UserRole了；使用new是因为这样它就不会在当前函数结束时被销毁
-                    it->setData(Qt::UserRole,hotkeyStr);//把快捷键字符串保存到it的Qt::UserRole里
+                    QString text=obj["text"].toString();//取出"text"字段，即语录
+                    QString remarkStr=obj["remark"].toString();//取出"remark"字段，即备注
+                    QString tabStr=obj["tab"].toString();//取出"tab"字段，即标签
+                    QString hotkeyStr=obj["hotkey"].toString();//取出"hotkey"字段，即语录快捷键
+                    QListWidgetItem * it=new QListWidgetItem();//new一个列表项对象，并把它的地址给it。不直接liebiao.addItem(text)是因为这样就用不了Qt::UserRole+3了；使用new是因为这样它就不会在当前函数结束时被销毁
+                    it->setData(Qt::UserRole,text);//把语录存到it的Qt::UserRole
+                    it->setData(Qt::UserRole+1,remarkStr);//把备注存到it的Qt::UserRole+1
+                    it->setData(Qt::UserRole+2,tabStr);//把标签存到it的Qt::UserRole+2
+                    it->setData(Qt::UserRole+3,hotkeyStr);//把快捷键字符串存到it的Qt::UserRole+3
+                    updateItemDisplay(it);//更新对应列表项的显示
                     liebiao.addItem(it);//把it添加到列表。没错直接addItem指针是完全可以的 //it的内存不用释放，因为此时liebiao会接管it的所有权，自动管理其内存
                 }
             }
         }
     }
     else{ //如果data.json不存在
-        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n点击语录：即可快速输入\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
-        liebiao.addItem("OK！这些就是QuickSay的基本使用操作啦 (￣▽￣)~*\n想看全部操作的话请看“2·QuickSay全部使用操作.txt”");
-        liebiao.addItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！");
-        liebiao.addItem("这里再放一个闲聊群💬：1026364290\n欢迎来玩！什么都可以聊哦 ヾ(≧▽≦*)o\n反馈建议的话，在这个群里@我或者私聊我，我回复得更快！\n如果在我能力范围内，马上修改，马上发布！");
+        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n点击语录：即可快速输入\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录\n上下方向键↑↓：移动光标\n回车键Enter：输出光标处语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
+        liebiao.addItem("右键标签：添加/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
+        liebiao.addItem("全部操作请看“2·QuickSay全部使用操作.txt”");
+        liebiao.addItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！\n这里再放一个闲聊群💬：1026364290\n欢迎来玩！什么都可以聊哦 ヾ(≧▽≦*)o\n反馈建议的话，在这个群里@我或者私聊我，我回复得更快！\n如果在我能力范围内，马上修改，马上发布！");
         liebiao.addItem("感谢您能听我唠叨到这里！让我们开始吧！把这些语录都删掉，然后新建一个语录");
         saveListToJson(liebiao,dataPath);
     }
+}
+
+void saveTabToJson(QTabBar & tabBar,const QString & tabPath){ //写入标签栏内容到tab.json
+    QJsonArray jsonArray;//创建一个JSON数组
+    for(int i=0;i<tabBar.count();i++){ //遍历标签栏中的所有标签
+        QJsonObject obj;//创建一个JSON对象
+        obj["tab"]=tabBar.tabText(i);//把当前标签的文本存到"tab"字段
+        jsonArray.append(obj);//把对象加入数组
+    }
+    QJsonDocument doc(jsonArray);//把数组包装成JSON文档
+    QFile file(tabPath);//打开指定路径的文件tab.json
+    if(file.open( QIODevice::WriteOnly | QIODevice::Text )){ //如果文件成功打开（写模式）
+        file.write(doc.toJson());//把JSON文档写入文件
+        file.close();//关闭文件
+    }
+}
+
+void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json到标签栏内容。如果tab.json不存在，那么读取默认标签栏内容，同时写入默认标签栏内容到tab.json
+    QFile file(tabPath);//打开指定路径的文件tab.json
+    if(file.open( QIODevice::ReadOnly | QIODevice::Text )){ //如果文件成功打开（读模式）
+        QByteArray data=file.readAll();//把文件内容读到内存
+        file.close();//关闭文件
+        QJsonDocument doc=QJsonDocument::fromJson(data);//把数据解析成JSON文档
+        if(doc.isArray()){ //确认文档是一个数组
+            while(tabBar.count()>0){ //清空标签栏。因为tabBar没有clear()所以我们只能这么做
+                tabBar.removeTab(0);
+            }
+            QJsonArray jsonArray=doc.array();//取出JSON数组
+            for(auto value:jsonArray){ //遍历数组中的每个元素
+                if(value.isObject()){ //确认元素是对象
+                    QJsonObject obj=value.toObject();//转换为对象
+                    QString tab=obj["tab"].toString();//取出"tab"字段，即标签
+                    tabBar.addTab(tab);//把标签添加到标签栏
+                }
+            }
+        }
+    }
+    else{ //如果tab.json不存在
+        tabBar.addTab("语录1");//【【【注：想修改默认标签栏内容在这里修改】】】
+        tabBar.addTab("语录2");
+        tabBar.addTab("语录3");
+        saveTabToJson(tabBar,tabPath);
+    }
+}
+
+void filterListByTab(QListWidget & liebiao, const QString & currentTab){ //根据当前选中标签过滤列表项
+    for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
+        QListWidgetItem * item=liebiao.item(i);
+        if(   item->data(Qt::UserRole+2).toString()   ==currentTab){ //如果该列表项的标签名称等于当前选中标签的名称
+            item->setHidden(false);//显示该列表项
+        }
+        else{
+            item->setHidden(true);//隐藏该列表项
+        }
+    }
+}
+
+bool isTabNameDuplicate(QTabBar & tabBar,const QString & tabName){ //判断添加/修改标签时用户给出的标签名称是否重复
+    for(int i=0;i<tabBar.count();i++){ //遍历标签栏中的所有标签
+        if(   tabBar.tabText(i)   ==tabName) return true;//如果名称重复，那么返回true
+    }
+    return false;
 }
 
 void pressKey(WORD vk){ //自定义一个函数，实现按下+抬起某个按键
@@ -132,8 +229,8 @@ void pressKey(WORD vk){ //自定义一个函数，实现按下+抬起某个按�
     SendInput(2,in,sizeof(INPUT));
 }
 
-void shuchu(const QListWidgetItem * item,QWidget * chuangkou){ //当按下liebiao中的某个选项时，这个选项里的文本就复制到剪贴板，然后chuangkou关闭，然后模拟输入Ctrl+V
-    QApplication::clipboard()->setText(item->text());//复制这个选项里的文本到剪贴板
+void shuchu(const QListWidgetItem * item,QWidget * chuangkou){ //当按下liebiao中的某个选项时，这个选项里的语录就复制到剪贴板，然后chuangkou关闭，然后模拟输入Ctrl+V
+    QApplication::clipboard()->setText(item->data(Qt::UserRole).toString());//复制这个选项里的语录到剪贴板
     chuangkou->close();//关闭窗口到托盘
     QTimer::singleShot(50, //延时个50毫秒再粘贴，这样才能成功在微信电脑版的输入框里输入
                        [](){
@@ -152,7 +249,7 @@ void shuchu(const QListWidgetItem * item,QWidget * chuangkou){ //当按下liebia
                       );
 }
 
-void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,QApplication * a){ //先禁用当前已注册的QHotkey *对象，然后遍历liebiao中的列表项，为它们注册快捷键
+void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,QApplication * a){ //先禁用当前已注册的QHotkey *对象，然后遍历列表中的所有项，为它们注册快捷键
     for(auto hk:itemHotkeys){ //遍历动态数组中所有列表项对应的QHotkey *对象
         if(hk){ //如果该QHotkey *对象不是空指针
             hk->setRegistered(false);//禁用当前已注册的这个QHotkey *对象
@@ -161,15 +258,15 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
     }
     itemHotkeys.clear();//清空这个动态数组
 
-    for(int i=0;i<liebiao.count();i++){ //遍历liebiao中的列表项
+    for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
         QListWidgetItem * it=liebiao.item(i);//取出该列表项的指针，赋值给it
-        QString hkStr=it->data(Qt::UserRole).toString();//返回保存在该列表项的Qt::UserRole里的快捷键字符串，用hkStr接收
+        QString hkStr=it->data(Qt::UserRole+3).toString();//返回保存在该列表项的Qt::UserRole+3里的快捷键字符串，用hkStr接收
         if(!hkStr.isEmpty()){ //如果hkStr不为空字符串
             QHotkey * hk=new QHotkey(QKeySequence(hkStr),true,a);//定义一个QHotkey *对象，设置快捷键为hkStr，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号
-            //设置按下快捷键后会怎样，即输出该列表项里的文本
+            //设置按下快捷键后会怎样，即输出该列表项里的语录
             QObject::connect(hk,&QHotkey::activated,
                              [it](){
-                                 QApplication::clipboard()->setText(it->text());//复制该列表项里的文本到剪贴板
+                                 QApplication::clipboard()->setText(it->data(Qt::UserRole).toString());//复制该列表项里的语录到剪贴板
 #ifdef _WIN32
                                  //获取当前Ctrl、Alt、Shift、Meta键的物理按下状态，如果按下，那么合成对应键的抬起事件。不然模拟输入Ctrl+V时要出问题；同时这样也能实现用户按住快捷键时连续输入语录
                                  bool wasLCtrlDown=( GetAsyncKeyState(VK_LCONTROL) & 0x8000 )!=0;//获取当前左Ctrl键的物理按下状态
@@ -304,16 +401,19 @@ bool isValidHotkey(const QKeySequence & seq,QVector<QHotkey *> & itemHotkeys_,QK
 }
 
 void adjustAllWindows(int w,int h, //根据宽高，设置所有窗口大小和所有控件大小，以及所有控件位置
-                      QWidget & chuangkou,QListWidget & liebiao,QPushButton & shezhi,QPushButton & tianjia,QPushButton & tuding, //主窗口
+                      QWidget & chuangkou,QListWidget & liebiao,QTabBar & tabBar,QPushButton & shezhi,QPushButton & tianjia,QPushButton & tuding, //主窗口
                       QWidget & shezhichuangkou, //设置窗口
                       QWidget & tianjiachuangkou,QPlainTextEdit & tianjiakuang,QPushButton & tianjiaquxiao,QPushButton & tianjiaqueding, //添加窗口
                       QWidget & xiugaichuangkou,QPlainTextEdit & xiugaikuang,QPushButton & xiugaiquxiao,QPushButton & xiugaiqueding, //修改窗口
-                      QWidget & kuaijiejianchuangkou,QLabel & kjjtishi,QKeySequenceEdit & kjjhotkeyEdit,QPushButton & kjjqingkong,QPushButton & kjjqueding //快捷键窗口
+                      QWidget & kuaijiejianchuangkou,QLabel & kjjtishi,QKeySequenceEdit & kjjhotkeyEdit,QPushButton & kjjqingkong,QPushButton & kjjqueding, //快捷键窗口
+                      QWidget & beizhuchuangkou,QPlainTextEdit & beizhukuang,QPushButton & beizhuqingkong,QPushButton & beizhuqueding //备注窗口
                      ){
     //主窗口
     chuangkou.setFixedSize(w,h);
     liebiao.move(0,46);
     liebiao.setFixedSize(w,h-40);//500*460 //把liebiao最下面的6个像素放到窗口外，隐藏起来。这样平行滚动条就不会不好看了
+    tabBar.move(5,5);
+    tabBar.setFixedSize(w-200,40);//300,40
     shezhi.move(w-41,5);//459,5
     shezhi.setFixedSize(36,36);
     tianjia.move(w-77,5);//423,5
@@ -354,87 +454,111 @@ void adjustAllWindows(int w,int h, //根据宽高，设置所有窗口大小和�
     kjjqingkong.setFixedSize(kjjw/2,33);//120*33
     kjjqueding.move(kjjw/2,kjjh-36);//120,124
     kjjqueding.setFixedSize(kjjw/2,33);//120*33
+
+    //备注窗口
+    beizhuchuangkou.setFixedSize(w,h);
+    beizhukuang.move(0,0);
+    beizhukuang.setFixedSize(w,h-37);//500*463
+    beizhuqingkong.move(0,h-37);//0,463
+    beizhuqingkong.setFixedSize(w/2,33);//250*33
+    beizhuqueding.move(w/2,h-37);//250,463
+    beizhuqueding.setFixedSize(w/2,33);//250*33
 }
 
 //自定义一个事件过滤器类WindowMoveFilter，实现：当用户移动窗口时记录窗口位置。使得呼出窗口时让窗口在记录的位置显示
 class WindowMoveFilter:public QObject{
 private:
-    QWidget * mainWin;//指向主窗口
-    QWidget * shezhiWin;//指向设置窗口
-    QWidget * addWin;//指向添加窗口
-    QWidget * editWin;//指向修改窗口
-    QWidget * kjjWin;//指向快捷键窗口
+    QWidget * chuangkou;//指向主窗口
+    QWidget * shezhichuangkou;//指向设置窗口
+    QWidget * tianjiachuangkou;//指向添加窗口
+    QWidget * xiugaichuangkou;//指向修改窗口
+    QWidget * kuaijiejianchuangkou;//指向快捷键窗口
+    QWidget * beizhuchuangkou;//指向备注窗口
     QString configPath_;//指向config.json文件路径
 public:
-    WindowMoveFilter(QWidget * m,QWidget * shezhi,QWidget * a,QWidget * e,QWidget * kjj,const QString & path,QObject * parent=nullptr):mainWin(m),shezhiWin(shezhi),addWin(a),editWin(e),kjjWin(kjj),configPath_(path),QObject(parent){}
+    WindowMoveFilter(QWidget * main,QWidget * shezhi,QWidget * tianjia,QWidget * xiugai,QWidget * kjj,QWidget * beizhu,const QString & path,QObject * parent=nullptr):chuangkou(main),shezhichuangkou(shezhi),tianjiachuangkou(tianjia),xiugaichuangkou(xiugai),kuaijiejianchuangkou(kjj),beizhuchuangkou(beizhu),configPath_(path),QObject(parent){}
 protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
         if(event->type()==QEvent::Move){ //如果是窗口移动事件
-            if(mainWin->isActiveWindow()){ //如果焦点在主窗口
-                config["chuangkou_x"]=mainWin->x();//记录主窗口在x轴上的位置
-                config["chuangkou_y"]=mainWin->y();//记录主窗口在y轴上的位置
+            if(chuangkou->isActiveWindow()){ //如果焦点在主窗口
+                config["chuangkou_x"]=chuangkou->x();//记录主窗口在x轴上的位置
+                config["chuangkou_y"]=chuangkou->y();//记录主窗口在y轴上的位置
                 saveConfig(configPath_);//写入程序设置到config.json
             }
-            else if(shezhiWin->isActiveWindow()){ //如果焦点在设置窗口
-                config["shezhichuangkou_x"]=shezhiWin->x();//记录设置窗口在x轴上的位置
-                config["shezhichuangkou_y"]=shezhiWin->y();//记录设置窗口在y轴上的位置
+            else if(shezhichuangkou->isActiveWindow()){ //如果焦点在设置窗口
+                config["shezhichuangkou_x"]=shezhichuangkou->x();//记录设置窗口在x轴上的位置
+                config["shezhichuangkou_y"]=shezhichuangkou->y();//记录设置窗口在y轴上的位置
                 saveConfig(configPath_);
             }
-            else if(addWin->isActiveWindow()){ //如果焦点在添加窗口
-                config["tianjiachuangkou_x"]=addWin->x();//记录添加窗口在x轴上的位置
-                config["tianjiachuangkou_y"]=addWin->y();//记录添加窗口在y轴上的位置
+            else if(tianjiachuangkou->isActiveWindow()){ //如果焦点在添加窗口
+                config["tianjiachuangkou_x"]=tianjiachuangkou->x();//记录添加窗口在x轴上的位置
+                config["tianjiachuangkou_y"]=tianjiachuangkou->y();//记录添加窗口在y轴上的位置
                 saveConfig(configPath_);
             }
-            else if(editWin->isActiveWindow()){ //如果焦点在修改窗口
-                config["xiugaichuangkou_x"]=editWin->x();//记录修改窗口在x轴上的位置
-                config["xiugaichuangkou_y"]=editWin->y();//记录修改窗口在y轴上的位置
+            else if(xiugaichuangkou->isActiveWindow()){ //如果焦点在修改窗口
+                config["xiugaichuangkou_x"]=xiugaichuangkou->x();//记录修改窗口在x轴上的位置
+                config["xiugaichuangkou_y"]=xiugaichuangkou->y();//记录修改窗口在y轴上的位置
                 saveConfig(configPath_);
             }
-            else if(kjjWin->isActiveWindow()){ //如果焦点在快捷键窗口
-                config["kuaijiejianchuangkou_x"]=kjjWin->x();//记录快捷键窗口在x轴上的位置
-                config["kuaijiejianchuangkou_y"]=kjjWin->y();//记录快捷键窗口在y轴上的位置
+            else if(kuaijiejianchuangkou->isActiveWindow()){ //如果焦点在快捷键窗口
+                config["kuaijiejianchuangkou_x"]=kuaijiejianchuangkou->x();//记录快捷键窗口在x轴上的位置
+                config["kuaijiejianchuangkou_y"]=kuaijiejianchuangkou->y();//记录快捷键窗口在y轴上的位置
+                saveConfig(configPath_);
+            }
+            else if(beizhuchuangkou->isActiveWindow()){ //如果焦点在备注窗口
+                config["beizhuchuangkou_x"]=beizhuchuangkou->x();//记录备注窗口在x轴上的位置
+                config["beizhuchuangkou_y"]=beizhuchuangkou->y();//记录备注窗口在y轴上的位置
                 saveConfig(configPath_);
             }
         }
-        return QObject::eventFilter(obj, event);//其他事件走默认处理
+        return QObject::eventFilter(obj,event);//其他事件走默认处理
     }
 };
 
-//自定义一个事件过滤器类MyEventFilter，实现：Esc键可以关闭主窗口/添加窗口/修改窗口；回车键Enter可以输出光标处语录
+//自定义一个事件过滤器类MyEventFilter，实现：Esc键可以关闭主窗口/添加窗口/修改窗口；回车键Enter可以输出光标处语录；左右方向键可以切换标签
 class MyEventFilter:public QObject{
 private:
-    QWidget * mainWin;//指向主窗口
-    QWidget * addWin;//指向添加窗口
-    QWidget * editWin;//指向修改窗口
-    QPushButton * addCancel;//指向添加窗口的取消按钮
-    QPushButton * editCancel;//指向修改窗口的取消按钮
+    QWidget * chuangkou;//指向主窗口
+    QWidget * tianjiachuangkou;//指向添加窗口
+    QWidget * xiugaichuangkou;//指向修改窗口
+    QPushButton * tianjiaquxiao;//指向添加窗口的取消按钮
+    QPushButton * xiugaiquxiao;//指向修改窗口的取消按钮
     QListWidget * liebiao;//指向主窗口里的列表
+    QTabBar * tabBar;//指向主窗口里的标签栏
 public:
-    MyEventFilter(QWidget * m,QWidget * a,QWidget * e,QPushButton * ac,QPushButton * ec,QListWidget * l):mainWin(m),addWin(a),editWin(e),addCancel(ac),editCancel(ec),liebiao(l){}
+    MyEventFilter(QWidget * main,QWidget * tianjia,QWidget * xiugai,QPushButton * tjqx,QPushButton * xgqx,QListWidget * l,QTabBar * t):chuangkou(main),tianjiachuangkou(tianjia),xiugaichuangkou(xiugai),tianjiaquxiao(tjqx),xiugaiquxiao(xgqx),liebiao(l),tabBar(t){}
 protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
         if(event->type()==QEvent::KeyPress){ //如果是键盘按下事件
             QKeyEvent * keyEvent=static_cast<QKeyEvent *>(event);
             if(keyEvent->key()==Qt::Key_Escape){ //如果按下的是Esc键
-                if(mainWin->isActiveWindow()){ //如果焦点在主窗口
-                    mainWin->close();//关闭主窗口
+                if(chuangkou->isActiveWindow()){ //如果焦点在主窗口
+                    chuangkou->close();//关闭主窗口
                     return true;//拦截事件，不再向下传递
                 }
-                else if(addWin->isActiveWindow()){ //如果焦点在添加窗口
-                    addCancel->click();//相当于按下“取消”按钮
+                else if(tianjiachuangkou->isActiveWindow()){ //如果焦点在添加窗口
+                    tianjiaquxiao->click();//相当于按下“取消”按钮
                     return true;
                 }
-                else if(editWin->isActiveWindow()){ //如果焦点在修改窗口
-                    editCancel->click();//相当于按下“取消”按钮
+                else if(xiugaichuangkou->isActiveWindow()){ //如果焦点在修改窗口
+                    xiugaiquxiao->click();//相当于按下“取消”按钮
                     return true;
                 }
             }
-            if((keyEvent->key()==Qt::Key_Return || keyEvent->key()==Qt::Key_Enter) && mainWin->isActiveWindow()){ //如果按下的是回车键，并且焦点在主窗口
+            if(   ( keyEvent->key()==Qt::Key_Return || keyEvent->key()==Qt::Key_Enter ) && chuangkou->isActiveWindow()   ){ //如果按下的是回车键，并且焦点在主窗口
                 QListWidgetItem * item=liebiao->currentItem();//获取当前选中的列表项
                 if(item){ //如果有选中的项，那么调用shuchu函数
-                    shuchu(item,mainWin);
+                    shuchu(item,chuangkou);
                     return true;
                 }
+            }
+            if(   keyEvent->key()==Qt::Key_Left && chuangkou->isActiveWindow()   ){ //如果按下的是左方向键，并且焦点在主窗口
+                tabBar->setCurrentIndex(   qMax(0,tabBar->currentIndex()-1)   );//设置标签栏选中标签为 当前选中标签左边的那个标签 
+                return true;
+            }
+            if(   keyEvent->key()==Qt::Key_Right && chuangkou->isActiveWindow()   ){ //如果按下的是右方向键，并且焦点在主窗口
+                tabBar->setCurrentIndex(   qMin(tabBar->count()-1,tabBar->currentIndex()+1)   );//设置标签栏选中标签为 当前选中标签右边的那个标签 
+                return true;
             }
         }
         return QObject::eventFilter(obj,event);//其他事件走默认处理
@@ -449,14 +573,14 @@ private:
 public:
     KjjHotkeyEditFilter(QKeySequenceEdit * e,QVector<QHotkey *> & itemHotkeys,QObject * parent=nullptr):edit_(e),itemHotkeys_(itemHotkeys),QObject(parent){}
 protected:
-    bool eventFilter(QObject * obj,QEvent * event) override{ //重写eventFilter以拦截事件
-        if(obj==edit_ && event->type()==QEvent::FocusIn){ //当kjjhotkeyEdit获得焦点
+    bool eventFilter(QObject * obj,QEvent * event) override{ //重写eventFilter()以拦截事件
+        if( obj==edit_ && event->type()==QEvent::FocusIn ){ //当kjjhotkeyEdit获得焦点
             for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象 //这里使用的是引用遍历
                 if(hk) hk->setRegistered(false);//如果hk不为空指针，那么禁用当前已注册的快捷键hk
             }
             return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点。此时用户可继续输入新快捷键
         }
-        if(obj==edit_ && event->type()==QEvent::FocusOut){ //当kjjhotkeyEdit失去焦点
+        if( obj==edit_ && event->type()==QEvent::FocusOut ){ //当kjjhotkeyEdit失去焦点
             for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象
                 if(hk) hk->setRegistered(true);//如果hk不为空指针，那么恢复当前已注册的快捷键hk
             }
@@ -476,15 +600,15 @@ private:
 public:
     HotkeyEditFilter(QKeySequenceEdit * e,QHotkey * h,const QString & path,QVector<QHotkey *> & itemHotkeys,QObject * parent=nullptr):edit_(e),hotkey_(h),configPath_(path),itemHotkeys_(itemHotkeys),QObject(parent){}
 protected:
-    bool eventFilter(QObject * obj,QEvent * event) override{ //重写eventFilter以拦截事件
-        if(obj==edit_ && event->type()==QEvent::FocusIn){ //当hotkeyEdit获得焦点
+    bool eventFilter(QObject * obj,QEvent * event) override{ //重写eventFilter()以拦截事件
+        if( obj==edit_ && event->type()==QEvent::FocusIn ){ //当hotkeyEdit获得焦点
             for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象
                 if(hk) hk->setRegistered(false);//如果hk不为空指针，那么禁用当前已注册的快捷键hk
             }
             if(hotkey_) hotkey_->setRegistered(false);//如果hotkey_不为空指针，那么禁用当前已注册的全局快捷键
             return false;//返回false，不拦截事件，让快捷键输入框继续正常处理焦点。此时用户可继续输入新快捷键
         }
-        if(obj==edit_ && event->type()==QEvent::FocusOut){ //当hotkeyEdit失去焦点
+        if( obj==edit_ && event->type()==QEvent::FocusOut ){ //当hotkeyEdit失去焦点
             for(auto & hk:itemHotkeys_){ //遍历动态数组，也就是遍历所有列表项对应的QHotkey *对象
                 if(hk) hk->setRegistered(true);//如果hk不为空指针，那么恢复当前已注册的快捷键hk
             }
@@ -509,7 +633,24 @@ protected:
     }
 };
 
-//为shezhichuangkou单独自定义一个继承自QWidget的子类，同时重写showEvent实现每次窗口show()的时候清除子控件的焦点，再把焦点交给窗口本身。这样窗口show()的时候就不会自动聚焦子控件了
+//为tabBar单独自定义一个继承自QTabBar的子类，同时重写wheelEvent()实现滚动鼠标滚轮可以切换标签
+class MyTabBar:public QTabBar{
+public:
+    using QTabBar::QTabBar;//直接继承QTabBar构造函数
+protected:
+    void wheelEvent(QWheelEvent * event) override{
+        int delta=event->angleDelta().y();//获取鼠标滚轮的y方向角度增量。正值为向上滚，负值为向下滚
+        if(delta>0){
+            setCurrentIndex(   qMax(0,currentIndex()-1)   );//设置选中标签为 当前选中标签左边的那个标签 
+        }
+        else if(delta<0){
+            setCurrentIndex(   qMin(count()-1,currentIndex()+1)   );//设置选中标签为 当前选中标签右边的那个标签 
+        }
+        event->accept();//标记事件已处理，防止继续传递
+    }
+};
+
+//为shezhichuangkou单独自定义一个继承自QWidget的子类，同时重写showEvent()实现每次窗口show()的时候清除子控件的焦点，再把焦点交给窗口本身。这样窗口show()的时候就不会自动聚焦子控件了
 class bujihuoChuangkou:public QWidget{
 public:
     using QWidget::QWidget;//直接继承QWidget构造函数
@@ -601,13 +742,12 @@ int main(int argc, char *argv[]){
         selection-background-color: transparent;    /*禁用默认选中样式*/
         alternate-background-color: transparent;    /*禁用交替行背景色*/
     }
-    QListWidget::item{
+    QListWidget::item{                              /*因为语录字体颜色和备注字体颜色不同，所以不能在这里设置字体颜色，不然在这里设置的字体颜色会覆盖在其他地方设置的字体颜色*/
         background-color: #ffffff;                  /*列表项背景：纯白色*/
         border: 1px solid #e5e5e5;                  /*列表项边框：1像素浅灰色*/
         border-radius: 4px;                         /*列表项圆角，与列表圆角一致*/
         padding: 12px 16px;                         /*列表项内边距：上下12像素，左右16像素*//*【【【注：想修改列表项高度在这里修改】】】*/
         margin: 2px 2px;                            /*列表项外边距：上下2像素，左右2像素*//*【【【注：想让列表项更紧凑一点在这里修改】】】*/
-        color: #323130;                             /*列表项字体颜色：深灰色*/
         min-height: 40px;                           /*列表项最小高度*//*【【【注：想修改列表项最小高度在这里修改】】】*/
     }
     QListWidget::item:hover{
@@ -623,6 +763,33 @@ int main(int argc, char *argv[]){
         background-color: #cce7ff;                  /*鼠标选中且悬停，列表项背景：浅蓝色*/
         border-color: #106ebe;                      /*鼠标选中且悬停，列表项边框：更深的蓝色*/
     }
+    /*====================标签栏样式====================*/
+    QTabBar{
+        background-color: transparent;              /*标签栏背景：透明*/
+        border: none;                               /*无边框*/
+    }
+    QTabBar::tab{
+        background-color: #ffffff;                  /*标签背景：纯白色*/
+        color: #323130;                             /*标签字体颜色：深灰色*/
+        border: 1px solid #e5e5e5;                  /*标签边框：1像素浅灰色*/
+        border-radius: 4px;                         /*标签圆角*/
+        padding: 8px 16px;                          /*标签内边距：上下8像素，左右16像素*/
+        margin: 2px 2px;                            /*标签外边距：上下2像素，左右2像素*/
+        min-width: 30px;                            /*标签最小宽度*//*【【【注：想修改标签最小宽度在这里修改】】】*/
+    }
+    QTabBar::tab:hover{
+        background-color: #f9f9f9;                  /*鼠标悬停标签背景：白色*/
+        border-color: #d1d1d1;                      /*鼠标悬停标签边框：浅灰色*/
+    }
+    QTabBar::tab:selected{
+        background-color: #e5f3ff;                  /*鼠标选中标签背景：偏蓝一点的白色*/
+        border-color: #0078d4;                      /*鼠标选中标签边框：蓝色*/
+        color: #005a9e;                             /*鼠标选中标签字体颜色：深蓝色*/
+    }
+    QTabBar::tab:selected:hover{
+        background-color: #cce7ff;                  /*鼠标选中且悬停，标签背景：浅蓝色*/
+        border-color: #106ebe;                      /*鼠标选中且悬停，标签边框：更深的蓝色*/
+    }
     /*====================输入框样式====================*/
     QLineEdit,QPlainTextEdit,QTextEdit{
         background-color: #ffffff;                  /*输入框背景：纯白色*/
@@ -636,7 +803,7 @@ int main(int argc, char *argv[]){
     QLineEdit:focus,QPlainTextEdit:focus,QTextEdit:focus{
         outline: none;                              /*用于去掉焦点时的虚线边框*/
     }
-    /*====================数字输入框====================*/
+    /*====================数字输入框样式====================*/
     QSpinBox{
         background-color: #ffffff;                  /*数字框背景：纯白色*/
         border: 2px solid #e5e5e5;                  /*数字框边框：2像素浅灰色*/
@@ -654,7 +821,7 @@ int main(int argc, char *argv[]){
         border: none;
         background: none;
     }
-    /*====================快捷键输入框====================*/
+    /*====================快捷键输入框样式====================*/
     QKeySequenceEdit QLineEdit{                     /*对快捷键输入框QKeySequenceEdit内部的QLineEdit设置样式*/
         background-color: #ffffff;                  /*快捷键框背景：纯白色*/
         border: 2px solid #e5e5e5;                  /*快捷键框边框：2像素浅灰色*/
@@ -666,7 +833,7 @@ int main(int argc, char *argv[]){
         border-color: #0078d4;                      /*焦点边框：蓝色*/
         outline: none;                              /*用于去掉焦点时的虚线边框*/
     }
-    /*====================右键菜单====================*/
+    /*====================右键菜单样式====================*/
     QMenu {
         background-color: #fefefe;                  /*菜单背景：白色*/
         border: 1px solid #e5e5e5;                  /*菜单边框：1像素浅灰色*/
@@ -739,7 +906,7 @@ int main(int argc, char *argv[]){
     QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{
         background-color: transparent;              /*滚动条轨道颜色：透明*/
     }
-    /*====================悬停提示====================*/
+    /*====================悬停提示样式====================*/
     QToolTip{
         background-color: #ffffff;                  /*提示背景颜色：纯白色*/
         color: #222222;                             /*提示字体颜色：深灰色*/
@@ -757,29 +924,161 @@ int main(int argc, char *argv[]){
     pchuangkou=&chuangkou;//创建主窗口时把地址赋值给全局指针，用于当用户启动程序时，如果已经有实例正在运行，那么显示正在运行的那个实例的主窗口
     chuangkou.setWindowTitle("QuickSay");
     chuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
+
+    //语录列表
     QListWidget liebiao(&chuangkou);
-    liebiao.setFont(QFont("微软雅黑",10));
     QString dataPath=QCoreApplication::applicationDirPath()+"/data.json";//定义data.json文件路径
     loadListFromJson(liebiao,dataPath);//程序启动时调用loadListFromJson函数
+    saveListToJson(liebiao,dataPath);//然后调用saveListToJson函数，设置一下Qt::UserRole、Qt::UserRole+2，兼容旧版本
     QVector<QHotkey *> itemHotkeys;//创建一个动态数组，保存所有列表项对应的QHotkey *对象，并且保证它们的下标（0~n-1）与列表项的行号一一对应。因此如果对应列表项的快捷键字符串为空字符串，那么对应QHotkey *对象为空指针
     rebuildItemHotkeys(liebiao,itemHotkeys,&a);//程序启动时为liebiao中的列表项注册快捷键
-    //当按下liebiao中的某个选项时，就调用shuchu函数
-    QObject::connect(&liebiao,&QListWidget::itemClicked,
-                     [&](QListWidgetItem * item){
-                         shuchu(item,&chuangkou);
-                     }
-                    );
     //实现liebiao选项拖动排序
     liebiao.setDragEnabled(true);//允许列表项被拖动
     liebiao.setAcceptDrops(true);//允许列表接收拖动放下的项
     liebiao.setDropIndicatorShown(true);//显示拖动放下时的指示器
     liebiao.setDefaultDropAction(Qt::MoveAction);//设置默认拖放行为为移动，而不是复制
     liebiao.setDragDropMode(QAbstractItemView::InternalMove);//设置内部移动模式，用户只能在列表内部拖动
-    //监听模型的rowsMoved信号，当用户拖动完成后触发，写入列表内容到data.json
+    //监听模型的rowsMoved信号，用户拖动完成后触发，写入列表内容到data.json
     QObject::connect(liebiao.model(),&QAbstractItemModel::rowsMoved,
                      [&](){
                          saveListToJson(liebiao,dataPath);
                          rebuildItemHotkeys(liebiao,itemHotkeys,&a);//拖动完成后为liebiao中的列表项注册快捷键
+                     }
+                    );
+    //当按下liebiao中的某个选项时，就调用shuchu函数
+    QObject::connect(&liebiao,&QListWidget::itemClicked,
+                     [&](QListWidgetItem * item){
+                         shuchu(item,&chuangkou);
+                     }
+                    );
+
+    //标签栏
+    MyTabBar tabBar(&chuangkou);
+    QString tabPath=QCoreApplication::applicationDirPath()+"/tab.json";//定义tab.json文件路径
+    loadTabFromJson(tabBar,tabPath);//程序启动时调用loadTabFromJson函数
+    tabBar.setExpanding(false);//始终根据标签内容长度来确定标签宽度，而不是在语录较少时根据标签栏宽度强制拉伸标签宽度
+    tabBar.setUsesScrollButtons(false);//不显示左右按钮
+    tabBar.setDrawBase(false);//不绘制基座
+    tabBar.setMovable(true);//允许通过拖动改变标签顺序
+    //用户拖动标签完成后触发
+    QObject::connect(&tabBar,&QTabBar::tabMoved,
+                     [&](){
+                         saveTabToJson(tabBar,tabPath);
+                     }
+                    );
+    //程序启动时根据当前选中标签过滤列表项，然后选中没有隐藏的第一个列表项
+    filterListByTab(liebiao,   tabBar.tabText(tabBar.currentIndex())   );//根据当前选中标签过滤列表项
+    for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
+        if(!liebiao.item(i)->isHidden()){ //如果该列表项没有隐藏
+            liebiao.setCurrentItem(liebiao.item(i));//设置该列表项为当前选中的列表项
+            break;
+        }
+    }
+    //如果当前选中标签发生改变，那么根据当前选中标签过滤列表项，然后选中没有隐藏的第一个列表项
+    QObject::connect(&tabBar,&QTabBar::currentChanged,
+                     [&](int index){ //index是新选中标签的索引
+                         if( index>=0 && index<tabBar.count() ){ //如果索引有效
+                             filterListByTab(liebiao,   tabBar.tabText(index)   );//根据当前选中标签过滤列表项
+                             for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
+                                 if(!liebiao.item(i)->isHidden()){ //如果该列表项没有隐藏
+                                     liebiao.setCurrentItem(liebiao.item(i));//设置该列表项为当前选中的列表项
+                                     break;
+                                 }
+                             }
+                         }
+                     }
+                    );
+    tabBar.setContextMenuPolicy(Qt::CustomContextMenu);//为tabBar设置自定义右键菜单
+    //当右键tabBar时，执行lambda表达式
+    QObject::connect(&tabBar,&QWidget::customContextMenuRequested,
+                     [&](const QPoint & pos){
+                         int index=tabBar.tabAt(pos);//根据点击位置，返回该位置处标签的索引（如果点到空白区域则返回-1）
+                         if(index<0){ //如果点到空白区域，那么弹出菜单，上面有添加标签一个选项 //虽然它返回的是-1，但因为C++标准库很多函数“未找到”时返回的都是负数，而不仅仅是-1，所以这里还是填<0更让我放心一点
+                             QMenu menu2;
+                             QAction tianjia("添加标签",&menu2);
+                             menu2.addAction(&tianjia);
+                             QAction * selectedAction=menu2.exec(tabBar.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，等待用户选择一个QAction
+                             if(selectedAction==&tianjia){ //如果用户选了“添加标签”
+                                 bool ok;//记录用户是否选了“ok”
+                                 QString tabName=QInputDialog::getText(&chuangkou,"添加标签","请输入标签名称：",QLineEdit::Normal,"",&ok);//弹出输入弹窗，并获取用户输入的标签名称
+                                 if( ok && !tabName.isEmpty() ){
+                                     if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户给出的标签名称不重复
+                                         tabBar.addTab(tabName);//在标签栏末尾添加新标签
+                                         saveTabToJson(tabBar,tabPath);
+                                     }
+                                     else{ //如果用户给出的标签名称重复
+                                         QMessageBox::warning(&chuangkou,"标签名重复","该标签名已存在，请使用其他名称  ");
+                                         return ;//结束当前这个槽函数的执行
+                                     }
+                                 }
+                             }
+                         }
+                         else{ //如果点到某个标签，那么弹出菜单，上面有修改标签、删除标签、在当前标签后添加标签三个选项
+                             QMenu menu2;
+                             QAction xiugai("修改标签",&menu2);
+                             menu2.addAction(&xiugai);
+                             QAction shanchu("删除标签",&menu2);
+                             menu2.addAction(&shanchu);
+                             QAction tianjia("在当前标签后添加标签",&menu2);
+                             menu2.addAction(&tianjia);
+                             QAction * selectedAction=menu2.exec(tabBar.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，等待用户选择一个QAction
+                             if(selectedAction==&xiugai){ //如果用户选了“修改标签”
+                                 bool ok;
+                                 QString oldName=tabBar.tabText(index);//记录修改前的标签名称
+                                 QString newName=QInputDialog::getText(&chuangkou,"修改标签","请输入标签名称：",QLineEdit::Normal,tabBar.tabText(index),&ok);//弹出输入弹窗，并获取用户输入的标签名称
+                                 if( ok && !newName.isEmpty() ){
+                                     if(!isTabNameDuplicate(tabBar,newName)){ //如果用户给出的标签名称不重复
+                                         tabBar.setTabText(index,newName);//设置索引为index处的标签名称
+                                         for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
+                                             if(   liebiao.item(i)->data(Qt::UserRole+2).toString()   ==oldName){ //如果该列表项的标签名称等于修改前的标签名称，那么把该列表项的标签名称改为修改后的标签名称
+                                                 liebiao.item(i)->setData(Qt::UserRole+2,newName);//把新标签名称存到当前项的Qt::UserRole+2
+                                             }
+                                         }
+                                         saveTabToJson(tabBar,tabPath);
+                                         saveListToJson(liebiao,dataPath);
+                                         filterListByTab(liebiao,   tabBar.tabText(tabBar.currentIndex())   );//根据当前选中标签过滤列表项
+                                     }
+                                     else{ //如果用户给出的标签名称重复
+                                         QMessageBox::warning(&chuangkou,"标签名重复","该标签名已存在，请使用其他名称  ");
+                                         return ;//结束当前这个槽函数的执行
+                                     }
+                                 }
+                             }
+                             if(selectedAction==&shanchu){ //如果用户选了“删除标签”
+                                 if(tabBar.count()<=1){
+                                     QMessageBox::warning(&chuangkou,"提示","至少需要保留一个标签  ");
+                                     return;
+                                 }
+                                 QString deletedTabName=tabBar.tabText(index);//记录待删除的标签名称
+                                 int ret=QMessageBox::question(&chuangkou,"确认删除","确定要删除标签吗？该标签下所有语录也会被删除  ");//弹出询问弹窗，并获取用户点击的选项
+                                 if(ret==QMessageBox::Yes){
+                                     tabBar.removeTab(index);//删除索引为index处的标签
+                                     for(int i=liebiao.count()-1;i>=0;i--){ //倒序遍历列表中的所有项，避免删除时索引错乱
+                                         if(   liebiao.item(i)->data(Qt::UserRole+2).toString()   ==deletedTabName){ //如果该列表项的标签名称等于待删除的标签名称，那么把该列表项删除
+                                             delete liebiao.item(i);
+                                         }
+                                     }
+                                     saveTabToJson(tabBar,tabPath);
+                                     saveListToJson(liebiao,dataPath);
+                                     rebuildItemHotkeys(liebiao,itemHotkeys,&a);//删除后为liebiao中的列表项注册快捷键
+                                     filterListByTab(liebiao,   tabBar.tabText(tabBar.currentIndex())   );//根据当前选中标签过滤列表项
+                                 }
+                             }
+                             else if(selectedAction==&tianjia){ //如果用户选了“在当前标签后添加标签”
+                                 bool ok;
+                                 QString tabName=QInputDialog::getText(&chuangkou,"添加标签","请输入标签名称：",QLineEdit::Normal,"",&ok);//弹出输入弹窗，并获取用户输入的标签名称
+                                 if( ok && !tabName.isEmpty() ){
+                                     if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户给出的标签名称不重复
+                                         tabBar.insertTab(index+1,tabName);//在当前标签后添加新标签
+                                         saveTabToJson(tabBar,tabPath);
+                                     }
+                                     else{ //如果用户给出的标签名称重复
+                                         QMessageBox::warning(&chuangkou,"标签名重复","该标签名已存在，请使用其他名称  ");
+                                         return ;//结束当前这个槽函数的执行
+                                     }
+                                 }
+                             }
+                         }
                      }
                     );
 
@@ -896,9 +1195,14 @@ int main(int argc, char *argv[]){
                      [&](){
                          QString text=tianjiakuang.toPlainText();//获取输入框里的内容
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
-                             liebiao.addItem(text);//把输入内容添加到列表liebiao中
+                             QListWidgetItem * newItem=new QListWidgetItem();//new一个列表项对象，并把它的地址给newItem
+                             newItem->setData(Qt::UserRole,text);//把用户输入的语录存到newItem的Qt::UserRole
+                             newItem->setData(Qt::UserRole+2,   tabBar.tabText(tabBar.currentIndex())   );//把当前选中标签存到newItem的Qt::UserRole+2
+                             updateItemDisplay(newItem);//更新对应列表项的显示
+                             liebiao.addItem(newItem);//把newItem添加到列表
                              saveListToJson(liebiao,dataPath);//添加后写入列表内容到data.json
                              rebuildItemHotkeys(liebiao,itemHotkeys,&a);//添加后为liebiao中的列表项注册快捷键
+                             filterListByTab(liebiao,   tabBar.tabText(tabBar.currentIndex())   );//根据当前选中标签过滤列表项
                          }
                          tianjiakuang.clear();
                          tianjiachuangkou.close();
@@ -926,26 +1230,40 @@ int main(int argc, char *argv[]){
     QPushButton tuding("",&chuangkou);//创建图钉按钮，文本为空字符串
     tuding.setObjectName("iconButton");//应用图标按钮样式
     if(config["tudingflag"].toBool()==false){ //如果没有钉住窗口
+        chuangkou.setWindowFlags( chuangkou.windowFlags() & ~Qt::WindowStaysOnTopHint );//在不改变其他窗口属性的前提下，给窗口删除“始终置顶”属性
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//设置按钮图标为空心图钉
-        tuding.setToolTip("已关闭失去焦点不关闭");//设置鼠标悬停提示文字为“已关闭失去焦点不关闭”
+        tuding.setToolTip("已关闭窗口置顶、失去焦点不关闭");//设置鼠标悬停提示文字为“已关闭窗口置顶、失去焦点不关闭”
     }
     else{ //如果钉住窗口
+        chuangkou.setWindowFlags( chuangkou.windowFlags() | Qt::WindowStaysOnTopHint );//在不改变其他窗口属性的前提下，给窗口添加“始终置顶”属性
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//设置按钮图标为实心图钉
-        tuding.setToolTip("已开启失去焦点不关闭");//设置鼠标悬停提示文字为“已开启失去焦点不关闭”
+        tuding.setToolTip("已开启窗口置顶、失去焦点不关闭");//设置鼠标悬停提示文字为“已开启窗口置顶、失去焦点不关闭”
     }
     tuding.setIconSize(QSize(20,20));//调整图标大小为20*20像素
     //当按下图钉按钮时，切换按钮图标
     QObject::connect(&tuding,&QPushButton::clicked,
                      [&](){
                          if(config["tudingflag"].toBool()==false){ //如果没有钉住窗口
+                             chuangkou.setWindowFlags( chuangkou.windowFlags() | Qt::WindowStaysOnTopHint );//在不改变其他窗口属性的前提下，给窗口添加“始终置顶”属性 //因为修改窗口属性后窗口会自动关闭，所以我们这里要手动显示主窗口
+                             chuangkou.move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());//把chuangkou移动到记录的位置
+                             xianshi(chuangkou);
+                             chuangkou.activateWindow();//让chuangkou获得输入焦点
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//切换按钮图标为实心图钉
-                             tuding.setToolTip("已开启失去焦点不关闭");//设置鼠标悬停提示文字为“已开启失去焦点不关闭”
+                             tuding.setToolTip("已开启窗口置顶、失去焦点不关闭");//设置鼠标悬停提示文字为“已开启窗口置顶、失去焦点不关闭”
                              config["tudingflag"]=true;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
                          else{ //如果钉住窗口
+                             chuangkou.setWindowFlags( chuangkou.windowFlags() & ~Qt::WindowStaysOnTopHint );//在不改变其他窗口属性的前提下，给窗口删除“始终置顶”属性
+                             QTimer::singleShot(10, //如果不延时的话主窗口还是会关闭，因为我在后面代码实现了这个功能：当程序失去焦点，并且只有主窗口可见、config["tudingflag"].toBool()==false时，关闭主窗口
+                                                [&](){
+                                                    chuangkou.move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());//把chuangkou移动到记录的位置
+                                                    xianshi(chuangkou);
+                                                    chuangkou.activateWindow();//让chuangkou获得输入焦点
+                                                }
+                                               );
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//切换按钮图标为空心图钉
-                             tuding.setToolTip("已关闭失去焦点不关闭");//设置鼠标悬停提示文字为“已关闭失去焦点不关闭”
+                             tuding.setToolTip("已关闭窗口置顶、失去焦点不关闭");//设置鼠标悬停提示文字为“已关闭窗口置顶、失去焦点不关闭”
                              config["tudingflag"]=false;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
@@ -973,7 +1291,8 @@ int main(int argc, char *argv[]){
                      [&](){
                          QString text=xiugaikuang.toPlainText();//获取输入框里的内容
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
-                             currentEditingItem->setText(text);//把输入内容修改到列表liebiao中
+                             currentEditingItem->setData(Qt::UserRole,text);//把输入内容修改到列表项的Qt::UserRole中
+                             updateItemDisplay(currentEditingItem);//更新对应列表项的显示
                              saveListToJson(liebiao,dataPath);//修改后写入列表内容到data.json
                              rebuildItemHotkeys(liebiao,itemHotkeys,&a);//修改后为liebiao中的列表项注册快捷键
                          }
@@ -988,7 +1307,7 @@ int main(int argc, char *argv[]){
     kuaijiejianchuangkou.setWindowTitle("设置快捷键");
     kuaijiejianchuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
     QLabel kjjtishi("为当前语录设置快捷键，\n于是就能通过快捷键输入当前语录，\n而不必呼出界面选择：",&kuaijiejianchuangkou);
-    QKeySequenceEdit kjjhotkeyEdit(&kuaijiejianchuangkou);//创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着对应列表项的Qt::UserRole里的快捷键字符串，因为弹出窗口的时候就已经setKeySequence过了
+    QKeySequenceEdit kjjhotkeyEdit(&kuaijiejianchuangkou);//创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着对应列表项的Qt::UserRole+3里的快捷键字符串，因为弹出窗口的时候就已经setKeySequence过了
     QPushButton kjjqingkong("清空",&kuaijiejianchuangkou);
     QPushButton kjjqueding("确定",&kuaijiejianchuangkou);
     //当按下“清空”按钮时
@@ -998,7 +1317,7 @@ int main(int argc, char *argv[]){
                              kuaijiejianchuangkou.close();//关闭kuaijiejianchuangkou
                              return ;//结束当前这个槽函数的执行
                          }
-                         kjjcurrentEditingItem->setData(Qt::UserRole,QString(""));//把空字符串保存到对应列表项的Qt::UserRole里
+                         kjjcurrentEditingItem->setData(Qt::UserRole+3,QString(""));//把空字符串存到对应列表项的Qt::UserRole+3
                          saveListToJson(liebiao,dataPath);//清空后写入列表内容到data.json
                          rebuildItemHotkeys(liebiao,itemHotkeys,&a);//清空后为liebiao中的列表项注册快捷键
                          kuaijiejianchuangkou.close();
@@ -1014,10 +1333,10 @@ int main(int argc, char *argv[]){
                          QKeySequence seq=kjjhotkeyEdit.keySequence();//取出用户在输入框里输入的快捷键
                          if(!seq.isEmpty()){ //如果输入不为空
                              if(!isValidHotkey(seq,itemHotkeys,&kjjhotkeyEdit)){ //如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规）
-                                 kjjhotkeyEdit.setKeySequence( QKeySequence(kjjcurrentEditingItem->data(Qt::UserRole).toString()) );//把对应列表项的Qt::UserRole里的快捷键字符串重新放进输入框，也就是说恢复输入框为原始快捷键
+                                 kjjhotkeyEdit.setKeySequence( QKeySequence(kjjcurrentEditingItem->data(Qt::UserRole+3).toString()) );//把对应列表项的Qt::UserRole+3里的快捷键字符串重新放进输入框，也就是说恢复输入框为原始快捷键
                                  return ;//结束当前这个槽函数的执行，但是不关闭kuaijiejianchuangkou，于是用户可以重新在这个窗口输入快捷键
                              }
-                             kjjcurrentEditingItem->setData(Qt::UserRole,seq.toString());//把用户输入的快捷键字符串保存到对应列表项的Qt::UserRole里
+                             kjjcurrentEditingItem->setData(Qt::UserRole+3,seq.toString());//把用户输入的快捷键字符串存到对应列表项的Qt::UserRole+3
                          }
                          saveListToJson(liebiao,dataPath);//确定后写入列表内容到data.json
                          rebuildItemHotkeys(liebiao,itemHotkeys,&a);//确定后为liebiao中的列表项注册快捷键
@@ -1027,7 +1346,42 @@ int main(int argc, char *argv[]){
     //使用自定义的事件过滤器类KjjHotkeyEditFilter，用于拦截kjjhotkeyEdit的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
     kjjhotkeyEdit.installEventFilter(   new KjjHotkeyEditFilter(&kjjhotkeyEdit,itemHotkeys,&a)   );//创建事件过滤器对象，并把它安装到kjjhotkeyEdit上
 
-    //右键liebiao中的某个选项时，弹出一个菜单，上面有修改、删除、快捷键三个选项
+    //创建beizhuchuangkou窗口，里面有一个输入框，底下有一个“清空”按钮和一个“备注”按钮
+    QListWidgetItem * beizhucurrentEditingItem=nullptr;//记录用户点到的是liebiao中的哪个选项
+    QWidget beizhuchuangkou;
+    beizhuchuangkou.setWindowTitle("QuickSay-备注");
+    beizhuchuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
+    QPlainTextEdit beizhukuang(&beizhuchuangkou);
+    QPushButton beizhuqingkong("清空",&beizhuchuangkou);
+    QPushButton beizhuqueding("备注",&beizhuchuangkou);
+    //当按下“清空”按钮时
+    QObject::connect(&beizhuqingkong,&QPushButton::clicked,
+                     [&](){
+                         if(!beizhucurrentEditingItem){ //如果beizhucurrentEditingItem为空指针 //以防万一用
+                             beizhuchuangkou.close();//关闭beizhuchuangkou
+                             return ;//结束当前这个槽函数的执行
+                         }
+                         beizhucurrentEditingItem->setData(Qt::UserRole+1,QString(""));//清空对应列表项的Qt::UserRole+1
+                         updateItemDisplay(beizhucurrentEditingItem);//更新对应列表项的显示
+                         saveListToJson(liebiao,dataPath);
+                         beizhuchuangkou.close();
+                     }
+                    );
+    //当按下“备注”按钮时
+    QObject::connect(&beizhuqueding,&QPushButton::clicked,
+                     [&](){
+                         if(!beizhucurrentEditingItem){ //如果beizhucurrentEditingItem为空指针 //以防万一用
+                             beizhuchuangkou.close();//关闭beizhuchuangkou
+                             return ;//结束当前这个槽函数的执行
+                         }
+                         beizhucurrentEditingItem->setData(Qt::UserRole+1,beizhukuang.toPlainText());//获取输入框里的内容，并把输入内容存到对应列表项的Qt::UserRole+1
+                         updateItemDisplay(beizhucurrentEditingItem);//更新对应列表项的显示
+                         saveListToJson(liebiao,dataPath);
+                         beizhuchuangkou.close();
+                     }
+                    );
+
+    //右键liebiao中的某个选项时，弹出一个菜单，上面有修改、删除、备注、快捷键四个选项
     QMenu menu1;
     QAction xiugai("修改",&menu1);
     menu1.addAction(&xiugai);
@@ -1035,17 +1389,18 @@ int main(int argc, char *argv[]){
     menu1.addAction(&shanchu);
     QAction kuaijiejian("快捷键",&menu1);
     menu1.addAction(&kuaijiejian);
-    liebiao.setContextMenuPolicy(Qt::CustomContextMenu);
+    QAction beizhu("备注",&menu1);
+    menu1.addAction(&beizhu);
+    liebiao.setContextMenuPolicy(Qt::CustomContextMenu);//为liebiao设置自定义右键菜单
     //当右键liebiao时，执行lambda表达式
     QObject::connect(&liebiao,&QListWidget::customContextMenuRequested,
                      [&](const QPoint & pos){
                          QListWidgetItem * item=liebiao.itemAt(pos);//根据点击位置，找到对应的QListWidgetItem（如果点到空白区域则返回空指针）
                          if(item){ //如果点到liebiao中的某个选项，那么弹出菜单，上面有修改、删除两个选项
-                             QAction * selectedAction=menu1.exec(liebiao.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，并等待用户选择一个QAction
+                             QAction * selectedAction=menu1.exec(liebiao.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，等待用户选择一个QAction
                              if(selectedAction==&xiugai){ //如果用户选了“修改”
-                                 //那么弹出xiugaichuangkou窗口，窗口里有选项中的文本，通过输入框可以修改语录
                                  currentEditingItem=item;//记录当前要修改的选项
-                                 xiugaikuang.setPlainText(item->text());//把原来的文本放进输入框
+                                 xiugaikuang.setPlainText(item->data(Qt::UserRole).toString());//把原语录放进输入框
                                  xiugaichuangkou.move(config["xiugaichuangkou_x"].toInt(),config["xiugaichuangkou_y"].toInt());//把xiugaichuangkou移动到记录的位置
                                  xianshi(xiugaichuangkou);
                                  xiugaichuangkou.activateWindow();//让xiugaichuangkou获得输入焦点
@@ -1057,13 +1412,20 @@ int main(int argc, char *argv[]){
                                  rebuildItemHotkeys(liebiao,itemHotkeys,&a);//删除后为liebiao中的列表项注册快捷键
                              }
                              else if(selectedAction==&kuaijiejian){ //如果用户选了“快捷键”
-                                 //那么弹出kuaijiejianchuangkou窗口，并且把快捷键字符串放进输入框
                                  kjjcurrentEditingItem=item;//记录当前要修改的选项
-                                 kjjhotkeyEdit.setKeySequence( QKeySequence(item->data(Qt::UserRole).toString()) );//把这个列表项的Qt::UserRole里的快捷键字符串放进输入框
+                                 kjjhotkeyEdit.setKeySequence( QKeySequence(item->data(Qt::UserRole+3).toString()) );//把这个列表项的Qt::UserRole+3里的快捷键字符串放进输入框
                                  kuaijiejianchuangkou.move(config["kuaijiejianchuangkou_x"].toInt(),config["kuaijiejianchuangkou_y"].toInt());//把kuaijiejianchuangkou移动到记录的位置
                                  xianshi(kuaijiejianchuangkou);
                                  kuaijiejianchuangkou.activateWindow();//让kuaijiejianchuangkou获得输入焦点
                                  kjjhotkeyEdit.setFocus();//把焦点给到kjjhotkeyEdit，而不是其他控件
+                             }
+                             else if(selectedAction==&beizhu){ //如果用户选了“备注”
+                                beizhucurrentEditingItem=item;//记录当前要备注的选项
+                                beizhukuang.setPlainText(item->data(Qt::UserRole+1).toString());//把原备注放进输入框
+                                beizhuchuangkou.move(config["beizhuchuangkou_x"].toInt(),config["beizhuchuangkou_y"].toInt());
+                                xianshi(beizhuchuangkou);
+                                beizhuchuangkou.activateWindow();
+                                beizhukuang.setFocus();
                              }
                          }
                      }
@@ -1093,24 +1455,26 @@ int main(int argc, char *argv[]){
     QObject::connect(&a,&QApplication::applicationStateChanged,
                      [&](Qt::ApplicationState state){
                          if(( state==Qt::ApplicationInactive&&chuangkou.isVisible() )&&config["tudingflag"].toBool()==false){ //如果程序失去焦点，并且主窗口可见、config["tudingflag"].toBool()==false
-                             if(( !shezhichuangkou.isVisible() )&&( !tianjiachuangkou.isVisible() )&&( !xiugaichuangkou.isVisible() )) //如果设置窗口、添加窗口、修改窗口都不可见
+                             if(( !shezhichuangkou.isVisible() )&&( !tianjiachuangkou.isVisible() )&&( !xiugaichuangkou.isVisible() )&&( !kuaijiejianchuangkou.isVisible() )&&( !beizhuchuangkou.isVisible() )){ //如果设置窗口、添加窗口、修改窗口、快捷键窗口、备注窗口都不可见
                                  chuangkou.close();
+                             }
                          }
                      }
                     );
 
     //使用自定义的事件过滤器类WindowMoveFilter，实现：当用户移动窗口时记录窗口位置。使得呼出窗口时让窗口在记录的位置显示
-    a.installEventFilter(   new WindowMoveFilter(&chuangkou,&shezhichuangkou,&tianjiachuangkou,&xiugaichuangkou,&kuaijiejianchuangkou,configPath,&a)   );//创建事件过滤器对象，并把它安装到a上
-    //使用自定义的事件过滤器类MyEventFilter，实现：Esc键可以关闭主窗口/添加窗口/修改窗口；回车键Enter可以输出光标处语录
-    a.installEventFilter(   new MyEventFilter(&chuangkou,&tianjiachuangkou,&xiugaichuangkou,&tianjiaquxiao,&xiugaiquxiao,&liebiao)   );//创建事件过滤器对象，并把它安装到a上
+    a.installEventFilter(   new WindowMoveFilter(&chuangkou,&shezhichuangkou,&tianjiachuangkou,&xiugaichuangkou,&kuaijiejianchuangkou,&beizhuchuangkou,configPath,&a)   );//创建事件过滤器对象，并把它安装到a上
+    //使用自定义的事件过滤器类MyEventFilter，实现：Esc键可以关闭主窗口/添加窗口/修改窗口；回车键Enter可以输出光标处语录；左右方向键可以切换标签
+    a.installEventFilter(   new MyEventFilter(&chuangkou,&tianjiachuangkou,&xiugaichuangkou,&tianjiaquxiao,&xiugaiquxiao,&liebiao,&tabBar)   );//创建事件过滤器对象，并把它安装到a上
 
     //从全局对象config读取默认窗口大小，然后根据宽高，设置所有窗口大小和所有控件大小，以及所有控件位置
     adjustAllWindows(config["width"].toInt(),config["height"].toInt(),
-                     chuangkou,liebiao,shezhi,tianjia,tuding,
+                     chuangkou,liebiao,tabBar,shezhi,tianjia,tuding,
                      shezhichuangkou,
                      tianjiachuangkou,tianjiakuang,tianjiaquxiao,tianjiaqueding,
                      xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding,
-                     kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding
+                     kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding,
+                     beizhuchuangkou,beizhukuang,beizhuqingkong,beizhuqueding
                     );
     //如果用户在设置-默认窗口大小里修改了宽度，那么写入程序设置到config.json，同时调整所有窗口大小和所有控件大小，以及所有控件位置
     QObject::connect(widthSpin,QOverload<int>::of(&QSpinBox::valueChanged),
@@ -1120,11 +1484,12 @@ int main(int argc, char *argv[]){
                          saveConfig(configPath);//写入程序设置到config.json
                          //调用adjustAllWindows函数，调整所有窗口大小
                          adjustAllWindows(config["width"].toInt(),config["height"].toInt(),
-                                          chuangkou,liebiao,shezhi,tianjia,tuding,
+                                          chuangkou,liebiao,tabBar,shezhi,tianjia,tuding,
                                           shezhichuangkou,
                                           tianjiachuangkou,tianjiakuang,tianjiaquxiao,tianjiaqueding,
                                           xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding,
-                                          kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding
+                                          kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding,
+                                          beizhuchuangkou,beizhukuang,beizhuqingkong,beizhuqueding
                                          );
                      }
                     );
@@ -1136,11 +1501,12 @@ int main(int argc, char *argv[]){
                          saveConfig(configPath);//写入程序设置到config.json
                          //调用adjustAllWindows函数，调整所有窗口大小
                          adjustAllWindows(config["width"].toInt(),config["height"].toInt(),
-                                          chuangkou,liebiao,shezhi,tianjia,tuding,
+                                          chuangkou,liebiao,tabBar,shezhi,tianjia,tuding,
                                           shezhichuangkou,
                                           tianjiachuangkou,tianjiakuang,tianjiaquxiao,tianjiaqueding,
                                           xiugaichuangkou,xiugaikuang,xiugaiquxiao,xiugaiqueding,
-                                          kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding
+                                          kuaijiejianchuangkou,kjjtishi,kjjhotkeyEdit,kjjqingkong,kjjqueding,
+                                          beizhuchuangkou,beizhukuang,beizhuqingkong,beizhuqueding
                                          );
                      }
                     );
