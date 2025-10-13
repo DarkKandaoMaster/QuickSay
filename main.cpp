@@ -1,10 +1,5 @@
 //更新内容：
-//1.左上角新增了一个标签栏，于是点击不同的标签显示不同语录。支持添加/修改/删除标签、拖动改变标签顺序
-//2.左右方向键可以切换标签
-//3.鼠标滚轮也可以切换标签
-//4.修改图钉按钮功能为：开启/关闭窗口置顶、失去焦点不关闭
-//5.程序启动时根据当前选中标签过滤列表项，然后选中没有隐藏的第一个列表项
-//6.改了下新手教程
+//点击右上角加号后记录当前标签的名称，并在添加语录时在记录下来的标签下添加，而不是添加语录时在当前标签下添加
 
 #include<QApplication>
 #include<QWidget>
@@ -1177,6 +1172,7 @@ int main(int argc, char *argv[]){
                     );
 
     //创建tianjiachuangkou窗口，里面有一个输入框，底下有一个“取消”按钮和一个“添加”按钮
+    QString currentTabName="";//记录用户点击右上角加号时当前标签的名称
     QWidget tianjiachuangkou;
     tianjiachuangkou.setWindowTitle("QuickSay-添加");
     tianjiachuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
@@ -1197,7 +1193,7 @@ int main(int argc, char *argv[]){
                          if(!text.isEmpty()){ //如果获取到的内容不是空的
                              QListWidgetItem * newItem=new QListWidgetItem();//new一个列表项对象，并把它的地址给newItem
                              newItem->setData(Qt::UserRole,text);//把用户输入的语录存到newItem的Qt::UserRole
-                             newItem->setData(Qt::UserRole+2,   tabBar.tabText(tabBar.currentIndex())   );//把当前选中标签存到newItem的Qt::UserRole+2
+                             newItem->setData(Qt::UserRole+2,currentTabName);//把记录的标签名称存到newItem的Qt::UserRole+2
                              updateItemDisplay(newItem);//更新对应列表项的显示
                              liebiao.addItem(newItem);//把newItem添加到列表
                              saveListToJson(liebiao,dataPath);//添加后写入列表内容到data.json
@@ -1218,6 +1214,7 @@ int main(int argc, char *argv[]){
     //当按下“添加”按钮时，弹出tianjiachuangkou窗口
     QObject::connect(&tianjia,&QPushButton::clicked,
                      [&](){
+                         currentTabName=tabBar.tabText(tabBar.currentIndex());//记录用户点击右上角加号时当前标签的名称
                          tianjiakuang.clear();
                          tianjiachuangkou.move(config["tianjiachuangkou_x"].toInt(),config["tianjiachuangkou_y"].toInt());//把tianjiachuangkou移动到记录的位置
                          xianshi(tianjiachuangkou);
