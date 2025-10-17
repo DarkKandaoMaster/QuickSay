@@ -328,5 +328,4 @@ v1.3.0已更！
 <img src="./README_Pictures/碎碎念7.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="500"><br>
 这是我发在吾爱论坛的蓝奏云链接的下载量↓  
 <img src="./README_Pictures/碎碎念8.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="500"><br>
-
 (⊙Д⊙)  
