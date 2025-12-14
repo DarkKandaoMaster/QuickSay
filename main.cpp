@@ -1,8 +1,8 @@
 //更新内容：
 //1.列表项增加角标，支持直接按下角标对应按键实现快速输入
-//2.主窗口增加了一个搜索框，支持按语录或备注模糊匹配。按下Tab键可以让搜索框获得焦点，按下Tab键、回车键、上下左右方向键可以把焦点切换回来，其中上下左右方向键还会继续触发对应逻辑
+//2.主窗口增加了一个搜索框，支持模糊匹配语录或备注。按下Tab键可以让搜索框获得焦点，按下Tab键、回车键、上下左右方向键可以把焦点切换回来，其中上下左右方向键还会继续触发对应逻辑
 //3.主窗口图钉功能修改为：开启/关闭输入后不关闭、失去焦点不关闭。也就是说现在钉住窗口可以连续输入了
-//4.设置窗口增加选项：“主窗口始终置顶”、“输入时也将语录复制到剪贴板”、“输入时使用模拟Ctrl+V”、“输入延迟”、“列表滚动速度”、“角标放左上角还是右上角？”
+//4.设置窗口增加选项：“主窗口始终置顶”、“输入时也将语录复制到剪贴板”、“输入时使用模拟Ctrl+V”、“延迟多少毫秒再输入？”、“列表滚动速度”、“角标放左上角还是右上角？”
 //5.取消勾选“输入时使用模拟Ctrl+V”，可以在学习通等禁止粘贴的输入框里输入（但是在部分软件输入不了换行）
 //6.改了一下添加窗口、修改窗口，于是现在可以直接在添加窗口、修改窗口里设置备注和快捷键了，而无需右键单独添加
 //7.修复了一个bug：给语录设置快捷键后，重新打开设置快捷键窗口并点击确定按钮，会显示快捷键已被使用。说白了就是它自己会和自己冲突
@@ -52,7 +52,7 @@ HWND lastwindow=NULL;//全局对象，用于记录前台窗口
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
     if(!config.contains("delay")){ //如果config里没有delay
-        config["delay"]=100;//默认输入延迟100毫秒
+        config["delay"]=100;//默认延迟多少毫秒再输入？100毫秒
     }
     if(!config.contains("gundong")){ //如果config里没有gundong
         config["gundong"]=10;//默认列表滚动速度10
@@ -80,7 +80,7 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
         config["zhiding"]=true;//默认主窗口始终置顶
         config["clipboard"]=true;//默认输入时也将语录复制到剪贴板
         config["ctrlv"]=true;//默认输入时使用模拟Ctrl+V
-        config["delay"]=100;//默认输入延迟100毫秒
+        config["delay"]=100;//默认延迟多少毫秒再输入？100毫秒
         config["width"]=500;//默认窗口宽度
         config["height"]=500;//默认窗口高度
         config["gundong"]=10;//默认列表滚动速度10
@@ -164,11 +164,12 @@ void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取d
         }
     }
     else{ //如果data.json不存在
-        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n点击语录：即可快速输入\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录\n上下方向键↑↓：移动光标\n回车键Enter：输出光标处语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
+        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加语录：点右上角加号\n修改/删除：右键语录\n排序：拖动语录\n\n点击语录：输入对应语录\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处语录\n按下角标对应按键：输入对应语录");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
         liebiao.addItem("右键标签：添加/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
+        liebiao.addItem("设置里勾选“输入时使用模拟Ctrl+V”，输入会更快；\n取消勾选，可以在学习通等禁止粘贴的输入框里输入");
         liebiao.addItem("全部操作请看“2·QuickSay全部使用操作.txt”");
         liebiao.addItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！\n这里再放一个闲聊群💬：1026364290\n欢迎来玩！什么都可以聊哦 ヾ(≧▽≦*)o\n反馈建议的话，在这个群里@我或者私聊我，我回复得更快！\n如果在我能力范围内，马上修改，马上发布！");
-        liebiao.addItem("感谢您能听我唠叨到这里！让我们开始吧！把这些语录都删掉，然后新建一个语录");
+        liebiao.addItem("让我们开始吧！把这些语录都删掉，然后新建一个语录");
         saveListToJson(liebiao,dataPath);
     }
 }
@@ -1397,13 +1398,13 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-    //输入延迟设置
+    //延迟多少毫秒再输入？设置
     QSpinBox delaySpin(&shezhichuangkou);//创建一个数字输入框
     delaySpin.setRange(0,2000);//设置输入范围为0~2000
     delaySpin.setValue(config["delay"].toInt());//读取全局对象config里的delay的值，然后显示在输入框里
     delaySpin.setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);//让QSpinBox高度和标签对齐
-    formLayout->addRow("输入延迟（毫秒）：",&delaySpin);//在表单布局中添加一行，左边是标签“输入延迟（毫秒）：”，右边是数字输入框delaySpin
-    //如果用户修改了输入延迟
+    formLayout->addRow("延迟多少毫秒再输入？",&delaySpin);//在表单布局中添加一行，左边是标签“延迟多少毫秒再输入？”，右边是数字输入框delaySpin
+    //如果用户修改了延迟多少毫秒再输入？
     QObject::connect(&delaySpin,QOverload<int>::of(&QSpinBox::valueChanged),
                      [&](int value){
                          config["delay"]=value;
@@ -1456,7 +1457,7 @@ int main(int argc, char *argv[]){
     jiaobiaoWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
     jiaobiaoLayout.addWidget(&jiaobiaoCheck);//加入布局
     jiaobiaoLayout.addStretch();//让水平布局右边控件整体靠左对齐
-    formLayout->addRow("角标放左上角还是右上角？：",&jiaobiaoWidget);//在表单布局中添加一行，左边是标签“角标放左上角还是右上角？：”，右边是复选框jiaobiaoCheck
+    formLayout->addRow("角标放左上角还是右上角？",&jiaobiaoWidget);//在表单布局中添加一行，左边是标签“角标放左上角还是右上角？”，右边是复选框jiaobiaoCheck
     //切换角标放左上角还是右上角？复选框触发
     QObject::connect(&jiaobiaoCheck,&QCheckBox::toggled,
                      [&](bool checked){ //checked表示复选框的新状态，true表示勾选，false表示未勾选
