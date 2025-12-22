@@ -106,7 +106,7 @@ QuickSay的优势：
 
 
 # 感谢大家使用QuickSay，也感谢大家能听我唠叨到这里！如果觉得好用的话还请点个Star！拜托了！
-
+<img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="图片无法显示。是真的无法显示，估计是你的网络问题"><br>
 
 ## 我的亿些碎碎念
 某天，厌倦了学习的砍刀突然想到：诶要是我也有一个项目，那该多好。  
