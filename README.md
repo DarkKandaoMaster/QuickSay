@@ -41,7 +41,7 @@ QuickSay的优势：
 - 强大的剪贴板增强工具有很多，但像我这样只专心搞快捷语录的很少。所以我可以很自信地说QuickSay就是目前最强的电脑快捷语录软件  
 
 这里放一张软件窗口的全家福↓  
-<img src="./README_Pictures/软件窗口的全家福.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题"><br>
+<img src="./README_Pictures/软件窗口的全家福.png" alt="[图片不见了...]"><br>
 
 
 ## 基本使用
@@ -106,7 +106,7 @@ QuickSay的优势：
 
 
 # 感谢大家使用QuickSay，也感谢大家能听我唠叨到这里！如果觉得好用的话还请点个Star！拜托了！
-<img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="图片无法显示。是真的无法显示，估计是你的网络问题"><br>
+<img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
 
 ## 我的亿些碎碎念
 某天，厌倦了学习的砍刀突然想到：诶要是我也有一个项目，那该多好。  
@@ -170,7 +170,7 @@ v1.0.0发布当天，我发现了个bug：在微信输入框使用QuickSay居然
 
 我回来啦。  
 呼，这几天我看完了《魔女的夜宴》宁宁线。bad end、happy end、后日谈都看了。  
-<img src="./README_Pictures/碎碎念1.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="300"> <img src="./README_Pictures/碎碎念2.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题"><br>
+<img src="./README_Pictures/碎碎念1.png" alt="[图片不见了...]" width="300"> <img src="./README_Pictures/碎碎念2.png" alt="[图片不见了...]"><br>
 我已经百刀不侵啦！（）  
 唉果然还是有点遗憾呀...  
 真的是一个很好很浪漫的故事呢。我很感谢这个故事。  
@@ -195,7 +195,7 @@ emmm希望大家都不要像我一样容易想太多。容易想太多可不是�
 现在看来，这几天我可能有点自大了，了解了下才发现开发QuickSay其实没什么了不起的。  
 QuickSay项目落地那几天我很有成就感，四处找人宣传、炫耀，甚至还考虑过向几年都没联系过的同学和老师宣传一下，但因为我比较害羞，所以没向那部分人宣传。  
 唉这就是青春呀。（真的假的...）  
-<img src="./README_Pictures/碎碎念3.jpg" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="300"><br>
+<img src="./README_Pictures/碎碎念3.jpg" alt="[图片不见了...]" width="300"><br>
 
 ---
 
@@ -237,7 +237,7 @@ OK！于是QuickSay就一鼓作气地更到了v1.1.1。现在功能可以说已�
 没想到今天还是CSP初赛。大家加油呀！  
 讲真，其实我挺不能想象的，初中时我看个C++教材，班主任都说要没收我这本书。  
 所以小学中学的我仅仅只是一个听老师话的、把学习时间全花功课上的乖孩子，根本没听说过算法是什么。  
-<img src="./README_Pictures/碎碎念4.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="300"><br>
+<img src="./README_Pictures/碎碎念4.png" alt="[图片不见了...]" width="300"><br>
 
 ---
 
@@ -252,7 +252,7 @@ o▬▬◙▆▅▆▆▇▇◤
 2025.9.26  
 
 没想到QuickSay先在吾爱论坛火了↓  
-<img src="./README_Pictures/碎碎念5.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题"><br>
+<img src="./README_Pictures/碎碎念5.png" alt="[图片不见了...]"><br>
 好多人呀，软件发布这么多天我Github发行版的总下载量甚至都没有这个数字的一半...  
 可惜吾爱论坛不允许留下联系方式，不然我肯定把他们都拉过来点Star。  
 
@@ -290,7 +290,7 @@ v1.3.0已更！
 唉这个一千米，真的能靠练习和努力提升吗...  
 
 喔喔今天我才知道，昨天微软终止对Win10的支持了↓  
-<img src="./README_Pictures/碎碎念6.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="300"><br>
+<img src="./README_Pictures/碎碎念6.png" alt="[图片不见了...]" width="300"><br>
 这一天还蛮有纪念意义的（）  
 见证历史。  
 哈哈不过我一直用的是Win11，目前对Win11的使用体验非常满意，​以后也打算当个Win11钉子户。  
@@ -307,9 +307,9 @@ v1.3.0已更！
 
 嗯嗯？  
 这是我发在Github的蓝奏云链接的下载量↓  
-<img src="./README_Pictures/碎碎念7.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="500"><br>
+<img src="./README_Pictures/碎碎念7.png" alt="[图片不见了...]" width="300"><br>
 这是我发在吾爱论坛的蓝奏云链接的下载量↓  
-<img src="./README_Pictures/碎碎念8.png" alt="图片无法显示。是真的无法显示，估计是你的网络问题" width="500"><br>
+<img src="./README_Pictures/碎碎念8.png" alt="[图片不见了...]" width="300"><br>
 (⊙Д⊙)  
 
 ---
@@ -357,3 +357,6 @@ v1.3.0已更！
 再见了，2025年所有的周末。  
 接下来我就要告别代码，复习期末考了。  
 啊啊为什么还有期末考...让我们专心搞技术不行吗...  
+
+嗯嗯？好耶！感谢支持！  
+<img src="./README_Pictures/碎碎念9.png" alt="[图片不见了...]" width="300"><br>
