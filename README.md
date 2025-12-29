@@ -290,7 +290,7 @@ v1.3.0已更！
 唉这个一千米，真的能靠练习和努力提升吗...  
 
 喔喔今天我才知道，昨天微软终止对Win10的支持了↓  
-<img src="./README_Pictures/碎碎念6.png" alt="[图片不见了...]" width="300"><br>
+<img src="./README_Pictures/碎碎念6.png" alt="[图片不见了...]" width="400"><br>
 这一天还蛮有纪念意义的（）  
 见证历史。  
 哈哈不过我一直用的是Win11，目前对Win11的使用体验非常满意，​以后也打算当个Win11钉子户。  
@@ -307,9 +307,9 @@ v1.3.0已更！
 
 嗯嗯？  
 这是我发在Github的蓝奏云链接的下载量↓  
-<img src="./README_Pictures/碎碎念7.png" alt="[图片不见了...]" width="300"><br>
+<img src="./README_Pictures/碎碎念7.png" alt="[图片不见了...]" width="500"><br>
 这是我发在吾爱论坛的蓝奏云链接的下载量↓  
-<img src="./README_Pictures/碎碎念8.png" alt="[图片不见了...]" width="300"><br>
+<img src="./README_Pictures/碎碎念8.png" alt="[图片不见了...]" width="500"><br>
 (⊙Д⊙)  
 
 ---
@@ -359,4 +359,4 @@ v1.3.0已更！
 啊啊为什么还有期末考...让我们专心搞技术不行吗...  
 
 嗯嗯？好耶！感谢支持！  
-<img src="./README_Pictures/碎碎念9.png" alt="[图片不见了...]" width="300"><br>
+<img src="./README_Pictures/碎碎念9.png" alt="[图片不见了...]" width="600"><br>
