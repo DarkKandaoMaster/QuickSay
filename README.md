@@ -359,4 +359,4 @@ v1.3.0已更！
 啊啊为什么还有期末考...让我们专心搞技术不行吗...  
 
 哇哇好耶！感谢支持！  
-<img src="./README_Pictures/碎碎念9.png" alt="[图片不见了...]" width="700"><br>
+<img src="./README_Pictures/碎碎念9.png" alt="[图片不见了...]" width="800"><br>
