@@ -420,3 +420,11 @@ v1.3.0已更！
 不过最近我正在开发老师交给我的一个项目。等我把这个项目开发完哈！时间的话至少需要半个月吧...半个月后我再来更新QuickSay！  
 就是这个项目：https://github.com/DarkKandaoMaster/InferenceDeck  
 话说为什么我一忙起来就会有一堆人来反馈建议...  
+
+---
+
+2026.2.6  
+
+仍然简直是神迹...  
+全程张着嘴巴看完的...  
+<img src="./README_Pictures/碎碎念12.png" alt="[图片不见了...]" width="500"><br>
