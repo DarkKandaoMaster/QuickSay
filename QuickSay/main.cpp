@@ -1614,6 +1614,7 @@ int main(int argc, char *argv[]){
     QObject::connect(&versionButton,&QPushButton::clicked,
                      [](){
                          QDesktopServices::openUrl(QUrl("https://github.com/DarkKandaoMaster/QuickSay"));//调用QDesktopServices类，使用系统默认浏览器打开指定网址
+                        //  QDesktopServices::openUrl(QUrl("https://www.52pojie.cn/thread-2061920-1-1.html"));
                      }
                     );
 
