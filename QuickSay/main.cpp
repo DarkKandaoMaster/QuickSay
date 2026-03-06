@@ -6,6 +6,7 @@
 //5.为短语项设置鼠标悬停时的提示文字。这样用户就可以通过鼠标悬停查看完整短语了
 //6.添加标签后直接选中添加的标签
 //7.之前几个版本，钉住窗口后不能在部分软件（比如WPS类软件）里正常输入，现在可以了
+//8.左键托盘也可以呼出QuickSay了
 
 #include<QApplication>
 #include<QWidget>
@@ -1809,6 +1810,17 @@ int main(int argc, char *argv[]){
     //创建托盘
     QSystemTrayIcon * trayIcon=new QSystemTrayIcon(&a);
     trayIcon->setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));//设置托盘图标
+    //左键托盘会怎样
+    //托盘被激活时触发（比如左键右键点击托盘）
+    QObject::connect(trayIcon,&QSystemTrayIcon::activated,
+                     [&](QSystemTrayIcon::ActivationReason reason){ //reason变量可以用来接收托盘被激活的具体原因
+                         if(reason==QSystemTrayIcon::Trigger){ //如果具体原因是鼠标左键单击
+                             chuangkou.move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());
+                             xianshi(chuangkou);
+                         }
+                     }
+                    );
+    //右键托盘会怎样
     //给托盘创建一个右键菜单
     QMenu * menu=new QMenu();
     QAction * shezhiAction=new QAction("设置",menu);//添加“设置”菜单项
@@ -1824,7 +1836,7 @@ int main(int argc, char *argv[]){
     QObject::connect(quitAction,&QAction::triggered,&a,&QApplication::quit);
     trayIcon->setContextMenu(menu);//menu的内存也不用释放，因为此时trayIcon会接管menu的所有权，自动管理其内存
     trayIcon->show();
-    trayIcon->setToolTip("QuickSay");//设置鼠标悬停在托盘图标上时显示的提示文字。这句代码必须写在show()之后
+    trayIcon->setToolTip("QuickSay");//设置鼠标悬停在托盘上时显示的提示文字。这句代码必须写在show()之后
 
     //当程序失去焦点，并且只有主窗口可见、config["tudingflag"].toBool()==false时，关闭主窗口
     QObject::connect(&a,&QApplication::applicationStateChanged,
