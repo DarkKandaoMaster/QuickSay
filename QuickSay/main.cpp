@@ -4,6 +4,8 @@
 //3.把设置里的“列表滚动速度”改名为“滚动条滚动速度”
 //4.可以对不同标签设置不同短语项高度了
 //5.为短语项设置鼠标悬停时的提示文字。这样用户就可以通过鼠标悬停查看完整短语了
+//6.添加标签后直接选中添加的标签
+//7.之前几个版本，钉住窗口后不能在部分软件（比如WPS类软件）里正常输入，现在可以了
 
 #include<QApplication>
 #include<QWidget>
@@ -389,7 +391,13 @@ void shuchu(const QListWidgetItem * item,QWidget * chuangkou){
                                sendTextDirectly(text);
                                if(config["clipboard"].toBool()==true) QApplication::clipboard()->setText(text);//复制短语到剪贴板
                            }
-                           if(config["tudingflag"].toBool()==true) chuangkou->activateWindow();//如果钉住了窗口，那么重新把焦点给chuangkou
+                           if(config["tudingflag"].toBool()==true){ //如果钉住了窗口
+                               QTimer::singleShot(20, //再加一个延时，让部分软件（比如WPS类软件）有足够的时间处理刚才发送的模拟Ctrl+V【【【【【
+                                                  [chuangkou](){
+                                                      chuangkou->activateWindow();//重新把焦点给chuangkou
+                                                  }
+                                                 );
+                           }
                        }
                       );
 }
