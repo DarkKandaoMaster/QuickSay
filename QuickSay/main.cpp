@@ -1,14 +1,6 @@
-//版本：1.5.0
+//版本：1.5.1
 //更新内容：
-//1.可以对不同标签设置不同的短语项高度了。当短语超过短语项宽度（窗口宽度）时，会自动折行；当短语超过短语项高度时，会显示省略号。
-//2.为短语项设置鼠标悬停时的提示文字，也就是说可以通过鼠标悬停查看完整短语了。
-//3.之前的版本，钉住窗口后不能在部分软件（比如WPS类软件）里正常输入，现在可以了。
-//4.左键托盘也可以呼出QuickSay了。
-//5.设置窗口里可以显示版本号了。
-//6.修改了一下默认短语，删减了一些不重要的内容。
-//7.添加标签后直接选中添加的标签。
-//8.右键标签时，把“在当前标签后添加标签”这个选项移动到第一位。
-//9.把设置里的“列表滚动速度”改名为“滚动条滚动速度”。
+//在1.5.0版本，默认生成的短语无法通过鼠标悬停查看完整短语，现在可以了。
 
 #include<QApplication>
 #include<QWidget>
@@ -171,10 +163,19 @@ void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取d
         }
     }
     else{ //如果data.json不存在
-        liebiao.addItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加短语：点右上角加号\n修改/删除：右键短语\n排序：拖动短语");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
-        liebiao.addItem("点击短语：输入对应短语\n鼠标悬停：查看完整短语\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处短语");
-        liebiao.addItem("右键标签：添加/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
-        liebiao.addItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
+        auto addDefaultItem=[&](const QString & text){ //定义一个局部函数，用于添加默认短语
+            QListWidgetItem * it=new QListWidgetItem();
+            it->setData(Qt::UserRole,text);
+            it->setData(Qt::UserRole+1,"");
+            it->setData(Qt::UserRole+2,"短语1");
+            it->setData(Qt::UserRole+3,"");
+            updateItemDisplay(it);//更新对应短语项的显示
+            liebiao.addItem(it);
+        };
+        addDefaultItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加短语：点右上角加号\n修改/删除：右键短语\n排序：拖动短语");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
+        addDefaultItem("点击短语：输入对应短语\n鼠标悬停：查看完整短语\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处短语");
+        addDefaultItem("右键标签：添加/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
+        addDefaultItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
         saveListToJson(liebiao,dataPath);
     }
 }
