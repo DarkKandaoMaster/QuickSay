@@ -1,3 +1,4 @@
+//版本：1.5.0
 //更新内容：
 //1.修改了一下默认短语，删减了一些不重要的内容
 //2.右键标签时，把“在当前标签后添加标签”这个选项移动到第一位
@@ -7,6 +8,7 @@
 //6.添加标签后直接选中添加的标签
 //7.之前几个版本，钉住窗口后不能在部分软件（比如WPS类软件）里正常输入，现在可以了
 //8.左键托盘也可以呼出QuickSay了
+//9.可以显示版本号了
 
 #include<QApplication>
 #include<QWidget>
@@ -44,6 +46,8 @@
 #include<QPainter>
 #include<QScrollBar>
 #include<QDialog>
+#include<QDesktopServices>
+#include<QUrl>
 #ifdef _WIN32
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
@@ -1381,7 +1385,7 @@ int main(int argc, char *argv[]){
 
     //主窗口始终置顶设置
     QWidget zhidingWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout zhidingLayout(&zhidingWidget);//使用水平布局，目标效果是里面有一个复选框。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
+    QHBoxLayout zhidingLayout(&zhidingWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
     zhidingLayout.setSpacing(4);//控件之间间距4像素
     zhidingLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
     QCheckBox zhidingCheck(&zhidingWidget);//创建一个复选框
@@ -1415,7 +1419,7 @@ int main(int argc, char *argv[]){
 
     //输入时也将短语复制到剪贴板设置
     QWidget clipboardWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout clipboardLayout(&clipboardWidget);//使用水平布局，目标效果是里面有一个复选框。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
+    QHBoxLayout clipboardLayout(&clipboardWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
     clipboardLayout.setSpacing(4);//控件之间间距4像素
     clipboardLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
     QCheckBox clipboardCheck(&clipboardWidget);//创建一个复选框
@@ -1426,7 +1430,7 @@ int main(int argc, char *argv[]){
     formLayout->addRow("输入时也将短语复制到剪贴板：",&clipboardWidget);//在表单布局中添加一行，左边是标签“输入时也将短语复制到剪贴板：”，右边是复选框clipboardCheck
     //输入时使用模拟Ctrl+V设置
     QWidget ctrlvWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout ctrlvLayout(&ctrlvWidget);//使用水平布局，目标效果是里面有一个复选框。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
+    QHBoxLayout ctrlvLayout(&ctrlvWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
     ctrlvLayout.setSpacing(4);//控件之间间距4像素
     ctrlvLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
     QCheckBox ctrlvCheck(&ctrlvWidget);//创建一个复选框
@@ -1481,7 +1485,7 @@ int main(int argc, char *argv[]){
 
     //窗口大小设置
     QWidget * sizeWidget=new QWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout * sizeLayout=new QHBoxLayout(sizeWidget);//使用水平布局，目标效果是左边是标签“宽度”和宽度输入框，右边是标签“高度”和高度输入框
+    QHBoxLayout * sizeLayout=new QHBoxLayout(sizeWidget);//创建一个水平布局，放置在刚才创建的容器中
     sizeLayout->setSpacing(4);//控件之间间距4像素
     sizeLayout->setContentsMargins(0,0,0,0);//去掉布局的默认边距
     sizeLayout->addWidget(new QLabel("宽度",sizeWidget));//加入布局
@@ -1530,7 +1534,7 @@ int main(int argc, char *argv[]){
 
     //角标放左上角还是右上角？设置
     QWidget jiaobiaoWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout jiaobiaoLayout(&jiaobiaoWidget);//使用水平布局，目标效果是里面有一个复选框。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
+    QHBoxLayout jiaobiaoLayout(&jiaobiaoWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
     jiaobiaoLayout.setSpacing(4);//控件之间间距4像素
     jiaobiaoLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
     QCheckBox jiaobiaoCheck(&jiaobiaoWidget);//创建一个复选框
@@ -1558,7 +1562,7 @@ int main(int argc, char *argv[]){
 #ifdef _WIN32
     //开机自启动设置
     QWidget * autostartupWidget=new QWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout * autostartupLayout=new QHBoxLayout(autostartupWidget);//使用水平布局，目标效果是里面有一个复选框。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
+    QHBoxLayout * autostartupLayout=new QHBoxLayout(autostartupWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
     autostartupLayout->setSpacing(4);//控件之间间距4像素
     autostartupLayout->setContentsMargins(0,0,0,0);//去掉布局的默认边距
     QCheckBox * autostartupCheck=new QCheckBox(autostartupWidget);//创建一个复选框
@@ -1592,6 +1596,25 @@ int main(int argc, char *argv[]){
                      }
                     );
 #endif
+
+    //版本号显示
+    QWidget versionWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
+    QHBoxLayout versionLayout(&versionWidget);//创建一个水平布局，放置在刚才创建的容器中
+    versionLayout.setSpacing(4);//控件之间间距4像素
+    versionLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
+    QPushButton versionButton("1.5.0",&versionWidget);//创建版本号按钮
+    versionButton.setFixedWidth(100);//固定版本号按钮的宽度为100像素
+    versionButton.setCursor(Qt::PointingHandCursor);//当鼠标悬停在该按钮上时，鼠标光标变成手形状
+    versionWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
+    versionLayout.addWidget(&versionButton);//加入布局
+    versionLayout.addStretch();//让水平布局右边控件整体靠左对齐
+    formLayout->addRow("版本：",&versionWidget);//在表单布局中添加一行，左边是标签“版本：”，右边是版本号按钮versionButton
+    //当用户点击版本号按钮时触发
+    QObject::connect(&versionButton,&QPushButton::clicked,
+                     [](){
+                         QDesktopServices::openUrl(QUrl("https://github.com/DarkKandaoMaster/QuickSay"));//调用QDesktopServices类，使用系统默认浏览器打开指定网址
+                     }
+                    );
 
     //在chuangkou右上角放一个“设置”按钮
     QPushButton shezhi("",&chuangkou);//创建设置按钮，文本为空字符串。不然文本也会显示在按钮上
