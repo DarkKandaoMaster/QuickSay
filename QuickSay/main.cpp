@@ -697,12 +697,12 @@ protected:
             }
             if(   keyEvent->key()==Qt::Key_Left && chuangkou->isActiveWindow()   ){ //如果按下的是左方向键，并且焦点在主窗口
                 if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
-                tabBar->setCurrentIndex(   qMax(0,tabBar->currentIndex()-1)   );//设置标签栏选中标签为 当前选中标签左边的那个标签 
+                tabBar->setCurrentIndex(   qMax(0,tabBar->currentIndex()-1)   );//设置选中标签为 当前选中标签左边的那个标签 
                 return true;
             }
             if(   keyEvent->key()==Qt::Key_Right && chuangkou->isActiveWindow()   ){ //如果按下的是右方向键，并且焦点在主窗口
                 if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
-                tabBar->setCurrentIndex(   qMin(tabBar->count()-1,tabBar->currentIndex()+1)   );//设置标签栏选中标签为 当前选中标签右边的那个标签 
+                tabBar->setCurrentIndex(   qMin(tabBar->count()-1,tabBar->currentIndex()+1)   );//设置选中标签为 当前选中标签右边的那个标签 
                 return true;
             }
             if(   keyEvent->key()==Qt::Key_Up && chuangkou->isActiveWindow()   ){ //如果按下的是上方向键，并且焦点在主窗口
@@ -1262,6 +1262,7 @@ int main(int argc, char *argv[]){
                                      if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户输入的标签名称不重复
                                          tabBar.addTab(tabName);//在标签栏末尾添加新标签
                                          tabBar.setTabData(tabBar.count()-1,itemHeight);//把用户输入的短语项高度存到该标签的tabData中
+                                         tabBar.setCurrentIndex(tabBar.count()-1);//设置选中标签为该标签
                                          saveTabToJson(tabBar,tabPath);
                                      }
                                      else{ //如果用户输入的标签名称重复
@@ -1288,6 +1289,7 @@ int main(int argc, char *argv[]){
                                      if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户输入的标签名称不重复
                                          tabBar.insertTab(index+1,tabName);//在当前标签后添加新标签
                                          tabBar.setTabData(index+1,itemHeight);//把用户输入的短语项高度存到该标签的tabData中
+                                         tabBar.setCurrentIndex(index+1);//设置选中标签为该标签
                                          saveTabToJson(tabBar,tabPath);
                                      }
                                      else{ //如果用户输入的标签名称重复
