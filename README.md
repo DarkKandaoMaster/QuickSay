@@ -103,7 +103,7 @@ QuickSay的优势：
 - 快捷键输入框允许输入多个快捷键的组合，但就算这么输入，也应用不了。所以我是通过把它判定为不合规快捷键的方式来阻止用户这么输入的。但其实还有个思路就是检测到用户输入主键后立刻清除快捷键输入框的焦点。但目前我能力不够...不知道未来的我能不能做到  
 
 
-# 感谢使用QuickSay！如果觉得好用，记得去点个Star！砍刀会感谢你的！
+# 感谢使用QuickSay！如果觉得好用记得去点个Star！砍刀会感谢你的！
 <img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
 
 ## 我的亿些碎碎念
