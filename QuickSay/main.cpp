@@ -1,6 +1,6 @@
-//版本：1.5.1
+//版本：
 //更新内容：
-//在1.5.0版本，默认生成的短语无法通过鼠标悬停查看完整短语，现在可以了。
+//1.修改了一下默认短语
 
 #include<QApplication>
 #include<QWidget>
@@ -175,7 +175,7 @@ void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取d
         addDefaultItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加短语：点右上角加号\n修改/删除：右键短语\n排序：拖动短语");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
         addDefaultItem("点击短语：输入对应短语\n鼠标悬停：查看完整短语\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处短语");
         addDefaultItem("右键标签：添加/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
-        addDefaultItem("感谢大家使用QuickSay！\n如果觉得好用的话还请去Github点个Star！拜托了！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
+        addDefaultItem("感谢使用QuickSay！\n如果觉得好用记得去Github点个Star！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
         saveListToJson(liebiao,dataPath);
     }
 }
