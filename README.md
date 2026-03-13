@@ -1,5 +1,5 @@
 # QuickSay ---目前最强的电脑快捷短语软件
-### 欢迎大家来测~
+### 欢迎大家来测~ヾ(≧▽≦*)o
 ###### 该软件只支持Windows。所以Windows 10/11自助，macOS/Linux/Windows 7自强~
 
 
