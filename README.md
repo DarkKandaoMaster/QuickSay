@@ -470,3 +470,13 @@ woc怎么还有bug？！
 于是我又光速更了1.5.1版本。  
 结束了。  
 好耶那接下来我继续去开发InferenceDeck项目啦~  
+
+---
+
+2026.3.23
+
+记一次  
+<img src="./README_Pictures/碎碎念15.png" alt="[图片不见了...]">
+<img src="./README_Pictures/碎碎念16.png" alt="[图片不见了...]"><br>
+
+用过Git的人应该都
