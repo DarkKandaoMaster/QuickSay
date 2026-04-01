@@ -502,7 +502,7 @@ woc怎么还有bug？！
 
 Claude Code CLI源代码完整外泄？？？  
 我看到了神迹！！！  
-<img src="./README_Pictures/碎碎念18.png" alt="[图片不见了...]" width="500"><br>
+<img src="./README_Pictures/碎碎念18.png" alt="[图片不见了...]" width="300"><br>
 
 我感觉厉害的人实在是太多了，我跟他们之间的差距实在是太大了。  
 我感觉他们真的好厉害...感觉他们什么都会...  
