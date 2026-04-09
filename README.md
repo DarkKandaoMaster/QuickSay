@@ -517,4 +517,14 @@ Claude Code CLI源代码完整外泄？？？
 <img src="./README_Pictures/碎碎念19.png" alt="[图片不见了...]" width="400"> <img src="./README_Pictures/碎碎念20.png" alt="[图片不见了...]" width="400"><br>
 简直是神迹...  
 很温柔的一个故事呢。  
-制作组你就不能把所有人都复活然后聚在一块写一段剧情吗？？  
+制作组你就不能写一段把所有人都复活然后聚在一块的剧情吗？？  
+
+---
+
+2026.4.9  
+
+天呐...这是？？？神迹！！  
+今天我想找《eden*》的bgm，于是就想到了去Steam上找找。因为你看星白、UT都有Soundtrack。  
+结果真被我找到了《eden* Soundtrack》。  
+然后我就被它的封面震撼到了↓  
+<img src="./README_Pictures/碎碎念21.jpg" alt="[图片不见了...]" width="500"><br>
