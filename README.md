@@ -29,8 +29,8 @@ QuickSay的优势：
 下载完成后，将得到的文件解压，于是得到  
 ```
 QuickSay文件夹
-1·如何安装或更新QuickSay.txt
-2·QuickSay全部使用操作.txt
+1_如何安装或更新QuickSay.txt
+2_QuickSay全部使用操作.txt
 ```
 直接把 **QuickSay文件夹** 放到随便什么文件夹里，然后双击QuickSay.exe就行了。  
 文件夹的话有中文空格都行，但是不要放到Program Files之类的文件夹里。这种文件夹好麻烦的改个文件都需要管理员权限...  
@@ -61,7 +61,7 @@ QuickSay文件夹
 左右方向键←→：切换标签  
 鼠标滚轮：也可以切换标签  
 
-全部操作请看“2·QuickSay全部使用操作.txt”  
+全部操作请看“2_QuickSay全部使用操作.txt”  
 
 
 ## 常见使用问题
