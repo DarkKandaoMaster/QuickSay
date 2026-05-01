@@ -549,3 +549,4 @@ Claude Code CLI源代码完整外泄？？？
 
 2026.5.1  
 我来更新QuickSay啦！  
+写了几个月的Python代码后再来看C++代码...感觉还是Python适合我...  
