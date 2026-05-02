@@ -40,6 +40,7 @@
 #include<QDialog>
 #include<QDesktopServices>
 #include<QUrl>
+#include<QAbstractNativeEventFilter>
 #ifdef _WIN32
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
@@ -47,6 +48,17 @@
 
 QJsonObject config;//全局对象，用于保存程序的设置
 HWND lastwindow=NULL;//全局对象，用于记录前台窗口
+
+QWidget * pchuangkou=nullptr;
+QWidget * g_shezhichuangkou=nullptr;
+QWidget * g_tianjiachuangkou=nullptr;
+QWidget * g_xiugaichuangkou=nullptr;
+QListWidget * g_liebiao=nullptr;
+QTabBar * g_tabBar=nullptr;
+QLineEdit * g_search=nullptr;
+#ifdef _WIN32
+HHOOK g_keyboardHook=nullptr;
+#endif
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
     QJsonDocument doc(config);//把全局对象config转换成JSON文档
@@ -397,13 +409,7 @@ void shuchu(const QListWidgetItem * item,QWidget * chuangkou){
                                sendTextDirectly(text);
                                if(config["clipboard"].toBool()==true) QApplication::clipboard()->setText(text);//复制短语到剪贴板
                            }
-                           if(config["tudingflag"].toBool()==true){ //如果钉住了窗口
-                               QTimer::singleShot(20, //再加一个延时，让部分软件（比如WPS类软件）有足够的时间处理刚才发送的模拟Ctrl+V【【【【【
-                                                  [chuangkou](){
-                                                      chuangkou->activateWindow();//重新把焦点给chuangkou
-                                                  }
-                                                 );
-                           }
+                           Q_UNUSED(chuangkou);
                        }
                       );
 }
@@ -521,7 +527,158 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
     }
 }
 
+#ifdef _WIN32
+void applyMainWindowNoActivate(){
+    if(!pchuangkou) return;
+    HWND hwnd=(HWND)pchuangkou->winId();
+    LONG_PTR exStyle=GetWindowLongPtr(hwnd,GWL_EXSTYLE);
+    SetWindowLongPtr(hwnd,GWL_EXSTYLE,exStyle | WS_EX_NOACTIVATE);
+}
+
+void stopQuickSayKeyboardHook(){
+    if(g_keyboardHook){
+        UnhookWindowsHookEx(g_keyboardHook);
+        g_keyboardHook=nullptr;
+    }
+}
+
+QListWidgetItem * visibleItemByBadgeIndex(int targetIndex){
+    if(!g_liebiao) return nullptr;
+    int visibleCount=0;
+    for(int i=0;i<g_liebiao->count();i++){
+        QListWidgetItem * item=g_liebiao->item(i);
+        if(!item->isHidden()){
+            visibleCount++;
+            if(visibleCount==targetIndex) return item;
+        }
+    }
+    return nullptr;
+}
+
+void moveCurrentVisibleItem(int direction){
+    if(!g_liebiao) return;
+    int currentRow=g_liebiao->currentRow();
+    int row=currentRow;
+    while(true){
+        row+=direction;
+        if(row<0 || row>=g_liebiao->count()) return;
+        QListWidgetItem * item=g_liebiao->item(row);
+        if(item && !item->isHidden()){
+            g_liebiao->setCurrentItem(item);
+            g_liebiao->scrollToItem(item,QAbstractItemView::PositionAtCenter);
+            return;
+        }
+    }
+}
+
+bool handleQuickSayBrowseKey(DWORD vkCode){
+    if(!pchuangkou || !pchuangkou->isVisible()) return false;
+    if( (g_shezhichuangkou && g_shezhichuangkou->isVisible()) ||
+        (g_tianjiachuangkou && g_tianjiachuangkou->isVisible()) ||
+        (g_xiugaichuangkou && g_xiugaichuangkou->isVisible()) ){
+        return false;
+    }
+
+    bool hasSystemModifier=(GetAsyncKeyState(VK_CONTROL)&0x8000) ||
+                           (GetAsyncKeyState(VK_MENU)&0x8000) ||
+                           (GetAsyncKeyState(VK_LWIN)&0x8000) ||
+                           (GetAsyncKeyState(VK_RWIN)&0x8000);
+
+    switch(vkCode){
+    case VK_ESCAPE:
+        pchuangkou->close();
+        return true;
+    case VK_RETURN:
+        if(g_liebiao && g_liebiao->currentItem()){
+            shuchu(g_liebiao->currentItem(),pchuangkou);
+            return true;
+        }
+        return false;
+    case VK_LEFT:
+        if(g_tabBar) g_tabBar->setCurrentIndex(qMax(0,g_tabBar->currentIndex()-1));
+        return true;
+    case VK_RIGHT:
+        if(g_tabBar) g_tabBar->setCurrentIndex(qMin(g_tabBar->count()-1,g_tabBar->currentIndex()+1));
+        return true;
+    case VK_UP:
+        moveCurrentVisibleItem(-1);
+        return true;
+    case VK_DOWN:
+        moveCurrentVisibleItem(1);
+        return true;
+    default:
+        break;
+    }
+
+    int targetIndex=-1;
+    if(vkCode>='1' && vkCode<='9') targetIndex=vkCode-'0';
+    else if(vkCode=='0') targetIndex=10;
+    else if(vkCode>='A' && vkCode<='Z') targetIndex=vkCode-'A'+11;
+
+    if(targetIndex!=-1 && !hasSystemModifier){
+        QListWidgetItem * item=visibleItemByBadgeIndex(targetIndex);
+        if(item){
+            shuchu(item,pchuangkou);
+            return true;
+        }
+    }
+    return false;
+}
+
+LRESULT CALLBACK quickSayKeyboardProc(int code,WPARAM wParam,LPARAM lParam){
+    if(code==HC_ACTION && (wParam==WM_KEYDOWN || wParam==WM_SYSKEYDOWN)){
+        KBDLLHOOKSTRUCT * keyInfo=reinterpret_cast<KBDLLHOOKSTRUCT *>(lParam);
+        if(handleQuickSayBrowseKey(keyInfo->vkCode)) return 1;
+    }
+    return CallNextHookEx(g_keyboardHook,code,wParam,lParam);
+}
+
+void startQuickSayKeyboardHook(){
+    if(!g_keyboardHook){
+        g_keyboardHook=SetWindowsHookExW(WH_KEYBOARD_LL,quickSayKeyboardProc,GetModuleHandleW(nullptr),0);
+    }
+}
+
+void showMainWindowNoActivate(QWidget & chuang){
+    chuang.setAttribute(Qt::WA_ShowWithoutActivating,true);
+    applyMainWindowNoActivate();
+    if(!chuang.isVisible()) chuang.show();
+    HWND hwnd=(HWND)chuang.winId();
+    applyMainWindowNoActivate();
+    ShowWindow(hwnd,SW_SHOWNOACTIVATE);
+    HWND insertAfter=config["zhiding"].toBool()?HWND_TOPMOST:HWND_TOP;
+    SetWindowPos(hwnd,insertAfter,chuang.x(),chuang.y(),chuang.width(),chuang.height(),SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    startQuickSayKeyboardHook();
+}
+
+class NoActivateNativeFilter:public QAbstractNativeEventFilter{
+public:
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+    bool nativeEventFilter(const QByteArray &,void * message,qintptr * result) override{
+#else
+    bool nativeEventFilter(const QByteArray &,void * message,long * result) override{
+#endif
+        if(!pchuangkou) return false;
+        MSG * msg=reinterpret_cast<MSG *>(message);
+        if(msg->message==WM_MOUSEACTIVATE){
+            HWND mainHwnd=(HWND)pchuangkou->winId();
+            if(msg->hwnd==mainHwnd || IsChild(mainHwnd,msg->hwnd)){
+                *result=MA_NOACTIVATE;
+                return true;
+            }
+        }
+        return false;
+    }
+};
+#endif
+
 void xianshi(QWidget & chuang){ //如果窗口当前不可见，那么显示窗口，同时把窗口拉到屏幕最前方，并获得焦点
+#ifdef _WIN32
+    if(pchuangkou && &chuang==pchuangkou){
+        showMainWindowNoActivate(chuang);
+        return;
+    }
+#endif
     if(!chuang.isVisible()) chuang.show();
     chuang.activateWindow();//把窗口拉到屏幕最前方，并获得焦点
 }
@@ -637,7 +794,7 @@ public:
 protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
         if(event->type()==QEvent::Move){ //如果是窗口移动事件
-            if(chuangkou->isActiveWindow()){ //如果焦点在主窗口
+            if(obj==chuangkou){ //如果移动的是主窗口
                 config["chuangkou_x"]=chuangkou->x();//记录主窗口在x轴上的位置
                 config["chuangkou_y"]=chuangkou->y();//记录主窗口在y轴上的位置
                 saveConfig(configPath_);//写入程序设置到config.json
@@ -778,6 +935,9 @@ protected:
         }
         else if(event->type()==QEvent::Hide){ //如果是窗口关闭事件
             timer_.stop();//停止定时器
+#ifdef _WIN32
+            if(obj==pchuangkou) stopQuickSayKeyboardHook();
+#endif
         }
         return QObject::eventFilter(obj,event);//其他事件走默认处理
     }
@@ -911,8 +1071,6 @@ protected:
         this->setFocus(Qt::OtherFocusReason);//把焦点设置到窗口本身，而不是子控件
     }
 };
-
-QWidget * pchuangkou=nullptr;//全局指针，指向已经启动的主窗口，用于当用户启动程序时，如果已经有实例正在运行，那么显示正在运行的那个实例的主窗口
 
 int main(int argc, char *argv[]){
     SingleApplication a(argc, argv);//将QApplication替换为SingleApplication。写了这句代码，就可以确保程序只有一个实例正在运行了。如果尝试启动第二个实例，那么会终止并通知第一个实例
@@ -1169,11 +1327,15 @@ int main(int argc, char *argv[]){
 
     QWidget chuangkou;
     pchuangkou=&chuangkou;//创建主窗口时把地址赋值给全局指针，用于当用户启动程序时，如果已经有实例正在运行，那么显示正在运行的那个实例的主窗口
+#ifdef _WIN32
+    a.installNativeEventFilter(new NoActivateNativeFilter());
+#endif
     chuangkou.setWindowTitle("QuickSay");
     chuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
 
     //短语列表
     QListWidget liebiao(&chuangkou);
+    g_liebiao=&liebiao;
     QString dataPath=QCoreApplication::applicationDirPath()+"/data.json";//定义data.json文件路径
     loadListFromJson(liebiao,dataPath);//程序启动时调用loadListFromJson函数
     saveListToJson(liebiao,dataPath);//然后调用saveListToJson函数，兼容旧版本
@@ -1198,6 +1360,7 @@ int main(int argc, char *argv[]){
                     );
     //标签栏
     MyTabBar tabBar(&chuangkou);
+    g_tabBar=&tabBar;
     QString tabPath=QCoreApplication::applicationDirPath()+"/tab.json";//定义tab.json文件路径
     loadTabFromJson(tabBar,tabPath);//程序启动时调用loadTabFromJson函数
     saveTabToJson(tabBar,tabPath);//然后调用saveTabToJson函数，兼容旧版本
@@ -1207,6 +1370,7 @@ int main(int argc, char *argv[]){
     tabBar.setMovable(true);//允许通过拖动改变标签顺序
     //搜索框
     QLineEdit search(&chuangkou);
+    g_search=&search;
     search.setClearButtonEnabled(true);//开启一键清除按钮（输入框右边的小叉叉）
     //搜索框文字发生变化触发
     QObject::connect(&search,&QLineEdit::textChanged,
@@ -1365,6 +1529,7 @@ int main(int argc, char *argv[]){
 
     //创建shezhichuangkou窗口
     bujihuoChuangkou shezhichuangkou;//使用我们自定义的那个子类bujihuoChuangkou创建
+    g_shezhichuangkou=&shezhichuangkou;
     shezhichuangkou.setWindowTitle("QuickSay-设置");
     shezhichuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
     QFormLayout * formLayout=new QFormLayout(&shezhichuangkou);//创建一个表单布局，并直接作用于设置窗口
@@ -1636,6 +1801,7 @@ int main(int argc, char *argv[]){
     //创建tianjiachuangkou窗口
     QString currentTabName="";//记录用户点击右上角加号时当前标签的名称
     QWidget tianjiachuangkou;
+    g_tianjiachuangkou=&tianjiachuangkou;
     tianjiachuangkou.setWindowTitle("QuickSay-添加");
     tianjiachuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
     QPlainTextEdit tianjiakuang(&tianjiachuangkou);
@@ -1741,6 +1907,7 @@ int main(int argc, char *argv[]){
     //创建xiugaichuangkou窗口
     QListWidgetItem * currentEditingItem=nullptr;//记录用户点到的是liebiao中的哪个选项
     QWidget xiugaichuangkou;
+    g_xiugaichuangkou=&xiugaichuangkou;
     xiugaichuangkou.setWindowTitle("QuickSay-修改");
     xiugaichuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
     QPlainTextEdit xiugaikuang(&xiugaichuangkou);
