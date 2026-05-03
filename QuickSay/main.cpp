@@ -1482,7 +1482,7 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-    //输入时也将短语复制到剪贴板设置
+    //输入时也将短语复制到剪贴板设置【【【【【现在这个设置是无效的，不管开不开对结果都是没影响的。因此之后我需要来实现一下
     QWidget clipboardWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
     QHBoxLayout clipboardLayout(&clipboardWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
     clipboardLayout.setSpacing(4);//控件之间间距4像素
