@@ -1252,7 +1252,7 @@ int main(int argc, char *argv[]){
     tabBar.setUsesScrollButtons(false);//不显示左右按钮
     tabBar.setDrawBase(false);//不绘制基座
     tabBar.setMovable(true);//允许通过拖动改变标签顺序
-    //搜索框
+    //搜索框【【【【【这个搜索框的逻辑我还没重构，之后记得来重构
     QLineEdit search(&chuangkou);
     g_search=&search;
     search.setClearButtonEnabled(true);//开启一键清除按钮（输入框右边的小叉叉）
