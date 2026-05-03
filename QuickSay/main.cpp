@@ -1718,11 +1718,11 @@ int main(int argc, char *argv[]){
     tuding.setObjectName("iconButton");//应用图标按钮样式
     if(config["tudingflag"].toBool()==true){ //如果钉住窗口
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//设置按钮图标为实心图钉
-        tuding.setToolTip("已开启输入后不关闭、失去焦点不关闭");//设置鼠标悬停提示文字为“已开启输入后不关闭、失去焦点不关闭”
+        tuding.setToolTip("已开启连续输入");//设置鼠标悬停提示文字为“已开启连续输入”
     }
     else{ //如果没有钉住窗口
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//设置按钮图标为空心图钉
-        tuding.setToolTip("已关闭输入后不关闭、失去焦点不关闭");//设置鼠标悬停提示文字为“已关闭输入后不关闭、失去焦点不关闭”
+        tuding.setToolTip("已关闭连续输入");//设置鼠标悬停提示文字为“已关闭连续输入”
     }
     tuding.setIconSize(QSize(20,20));//调整图标大小为20*20像素
     //当按下图钉按钮时，切换按钮图标
@@ -1730,19 +1730,18 @@ int main(int argc, char *argv[]){
                      [&](){
                          if(config["tudingflag"].toBool()==true){ //如果钉住窗口
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//切换按钮图标为空心图钉
-                             tuding.setToolTip("已关闭输入后不关闭、失去焦点不关闭");//设置鼠标悬停提示文字为“已关闭输入后不关闭、失去焦点不关闭”
+                             tuding.setToolTip("已关闭连续输入");//设置鼠标悬停提示文字为“已关闭连续输入”
                              config["tudingflag"]=false;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
                          else{ //如果没有钉住窗口
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//切换按钮图标为实心图钉
-                             tuding.setToolTip("已开启输入后不关闭、失去焦点不关闭");//设置鼠标悬停提示文字为“已开启输入后不关闭、失去焦点不关闭”
+                             tuding.setToolTip("已开启连续输入");//设置鼠标悬停提示文字为“已开启连续输入”
                              config["tudingflag"]=true;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
                      }
                     );
-    //当程序失去焦点，并且只有主窗口可见、config["tudingflag"].toBool()==false时，关闭主窗口，这个功能的实现代码我放最后面了
 
     //创建xiugaichuangkou窗口
     QListWidgetItem * currentEditingItem=nullptr;//记录用户点到的是liebiao中的哪个选项
@@ -1869,17 +1868,6 @@ int main(int argc, char *argv[]){
     trayIcon->setContextMenu(menu);//menu的内存也不用释放，因为此时trayIcon会接管menu的所有权，自动管理其内存
     trayIcon->show();
     trayIcon->setToolTip("QuickSay");//设置鼠标悬停在托盘上时显示的提示文字。这句代码必须写在show()之后
-
-    //当程序失去焦点，并且只有主窗口可见、config["tudingflag"].toBool()==false时，关闭主窗口
-    QObject::connect(&a,&QApplication::applicationStateChanged,
-                     [&](Qt::ApplicationState state){
-                         if(( state==Qt::ApplicationInactive&&chuangkou.isVisible() )&&config["tudingflag"].toBool()==false){ //如果程序失去焦点，并且主窗口可见、config["tudingflag"].toBool()==false
-                             if(( !shezhichuangkou.isVisible() )&&( !tianjiachuangkou.isVisible() )&&( !xiugaichuangkou.isVisible() )){ //如果设置窗口、添加窗口、修改窗口都不可见
-                                 chuangkou.close();
-                             }
-                         }
-                     }
-                    );
 
     //使用自定义的事件过滤器类WindowMoveFilter，实现：当用户移动窗口时记录窗口位置。使得呼出窗口时让窗口在记录的位置显示
     a.installEventFilter(   new WindowMoveFilter(&chuangkou,&shezhichuangkou,&tianjiachuangkou,&xiugaichuangkou,configPath,&a)   );//创建事件过滤器对象，并把它安装到a上
