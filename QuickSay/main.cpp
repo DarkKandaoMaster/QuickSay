@@ -1,6 +1,7 @@
 //版本：1.6.0
 //更新内容：
 //1.修改了一下默认短语
+//2.实现了无焦点主窗口。主窗口不会再抢焦点了
 
 #include<QApplication>
 #include<QWidget>
