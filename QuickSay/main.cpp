@@ -485,13 +485,16 @@ void moveCurrentVisibleItem(int direction){
     }
 }
 
+bool hasQuickSayBlockingWindow(){
+    if(QApplication::activeModalWidget() || QApplication::activePopupWidget()) return true;
+    return (g_shezhichuangkou && g_shezhichuangkou->isVisible()) ||
+           (g_tianjiachuangkou && g_tianjiachuangkou->isVisible()) ||
+           (g_xiugaichuangkou && g_xiugaichuangkou->isVisible());
+}
+
 bool handleQuickSayBrowseKey(DWORD vkCode){
     if(!pchuangkou || !pchuangkou->isVisible()) return false;
-    if( (g_shezhichuangkou && g_shezhichuangkou->isVisible()) ||
-        (g_tianjiachuangkou && g_tianjiachuangkou->isVisible()) ||
-        (g_xiugaichuangkou && g_xiugaichuangkou->isVisible()) ){
-        return false;
-    }
+    if(hasQuickSayBlockingWindow()) return false;
 
     bool hasSystemModifier=(GetAsyncKeyState(VK_CONTROL)&0x8000) ||
                            (GetAsyncKeyState(VK_MENU)&0x8000) ||
