@@ -41,10 +41,8 @@
 #include<QDesktopServices>
 #include<QUrl>
 #include<QAbstractNativeEventFilter>
-#ifdef _WIN32
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
-#endif
 
 QJsonObject config;//全局对象，用于保存程序的设置
 
@@ -55,9 +53,7 @@ QWidget * g_xiugaichuangkou=nullptr;
 QListWidget * g_liebiao=nullptr;
 QTabBar * g_tabBar=nullptr;
 QLineEdit * g_search=nullptr;
-#ifdef _WIN32
 HHOOK g_keyboardHook=nullptr;
-#endif
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
     QJsonDocument doc(config);//把全局对象config转换成JSON文档
@@ -359,7 +355,6 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
             QObject::connect(hk,&QHotkey::activated,
                              [it](){
                                  QString text=it->data(Qt::UserRole).toString();//获取该短语项里的短语
-#ifdef _WIN32
                                  //获取当前Ctrl、Alt、Shift、Meta键的物理按下状态，如果按下，那么合成对应键的抬起事件。不然模拟输入Ctrl+V时要出问题；同时这样也能实现用户按住快捷键时连续输入短语
                                  bool wasLCtrlDown=( GetAsyncKeyState(VK_LCONTROL) & 0x8000 )!=0;//获取当前左Ctrl键的物理按下状态
                                  bool wasRCtrlDown=( GetAsyncKeyState(VK_RCONTROL) & 0x8000 )!=0;//获取当前右Ctrl键的物理按下状态
@@ -437,7 +432,6 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
                                      INPUT RMetaDown={};RMetaDown.type=INPUT_KEYBOARD;RMetaDown.ki.wVk=VK_RWIN;
                                      SendInput(1,&RMetaDown,sizeof(INPUT));
                                  }
-#endif
                              }
                             );
             itemHotkeys.append(hk);//把QHotkey *对象hk添加到动态数组中
@@ -448,7 +442,6 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
     }
 }
 
-#ifdef _WIN32
 void applyMainWindowNoActivate(){
     if(!pchuangkou) return;
     HWND hwnd=(HWND)pchuangkou->winId();
@@ -574,11 +567,7 @@ void showMainWindowNoActivate(QWidget & chuang){
 
 class NoActivateNativeFilter:public QAbstractNativeEventFilter{
 public:
-#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
     bool nativeEventFilter(const QByteArray &,void * message,qintptr * result) override{
-#else
-    bool nativeEventFilter(const QByteArray &,void * message,long * result) override{
-#endif
         if(!pchuangkou) return false;
         MSG * msg=reinterpret_cast<MSG *>(message);
         if(msg->message==WM_MOUSEACTIVATE){
@@ -591,15 +580,12 @@ public:
         return false;
     }
 };
-#endif
 
 void xianshi(QWidget & chuang){ //如果窗口当前不可见，那么显示窗口，同时把窗口拉到屏幕最前方，并获得焦点
-#ifdef _WIN32
     if(pchuangkou && &chuang==pchuangkou){
         showMainWindowNoActivate(chuang);
         return;
     }
-#endif
     if(!chuang.isVisible()) chuang.show();
     chuang.activateWindow();//把窗口拉到屏幕最前方，并获得焦点
 }
@@ -1227,9 +1213,7 @@ int main(int argc, char *argv[]){
 
     QWidget chuangkou;
     pchuangkou=&chuangkou;//创建主窗口时把地址赋值给全局指针，用于当用户启动程序时，如果已经有实例正在运行，那么显示正在运行的那个实例的主窗口
-#ifdef _WIN32
     a.installNativeEventFilter(new NoActivateNativeFilter());
-#endif
     chuangkou.setWindowTitle("QuickSay");
     chuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
 
@@ -1583,7 +1567,6 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-#ifdef _WIN32
     //开机自启动设置
     QWidget * autostartupWidget=new QWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
     QHBoxLayout * autostartupLayout=new QHBoxLayout(autostartupWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
@@ -1619,7 +1602,6 @@ int main(int argc, char *argv[]){
                          }
                      }
                     );
-#endif
 
     //版本号显示
     QWidget versionWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
@@ -1942,13 +1924,11 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-#ifdef _WIN32
     if(!   a.arguments().contains("--autostart")   ){ //程序启动时检查程序启动参数，如果没有包含我们专门为开机自启添加的标记“--autostart”（也就是说用户是通过双击可执行文件打开的程序，而不是通过开机自启自动打开的程序）
         chuangkou.move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());//把chuangkou移动到记录的位置
         xianshi(chuangkou);
     }
     //否则就是通过开机自启自动打开的程序，那么什么也不做，就后台运行个托盘
-#endif
 
 
 
