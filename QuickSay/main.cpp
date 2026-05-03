@@ -620,9 +620,17 @@ bool parseQuickSayOutputActions(const QString & text,QVector<QuickSayOutputActio
 
         if(text.at(i)=='<'){
             int closeIndex=text.indexOf('>',i+1);
-            if(closeIndex<0) return false;
+            if(closeIndex<0){
+                buffer.append('<');
+                i++;
+                continue;
+            }
             QuickSayOutputAction action;
-            if(!parseQuickSayTag(text.mid(i+1,closeIndex-i-1),action)) return false;
+            if(!parseQuickSayTag(text.mid(i+1,closeIndex-i-1),action)){
+                buffer.append(text.mid(i,closeIndex-i+1));
+                i=closeIndex+1;
+                continue;
+            }
             appendTextOutputAction(actions,buffer);
             buffer.clear();
             actions.append(action);
