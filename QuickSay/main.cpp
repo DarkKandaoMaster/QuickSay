@@ -394,24 +394,8 @@ void moniCtrlV(){ //模拟Ctrl+V
 void shuchu(const QListWidgetItem * item,QWidget * chuangkou){
     QString text=item->data(Qt::UserRole).toString();//获取对应选项里的短语
     if(config["tudingflag"].toBool()==false) chuangkou->close();//如果没有钉住窗口，那么关闭窗口到托盘
-    if(lastwindow){ //如果存在记录的前台窗口
-#ifdef _WIN32
-        SetForegroundWindow(lastwindow);//把窗口拉到屏幕最前方，并获得焦点 //注意这里不能使用activateWindow，只能使用SetForegroundWindow。因为必须使用Windows原生API来操作HWND
-#endif
-    }
-    QTimer::singleShot(config["delay"].toInt(), //延迟后输入
-                       [text,chuangkou](){
-                           if(config["ctrlv"].toBool()==true){
-                               QApplication::clipboard()->setText(text);//复制短语到剪贴板
-                               moniCtrlV();
-                           }
-                           else{
-                               sendTextDirectly(text);
-                               if(config["clipboard"].toBool()==true) QApplication::clipboard()->setText(text);//复制短语到剪贴板
-                           }
-                           Q_UNUSED(chuangkou);
-                       }
-                      );
+    QApplication::clipboard()->setText(text);//复制短语到剪贴板
+    moniCtrlV();
 }
 
 void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,QApplication * a){ //先禁用当前已注册的QHotkey *对象，然后遍历列表中的所有项，为它们注册快捷键
@@ -475,14 +459,8 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
                                      SendInput(1,&RMetaUp,sizeof(INPUT));
                                  }
                                  //输出该短语项里的短语
-                                 if(config["ctrlv"].toBool()==true){
-                                     QApplication::clipboard()->setText(text);//复制短语到剪贴板
-                                     moniCtrlV();
-                                 }
-                                 else{
-                                     sendTextDirectly(text);
-                                     if(config["clipboard"].toBool()==true) QApplication::clipboard()->setText(text);//复制短语到剪贴板
-                                 }
+                                 QApplication::clipboard()->setText(text);//复制短语到剪贴板
+                                 moniCtrlV();
                                  //根据之前获取到的状态，也就是说如果之前合成过键的抬起事件，那么合成对应键的按下事件
                                  if(wasLCtrlDown){ //左Ctrl键
                                      INPUT LCtrlDown={};LCtrlDown.type=INPUT_KEYBOARD;LCtrlDown.ki.wVk=VK_LCONTROL;
