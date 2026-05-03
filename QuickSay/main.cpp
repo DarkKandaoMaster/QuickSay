@@ -339,38 +339,6 @@ void recordCurrentFocus(QWidget * chuangkou,QWidget * shezhichuangkou){ //更新
     }
 }
 
-HWND GetFocusedControl(){ //获取当前拥有键盘焦点的控件的句柄
-#ifdef _WIN32
-    HWND foreground=GetForegroundWindow();//获取当前前台窗口
-    if(!foreground) return NULL;
-    DWORD threadId=GetWindowThreadProcessId(foreground,NULL);//获取当前前台窗口所属线程ID
-    GUITHREADINFO guiInfo;//声明GUITHREADINFO结构体，用于接收GUI线程的详细信息
-    guiInfo.cbSize=sizeof(GUITHREADINFO);//设置结构体的大小，这是调用GetGUIThreadInfo()的必要步骤
-    if(GetGUIThreadInfo(threadId,&guiInfo)){ //获取指定线程的GUI信息，包括焦点窗口、活动窗口、捕获窗口等
-        if(guiInfo.hwndFocus){ //如果该线程内存在拥有键盘焦点的控件
-            return guiInfo.hwndFocus;//返回这个控件的句柄
-        }
-    }
-    return foreground;//如果获取线程信息失败，或者该线程内不存在拥有键盘焦点的控件，那么返回前台窗口句柄作为兜底
-#endif
-}
-
-void sendTextDirectly(const QString & text){ //向焦点控件发送消息
-#ifdef _WIN32
-    HWND targetWindow=GetFocusedControl();//获取当前拥有键盘焦点的控件的句柄
-    if(!targetWindow) return ;
-    for(int i=0;i<text.length();i++){ //遍历文本中的每个字符，逐个发送
-        QChar ch=text.at(i);//获取当前字符
-        ushort unicode=ch.unicode();//将QChar转换为Unicode码点
-        if(unicode=='\n'){ //"\n"需要额外处理一下，不然输入不了
-            PostMessageW(targetWindow,0x0102,0x2028,0);
-            continue;
-        }
-        PostMessageW(targetWindow,0x0102,unicode,0);//向焦点控件发送消息，直接向焦点控件输入字符 //0x0102表示用于发送字符消息；0表示不需要设置重复次数和扫描码等信息
-    }
-#endif
-}
-
 void moniCtrlV(){ //模拟Ctrl+V
     INPUT inputs[4]={};//定义一个长度为4的数组，存放：左Ctrl键按下、V键按下、V键抬起、左Ctrl键抬起
     //左Ctrl键按下
