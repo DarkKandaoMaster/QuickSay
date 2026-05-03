@@ -42,6 +42,7 @@
 #include<QDesktopServices>
 #include<QUrl>
 #include<QAbstractNativeEventFilter>
+#include<QImage>
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
 
@@ -55,6 +56,7 @@ QListWidget * g_liebiao=nullptr;
 QTabBar * g_tabBar=nullptr;
 QLineEdit * g_search=nullptr;
 HHOOK g_keyboardHook=nullptr;
+int g_quickSayPressBlockCount=0;
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
     QJsonDocument doc(config);//把全局对象config转换成JSON文档
@@ -331,11 +333,404 @@ void moniCtrlV(){ //模拟Ctrl+V
     SendInput(4,inputs,sizeof(INPUT));
 }
 
+enum class QuickSayOutputActionType{
+    Text,
+    Press,
+    Sleep,
+    Image
+};
+
+struct QuickSayOutputAction{
+    QuickSayOutputActionType type=QuickSayOutputActionType::Text;
+    QString text;
+    QVector<WORD> modifiers;
+    WORD key=0;
+    int sleepMs=0;
+    QImage image;
+};
+
+struct QuickSayModifierSnapshot{
+    bool lCtrl=false;
+    bool rCtrl=false;
+    bool lAlt=false;
+    bool rAlt=false;
+    bool lShift=false;
+    bool rShift=false;
+    bool lMeta=false;
+    bool rMeta=false;
+};
+
+bool isExtendedVirtualKey(WORD vk){
+    switch(vk){
+    case VK_LEFT:
+    case VK_RIGHT:
+    case VK_UP:
+    case VK_DOWN:
+    case VK_HOME:
+    case VK_END:
+    case VK_PRIOR:
+    case VK_NEXT:
+    case VK_INSERT:
+    case VK_DELETE:
+    case VK_LWIN:
+    case VK_RWIN:
+        return true;
+    default:
+        return false;
+    }
+}
+
+void sendVirtualKey(WORD vk,bool keyUp=false){
+    INPUT input={};
+    input.type=INPUT_KEYBOARD;
+    input.ki.wVk=vk;
+    if(keyUp) input.ki.dwFlags|=KEYEVENTF_KEYUP;
+    if(isExtendedVirtualKey(vk)) input.ki.dwFlags|=KEYEVENTF_EXTENDEDKEY;
+    SendInput(1,&input,sizeof(INPUT));
+}
+
+QuickSayModifierSnapshot releasePressedPhysicalModifiers(){
+    QuickSayModifierSnapshot snapshot;
+    snapshot.lCtrl=( GetAsyncKeyState(VK_LCONTROL) & 0x8000 )!=0;
+    snapshot.rCtrl=( GetAsyncKeyState(VK_RCONTROL) & 0x8000 )!=0;
+    snapshot.lAlt=( GetAsyncKeyState(VK_LMENU) & 0x8000 )!=0;
+    snapshot.rAlt=( GetAsyncKeyState(VK_RMENU) & 0x8000 )!=0;
+    snapshot.lShift=( GetAsyncKeyState(VK_LSHIFT) & 0x8000 )!=0;
+    snapshot.rShift=( GetAsyncKeyState(VK_RSHIFT) & 0x8000 )!=0;
+    snapshot.lMeta=( GetAsyncKeyState(VK_LWIN) & 0x8000 )!=0;
+    snapshot.rMeta=( GetAsyncKeyState(VK_RWIN) & 0x8000 )!=0;
+
+    if(snapshot.lCtrl) sendVirtualKey(VK_LCONTROL,true);
+    if(snapshot.rCtrl) sendVirtualKey(VK_RCONTROL,true);
+    if(snapshot.lAlt) sendVirtualKey(VK_LMENU,true);
+    if(snapshot.rAlt) sendVirtualKey(VK_RMENU,true);
+    if(snapshot.lShift) sendVirtualKey(VK_LSHIFT,true);
+    if(snapshot.rShift) sendVirtualKey(VK_RSHIFT,true);
+    if(snapshot.lMeta) sendVirtualKey(VK_LWIN,true);
+    if(snapshot.rMeta) sendVirtualKey(VK_RWIN,true);
+    return snapshot;
+}
+
+void restorePressedPhysicalModifiers(const QuickSayModifierSnapshot & snapshot){
+    if(snapshot.lCtrl) sendVirtualKey(VK_LCONTROL);
+    if(snapshot.rCtrl) sendVirtualKey(VK_RCONTROL);
+    if(snapshot.lAlt) sendVirtualKey(VK_LMENU);
+    if(snapshot.rAlt) sendVirtualKey(VK_RMENU);
+    if(snapshot.lShift) sendVirtualKey(VK_LSHIFT);
+    if(snapshot.rShift) sendVirtualKey(VK_RSHIFT);
+    if(snapshot.lMeta) sendVirtualKey(VK_LWIN);
+    if(snapshot.rMeta) sendVirtualKey(VK_RWIN);
+}
+
+void beginQuickSayPressBlock(){
+    g_quickSayPressBlockCount++;
+}
+
+void endQuickSayPressBlock(){
+    if(g_quickSayPressBlockCount>0) g_quickSayPressBlockCount--;
+}
+
+void appendTextOutputAction(QVector<QuickSayOutputAction> & actions,const QString & text){
+    if(text.isEmpty()) return;
+    QuickSayOutputAction action;
+    action.type=QuickSayOutputActionType::Text;
+    action.text=text;
+    actions.append(action);
+}
+
+bool virtualKeyFromName(const QString & name,WORD & vk){
+    QString key=name.trimmed().toLower();
+    if(key=="enter" || key=="return"){
+        vk=VK_RETURN;
+        return true;
+    }
+    if(key=="tab"){
+        vk=VK_TAB;
+        return true;
+    }
+    if(key=="space"){
+        vk=VK_SPACE;
+        return true;
+    }
+    if(key=="esc" || key=="escape"){
+        vk=VK_ESCAPE;
+        return true;
+    }
+    if(key=="backspace"){
+        vk=VK_BACK;
+        return true;
+    }
+    if(key=="left"){
+        vk=VK_LEFT;
+        return true;
+    }
+    if(key=="right"){
+        vk=VK_RIGHT;
+        return true;
+    }
+    if(key=="up"){
+        vk=VK_UP;
+        return true;
+    }
+    if(key=="down"){
+        vk=VK_DOWN;
+        return true;
+    }
+    if(key=="ins" || key=="insert"){
+        vk=VK_INSERT;
+        return true;
+    }
+    if(key.size()==1){
+        QChar c=key.at(0).toUpper();
+        ushort u=c.unicode();
+        if(u>='A' && u<='Z'){
+            vk=static_cast<WORD>(u);
+            return true;
+        }
+        if(u>='0' && u<='9'){
+            vk=static_cast<WORD>(u);
+            return true;
+        }
+    }
+    if(key.size()>=2 && key.at(0)=='f'){
+        bool ok=false;
+        int n=key.mid(1).toInt(&ok);
+        if(ok && n>=1 && n<=24){
+            vk=static_cast<WORD>(VK_F1+n-1);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool parsePressCombo(const QString & combo,QuickSayOutputAction & action){
+    QStringList parts=combo.split('+',Qt::KeepEmptyParts);
+    if(parts.isEmpty()) return false;
+
+    bool hasCtrl=false;
+    bool hasAlt=false;
+    bool hasShift=false;
+    bool hasMeta=false;
+    bool hasPrimary=false;
+    WORD primaryKey=0;
+
+    for(const QString & rawPart:parts){
+        QString part=rawPart.trimmed();
+        if(part.isEmpty()) return false;
+        QString lower=part.toLower();
+        if(lower=="ctrl" || lower=="control"){
+            if(hasCtrl) return false;
+            hasCtrl=true;
+            continue;
+        }
+        if(lower=="alt"){
+            if(hasAlt) return false;
+            hasAlt=true;
+            continue;
+        }
+        if(lower=="shift"){
+            if(hasShift) return false;
+            hasShift=true;
+            continue;
+        }
+        if(lower=="meta" || lower=="win" || lower=="windows"){
+            if(hasMeta) return false;
+            hasMeta=true;
+            continue;
+        }
+
+        if(hasPrimary) return false;
+        if(!virtualKeyFromName(part,primaryKey)) return false;
+        hasPrimary=true;
+    }
+
+    if(!hasPrimary) return false;
+    action.type=QuickSayOutputActionType::Press;
+    if(hasCtrl) action.modifiers.append(VK_LCONTROL);
+    if(hasAlt) action.modifiers.append(VK_LMENU);
+    if(hasShift) action.modifiers.append(VK_LSHIFT);
+    if(hasMeta) action.modifiers.append(VK_LWIN);
+    action.key=primaryKey;
+    return true;
+}
+
+bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
+    QString trimmed=tag.trimmed();
+    if(trimmed.isEmpty()) return false;
+
+    QString lower=trimmed.toLower();
+    if(lower=="sleep"){
+        action.type=QuickSayOutputActionType::Sleep;
+        action.sleepMs=1000;
+        return true;
+    }
+
+    QStringList parts=trimmed.split(' ',Qt::SkipEmptyParts);
+    if(parts.size()==2 && parts.at(0).compare("sleep",Qt::CaseInsensitive)==0){
+        QString msText=parts.at(1);
+        if(!msText.endsWith("ms",Qt::CaseInsensitive)) return false;
+        msText.chop(2);
+        if(msText.isEmpty()) return false;
+        bool ok=false;
+        int sleepMs=msText.toInt(&ok);
+        if(!ok || sleepMs<0) return false;
+        action.type=QuickSayOutputActionType::Sleep;
+        action.sleepMs=sleepMs;
+        return true;
+    }
+
+    if(parts.size()==2 && parts.at(0).compare("press",Qt::CaseInsensitive)==0){
+        return parsePressCombo(parts.at(1),action);
+    }
+
+    if(trimmed.size()>3 &&
+       trimmed.left(3).compare("img",Qt::CaseInsensitive)==0 &&
+       trimmed.at(3).isSpace()){
+        QString path=trimmed.mid(4).trimmed();
+        if(   (path.startsWith('"') && path.endsWith('"')) ||
+              (path.startsWith('\'') && path.endsWith('\''))   ){
+            path=path.mid(1,path.size()-2);
+        }
+        QFileInfo info(path);
+        if(!info.isAbsolute() || !info.exists() || !info.isFile()) return false;
+        QImage image(path);
+        if(image.isNull()) return false;
+        action.type=QuickSayOutputActionType::Image;
+        action.image=image;
+        return true;
+    }
+
+    if(lower=="enter" || lower=="tab" || lower=="space" || lower=="esc" ||
+       lower=="backspace" || lower=="left" || lower=="right" ||
+       lower=="up" || lower=="down"){
+        return parsePressCombo(trimmed,action);
+    }
+
+    return false;
+}
+
+bool parseQuickSayOutputActions(const QString & text,QVector<QuickSayOutputAction> & actions){
+    QString buffer;
+    for(int i=0;i<text.size();){
+        if(text.at(i)=='\\' && i+1<text.size() && text.at(i+1)=='<'){
+            buffer.append('<');
+            i+=2;
+            continue;
+        }
+
+        if(text.at(i)=='<'){
+            int closeIndex=text.indexOf('>',i+1);
+            if(closeIndex<0) return false;
+            QuickSayOutputAction action;
+            if(!parseQuickSayTag(text.mid(i+1,closeIndex-i-1),action)) return false;
+            appendTextOutputAction(actions,buffer);
+            buffer.clear();
+            actions.append(action);
+            i=closeIndex+1;
+            continue;
+        }
+
+        buffer.append(text.at(i));
+        i++;
+    }
+    appendTextOutputAction(actions,buffer);
+    return true;
+}
+
+void sendPressAction(const QuickSayOutputAction & action){
+    for(WORD modifier:action.modifiers){
+        sendVirtualKey(modifier);
+    }
+    sendVirtualKey(action.key);
+    sendVirtualKey(action.key,true);
+    for(int i=action.modifiers.size()-1;i>=0;i--){
+        sendVirtualKey(action.modifiers.at(i),true);
+    }
+}
+
+class QuickSayOutputRunner:public QObject{
+private:
+    QVector<QuickSayOutputAction> actions_;
+    int index_=0;
+public:
+    QuickSayOutputRunner(const QVector<QuickSayOutputAction> & actions,QObject * parent=nullptr):QObject(parent),actions_(actions){}
+
+    void start(){
+        runCurrentAction();
+    }
+private:
+    void finishAction(){
+        if(index_>=actions_.size()){
+            deleteLater();
+            return;
+        }
+        QTimer::singleShot(50,this,[this](){
+            runCurrentAction();
+        });
+    }
+
+    void runCurrentAction(){
+        if(index_>=actions_.size()){
+            deleteLater();
+            return;
+        }
+
+        QuickSayOutputAction action=actions_.at(index_);
+        index_++;
+        switch(action.type){
+        case QuickSayOutputActionType::Text:{
+            QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
+            QApplication::clipboard()->setText(action.text);
+            moniCtrlV();
+            restorePressedPhysicalModifiers(snapshot);
+            finishAction();
+            break;
+        }
+        case QuickSayOutputActionType::Image:{
+            QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
+            QApplication::clipboard()->setImage(action.image);
+            moniCtrlV();
+            restorePressedPhysicalModifiers(snapshot);
+            finishAction();
+            break;
+        }
+        case QuickSayOutputActionType::Press:{
+            QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
+            beginQuickSayPressBlock();
+            sendPressAction(action);
+            restorePressedPhysicalModifiers(snapshot);
+            QTimer::singleShot(50,qApp,[](){
+                endQuickSayPressBlock();
+            });
+            finishAction();
+            break;
+        }
+        case QuickSayOutputActionType::Sleep:{
+            QTimer::singleShot(action.sleepMs,this,[this](){
+                finishAction();
+            });
+            break;
+        }
+        }
+    }
+};
+
+void startQuickSayOutput(const QString & text){
+    QVector<QuickSayOutputAction> actions;
+    if(!parseQuickSayOutputActions(text,actions)){
+        QuickSayOutputAction action;
+        action.type=QuickSayOutputActionType::Text;
+        action.text=text;
+        actions.append(action);
+    }
+    QuickSayOutputRunner * runner=new QuickSayOutputRunner(actions,qApp);
+    runner->start();
+}
+
 void shuchu(const QListWidgetItem * item,QWidget * chuangkou){
     QString text=item->data(Qt::UserRole).toString();//获取对应选项里的短语
     if(config["tudingflag"].toBool()==false) chuangkou->close();//如果没有钉住窗口，那么关闭窗口到托盘
-    QApplication::clipboard()->setText(text);//复制短语到剪贴板
-    moniCtrlV();
+    startQuickSayOutput(text);
 }
 
 void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,QApplication * a){ //先禁用当前已注册的QHotkey *对象，然后遍历列表中的所有项，为它们注册快捷键
@@ -356,83 +751,7 @@ void rebuildItemHotkeys(QListWidget & liebiao,QVector<QHotkey *> & itemHotkeys,Q
             QObject::connect(hk,&QHotkey::activated,
                              [it](){
                                  QString text=it->data(Qt::UserRole).toString();//获取该短语项里的短语
-                                 //获取当前Ctrl、Alt、Shift、Meta键的物理按下状态，如果按下，那么合成对应键的抬起事件。不然模拟输入Ctrl+V时要出问题；同时这样也能实现用户按住快捷键时连续输入短语
-                                 bool wasLCtrlDown=( GetAsyncKeyState(VK_LCONTROL) & 0x8000 )!=0;//获取当前左Ctrl键的物理按下状态
-                                 bool wasRCtrlDown=( GetAsyncKeyState(VK_RCONTROL) & 0x8000 )!=0;//获取当前右Ctrl键的物理按下状态
-                                 if(wasLCtrlDown){
-                                     INPUT LCtrlUp={};LCtrlUp.type=INPUT_KEYBOARD;LCtrlUp.ki.wVk=VK_LCONTROL;LCtrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&LCtrlUp,sizeof(INPUT));
-                                 }
-                                 if(wasRCtrlDown){
-                                     INPUT RCtrlUp={};RCtrlUp.type=INPUT_KEYBOARD;RCtrlUp.ki.wVk=VK_RCONTROL;RCtrlUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&RCtrlUp,sizeof(INPUT));
-                                 }
-                                 bool wasLAltDown=( GetAsyncKeyState(VK_LMENU) & 0x8000 )!=0;//获取当前左Alt键的物理按下状态，如果按下则为true
-                                 bool wasRAltDown=( GetAsyncKeyState(VK_RMENU) & 0x8000 )!=0;//获取当前右Alt键的物理按下状态
-                                 if(wasLAltDown){
-                                     INPUT LAltUp={};LAltUp.type=INPUT_KEYBOARD;LAltUp.ki.wVk=VK_LMENU;LAltUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&LAltUp,sizeof(INPUT));
-                                 }
-                                 if(wasRAltDown){
-                                     INPUT RAltUp={};RAltUp.type=INPUT_KEYBOARD;RAltUp.ki.wVk=VK_RMENU;RAltUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&RAltUp,sizeof(INPUT));
-                                 }
-                                 bool wasLShiftDown=( GetAsyncKeyState(VK_LSHIFT) & 0x8000 )!=0;//获取当前左Shift键的物理按下状态
-                                 bool wasRShiftDown=( GetAsyncKeyState(VK_RSHIFT) & 0x8000 )!=0;//获取当前右Shift键的物理按下状态
-                                 if(wasLShiftDown){
-                                     INPUT LShiftUp={};LShiftUp.type=INPUT_KEYBOARD;LShiftUp.ki.wVk=VK_LSHIFT;LShiftUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&LShiftUp,sizeof(INPUT));
-                                 }
-                                 if(wasRShiftDown){
-                                     INPUT RShiftUp={};RShiftUp.type=INPUT_KEYBOARD;RShiftUp.ki.wVk=VK_RSHIFT;RShiftUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&RShiftUp,sizeof(INPUT));
-                                 }
-                                 bool wasLMetaDown=( GetAsyncKeyState(VK_LWIN) & 0x8000 )!=0;//获取当前左Meta键的物理按下状态
-                                 bool wasRMetaDown=( GetAsyncKeyState(VK_RWIN) & 0x8000 )!=0;//获取当前右Meta键的物理按下状态
-                                 if(wasLMetaDown){
-                                     INPUT LMetaUp={};LMetaUp.type=INPUT_KEYBOARD;LMetaUp.ki.wVk=VK_LWIN;LMetaUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&LMetaUp,sizeof(INPUT));
-                                 }
-                                 if(wasRMetaDown){
-                                     INPUT RMetaUp={};RMetaUp.type=INPUT_KEYBOARD;RMetaUp.ki.wVk=VK_RWIN;RMetaUp.ki.dwFlags=KEYEVENTF_KEYUP;
-                                     SendInput(1,&RMetaUp,sizeof(INPUT));
-                                 }
-                                 //输出该短语项里的短语
-                                 QApplication::clipboard()->setText(text);//复制短语到剪贴板
-                                 moniCtrlV();
-                                 //根据之前获取到的状态，也就是说如果之前合成过键的抬起事件，那么合成对应键的按下事件
-                                 if(wasLCtrlDown){ //左Ctrl键
-                                     INPUT LCtrlDown={};LCtrlDown.type=INPUT_KEYBOARD;LCtrlDown.ki.wVk=VK_LCONTROL;
-                                     SendInput(1,&LCtrlDown,sizeof(INPUT));
-                                 }
-                                 if(wasRCtrlDown){ //右Ctrl键
-                                     INPUT RCtrlDown={};RCtrlDown.type=INPUT_KEYBOARD;RCtrlDown.ki.wVk=VK_RCONTROL;
-                                     SendInput(1,&RCtrlDown,sizeof(INPUT));
-                                 }
-                                 if(wasLAltDown){ //左Alt键
-                                     INPUT LAltDown={};LAltDown.type=INPUT_KEYBOARD;LAltDown.ki.wVk=VK_LMENU;
-                                     SendInput(1,&LAltDown,sizeof(INPUT));
-                                 }
-                                 if(wasRAltDown){ //右Alt键
-                                     INPUT RAltDown={};RAltDown.type=INPUT_KEYBOARD;RAltDown.ki.wVk=VK_RMENU;
-                                     SendInput(1,&RAltDown,sizeof(INPUT));
-                                 }
-                                 if(wasLShiftDown){ //左Shift键
-                                     INPUT LShiftDown={};LShiftDown.type=INPUT_KEYBOARD;LShiftDown.ki.wVk=VK_LSHIFT;
-                                     SendInput(1,&LShiftDown,sizeof(INPUT));
-                                 }
-                                 if(wasRShiftDown){ //右Shift键
-                                     INPUT RShiftDown={};RShiftDown.type=INPUT_KEYBOARD;RShiftDown.ki.wVk=VK_RSHIFT;
-                                     SendInput(1,&RShiftDown,sizeof(INPUT));
-                                 }
-                                 if(wasLMetaDown){ //左Meta键
-                                     INPUT LMetaDown={};LMetaDown.type=INPUT_KEYBOARD;LMetaDown.ki.wVk=VK_LWIN;
-                                     SendInput(1,&LMetaDown,sizeof(INPUT));
-                                 }
-                                 if(wasRMetaDown){ //右Meta键
-                                     INPUT RMetaDown={};RMetaDown.type=INPUT_KEYBOARD;RMetaDown.ki.wVk=VK_RWIN;
-                                     SendInput(1,&RMetaDown,sizeof(INPUT));
-                                 }
+                                 startQuickSayOutput(text);
                              }
                             );
             itemHotkeys.append(hk);//把QHotkey *对象hk添加到动态数组中
@@ -487,6 +806,7 @@ void moveCurrentVisibleItem(int direction){
 }
 
 bool hasQuickSayBlockingWindow(){
+    if(g_quickSayPressBlockCount>0) return true;
     if(QApplication::activeModalWidget() || QApplication::activePopupWidget()) return true;
     return (g_shezhichuangkou && g_shezhichuangkou->isVisible()) ||
            (g_tianjiachuangkou && g_tianjiachuangkou->isVisible()) ||
