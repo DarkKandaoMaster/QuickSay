@@ -977,6 +977,23 @@ void moveCurrentVisibleItem(int direction){
     }
 }
 
+void selectVisibleItemAtEdge(int direction){
+    if(!g_liebiao) return;
+    int itemCount=g_liebiao->count();
+    if(itemCount<=0) return;
+
+    int row=(direction>0)?0:itemCount-1;
+    while(row>=0 && row<itemCount){
+        QListWidgetItem * item=g_liebiao->item(row);
+        if(item && !item->isHidden()){
+            g_liebiao->setCurrentItem(item);
+            g_liebiao->scrollToItem(item,QAbstractItemView::PositionAtCenter);
+            return;
+        }
+        row+=direction;
+    }
+}
+
 bool hasQuickSayBlockingWindow(){
     if(g_quickSayPressBlockCount>0) return true;
     if(QApplication::activeModalWidget() || QApplication::activePopupWidget()) return true;
@@ -1019,6 +1036,12 @@ bool handleQuickSayBrowseKey(DWORD vkCode){
         return true;
     case VK_DOWN:
         moveCurrentVisibleItem(1);
+        return true;
+    case VK_HOME:
+        selectVisibleItemAtEdge(1);
+        return true;
+    case VK_END:
+        selectVisibleItemAtEdge(-1);
         return true;
     default:
         break;
