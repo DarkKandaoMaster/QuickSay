@@ -1334,7 +1334,7 @@ protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
         if(obj==search && event->type()==QEvent::FocusOut && g_searchMode){
             QTimer::singleShot(0,[](){
-                if(g_searchMode && (!g_search || !g_search->hasFocus())){
+                if(g_searchMode && (!g_search || !g_search->hasFocus()) && (!pchuangkou || !pchuangkou->isActiveWindow())){
                     leaveSearchMode(false);
                 }
             });
@@ -1937,6 +1937,9 @@ int main(int argc, char *argv[]){
     //当按下liebiao中的某个选项时，就调用shuchu函数
     QObject::connect(&liebiao,&QListWidget::itemClicked,
                      [&](QListWidgetItem * item){
+                         if(g_searchMode){
+                             leaveSearchMode();
+                         }
                          shuchu(item,&chuangkou);
                      }
                     );
