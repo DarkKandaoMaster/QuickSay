@@ -636,7 +636,7 @@ bool parseSleepDurationMs(const QString & text,int & sleepMs){
         duration.chop(1);
     }
     else{
-        return false;
+        unit="s";
     }
 
     if(duration.isEmpty()) return false;
