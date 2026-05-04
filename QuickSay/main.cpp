@@ -955,11 +955,19 @@ QListWidgetItem * visibleItemByBadgeIndex(int targetIndex){
 
 void moveCurrentVisibleItem(int direction){
     if(!g_liebiao) return;
+    int itemCount=g_liebiao->count();
+    if(itemCount<=0) return;
+
     int currentRow=g_liebiao->currentRow();
     int row=currentRow;
-    while(true){
+    if(row<0 || row>=itemCount){
+        row=(direction>0)?-1:itemCount;
+    }
+    for(int step=0;step<itemCount;step++){
         row+=direction;
-        if(row<0 || row>=g_liebiao->count()) return;
+        if(row<0) row=itemCount-1;
+        else if(row>=itemCount) row=0;
+
         QListWidgetItem * item=g_liebiao->item(row);
         if(item && !item->isHidden()){
             g_liebiao->setCurrentItem(item);
@@ -1415,18 +1423,14 @@ protected:
                 return true;
             }
             if(   keyEvent->key()==Qt::Key_Up && chuangkou->isActiveWindow()   ){ //如果按下的是上方向键，并且焦点在主窗口
-                if(search->hasFocus()){ //如果焦点在搜索框
-                    liebiao->setFocus();//给列表焦点
-                    liebiao->setCurrentRow(   qMax(0,liebiao->currentRow()-1)   );//设置列表选中短语项为 当前选中短语项上边的那个短语项
-                    return true;
-                }
+                if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
+                moveCurrentVisibleItem(-1);//设置列表选中短语项为 当前选中短语项上边的那个短语项；如果已经在开头，那么循环到最后一个可见短语项
+                return true;
             }
             if(   keyEvent->key()==Qt::Key_Down && chuangkou->isActiveWindow()   ){ //如果按下的是下方向键，并且焦点在主窗口
-                if(search->hasFocus()){ //如果焦点在搜索框
-                    liebiao->setFocus();//给列表焦点
-                    liebiao->setCurrentRow(   qMin(liebiao->count()-1,liebiao->currentRow()+1)   );//设置列表选中短语项为 当前选中短语项下边的那个短语项
-                    return true;
-                }
+                if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
+                moveCurrentVisibleItem(1);//设置列表选中短语项为 当前选中短语项下边的那个短语项；如果已经在最后，那么循环到第一个可见短语项
+                return true;
             }
 
             if( chuangkou->isActiveWindow() && !search->hasFocus() ){ //如果焦点在主窗口并且焦点不在搜索框
