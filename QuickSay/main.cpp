@@ -1062,8 +1062,30 @@ bool isValidHotkey(const QKeySequence & seq,QVector<QHotkey *> & itemHotkeys_,QK
     }
 }
 
-QString advancedInputHelpText(){
-    return R"HELP(规则：
+class NoEscCloseWidget:public QWidget{
+public:
+    using QWidget::QWidget;
+protected:
+    void keyPressEvent(QKeyEvent * event) override{
+        if(event->key()==Qt::Key_Escape){
+            event->accept();
+            return ;
+        }
+        QWidget::keyPressEvent(event);
+    }
+};
+
+void showAdvancedInputHelp(QWidget & parent){
+    NoEscCloseWidget * helpWindow=new NoEscCloseWidget();
+    helpWindow->setAttribute(Qt::WA_DeleteOnClose);
+    helpWindow->setWindowTitle("如何更高级地输入？");
+    helpWindow->setWindowIcon(parent.windowIcon());
+    helpWindow->setFixedSize(620,520);
+
+    QPlainTextEdit * helpEdit=new QPlainTextEdit(helpWindow);
+    helpEdit->setReadOnly(true);
+    helpEdit->setPlainText(
+R"(规则：
 <img 图片绝对路径>
 <press Enter>
 <press Return> #等价于<press Enter>
@@ -1105,32 +1127,8 @@ Shift
 Meta #也可写作Win或Windows
 
 
-同时语法上支持转义，比如用户真的想输入<Enter>，可以写：“\<Enter>”)HELP";
-}
-
-class NoEscCloseWidget:public QWidget{
-public:
-    using QWidget::QWidget;
-protected:
-    void keyPressEvent(QKeyEvent * event) override{
-        if(event->key()==Qt::Key_Escape){
-            event->accept();
-            return ;
-        }
-        QWidget::keyPressEvent(event);
-    }
-};
-
-void showAdvancedInputHelp(QWidget & parent){
-    NoEscCloseWidget * helpWindow=new NoEscCloseWidget();
-    helpWindow->setAttribute(Qt::WA_DeleteOnClose);
-    helpWindow->setWindowTitle("如何更高级地输入？");
-    helpWindow->setWindowIcon(parent.windowIcon());
-    helpWindow->setFixedSize(620,520);
-
-    QPlainTextEdit * helpEdit=new QPlainTextEdit(helpWindow);
-    helpEdit->setReadOnly(true);
-    helpEdit->setPlainText(advancedInputHelpText());
+同时语法上支持转义，比如用户真的想输入<Enter>，可以写：“\<Enter>”)"
+    );
     helpEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
     helpEdit->setGeometry(0,0,620,520);
 
