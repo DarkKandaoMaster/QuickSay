@@ -741,7 +741,7 @@ private:
             deleteLater();
             return;
         }
-        QTimer::singleShot(   config["delay"].toInt()   ,this,[this](){ //动作之间等多久
+        QTimer::singleShot(   config["delay"].toInt()   ,[&](){ //动作之间等多久
             runCurrentAction();
         });
     }
@@ -776,14 +776,14 @@ private:
             beginQuickSayPressBlock();
             sendPressAction(action);
             restorePressedPhysicalModifiers(snapshot);
-            QTimer::singleShot(   config["delay"].toInt()   ,qApp,[](){ //程序在模拟按键后的动作延迟时间内，临时阻止 QuickSay 自己的键盘浏览逻辑处理这些按键，避免你模拟出来的按键又被 QuickSay 当成用户输入捕获。 //虽然这两个config["delay"].toInt()延迟语义不完全一样。但改成这样更方便管理
+            QTimer::singleShot(   config["delay"].toInt()   ,[&](){ //程序在模拟按键后的动作延迟时间内，临时阻止 QuickSay 自己的键盘浏览逻辑处理这些按键，避免你模拟出来的按键又被 QuickSay 当成用户输入捕获。 //虽然这两个config["delay"].toInt()延迟语义不完全一样。但改成这样更方便管理
                 endQuickSayPressBlock();
+                finishAction();
             });
-            finishAction();
             break;
         }
         case QuickSayOutputActionType::Sleep:{
-            QTimer::singleShot(action.sleepMs,this,[this](){
+            QTimer::singleShot(action.sleepMs,[&](){
                 finishAction();
             });
             break;
