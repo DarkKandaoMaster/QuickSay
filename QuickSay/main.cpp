@@ -1122,7 +1122,7 @@ bool isValidHotkey(const QKeySequence & seq,QVector<QHotkey *> & itemHotkeys_,QK
         return true;//如果遍历完成后都没有return，那么返回true
     }
     else{
-        QMessageBox::warning(edit_,"快捷键不合规","快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift/Meta）和一个主键  \n或者是一个单独的F1~F11、Insert  ");
+        QMessageBox::warning(edit_,"快捷键不合规","快捷键必须包含至少一个修饰键（Ctrl/Alt/Shift/Meta）和一个主键；  \n或者是一个单独的F1~F11、Insert。  ");
         return false;
     }
 }
@@ -2243,6 +2243,7 @@ int main(int argc, char *argv[]){
                      [&](int value){
                          config["default_item_height"]=value;
                          saveConfig(configPath);
+                         QMessageBox::information(&shezhichuangkou,"提示","该设置名称为“默认短语项高度”，因此只影响新建标签时的短语项高度的值。  \n如果要修改某个标签的短语项高度，请右键修改该标签。  ");
                      }
                     );
 
