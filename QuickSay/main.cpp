@@ -998,7 +998,7 @@ void showMainWindowNoActivate(QWidget & chuang){
     applyMainWindowNoActivate();
     ShowWindow(hwnd,SW_SHOWNOACTIVATE);
     HWND insertAfter=config["zhiding"].toBool()?HWND_TOPMOST:HWND_TOP;
-    SetWindowPos(hwnd,insertAfter,chuang.x(),chuang.y(),chuang.width(),chuang.height(),SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetWindowPos(hwnd,insertAfter,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     startQuickSayKeyboardHook();
 }
 
