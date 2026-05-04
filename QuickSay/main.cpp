@@ -1369,7 +1369,7 @@ private:
 public:
     PhraseItemToolTipFilter(QListWidget * list,QObject * parent=nullptr):QObject(parent),list_(list){
         showTimer_.setSingleShot(true);
-        showTimer_.setInterval(700);
+        showTimer_.setInterval(250);//当鼠标悬停在短语项上时，延迟250毫秒后显示鼠标悬停提示
         QObject::connect(&showTimer_,&QTimer::timeout,[&](){
             showToolTipForLastItem();
         });
