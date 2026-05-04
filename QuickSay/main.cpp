@@ -1127,7 +1127,17 @@ Shift
 Meta #也可写作Win或Windows
 
 
-同时语法上支持转义，比如用户真的想输入<Enter>，可以写：“\<Enter>”)"
+同时语法上支持转义，比如用户真的想输入<Enter>，可以写：“\<Enter>”
+
+如果语法不合规，那么原样输出
+
+例如：
+“请详细讲述一下<Enter>相关<sleep>知识。”
+于是在Ctrl+V输入“请详细讲述一下”之后，会模拟输入一个回车，Ctrl+V输入“相关”之后，会停顿1秒，最后Ctrl+V输入“知识。”
+全程执行完当前步骤后，停顿 config["delay"].toInt() ms，再安排下一步骤。
+
+
+提示一下用户，因为QQ、微信等软件图片上传需要时间，所以如果要使用<img><Enter>标签，那么最好在后面加一个<sleep>)"
     );
     helpEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
     helpEdit->setGeometry(0,0,620,520);
