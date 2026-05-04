@@ -1195,8 +1195,12 @@ Meta #也可写作Win或Windows
 
 如果语法不合规，那么原样输出
 
-例如：
-“请详细讲述一下<Enter>相关<sleep>知识。”
+例如我使用QuickSay在QQ里输入以下短语：
+“请详细讲述一下<Enter>相关<img D:\图片.png>知<sleep>识。”
+DarkKandaoMaster是最强的！！【【【【【待处理
+
+于是QuickSay就会在输入“请详细讲述一下”后，模拟输入一个回车，发送消息
+
 于是在Ctrl+V输入“请详细讲述一下”之后，会模拟输入一个回车，Ctrl+V输入“相关”之后，会停顿1秒，最后Ctrl+V输入“知识。”
 全程执行完当前步骤后，停顿 config["delay"].toInt() ms，再安排下一步骤。
 
