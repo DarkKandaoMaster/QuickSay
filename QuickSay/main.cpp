@@ -64,6 +64,8 @@ QLineEdit * g_search=nullptr;
 HHOOK g_keyboardHook=nullptr;
 int g_quickSayPressBlockCount=0;
 bool g_quickSayIsOutputting=false;
+bool g_searchMode=false;
+HWND g_lastForegroundBeforeSearch=nullptr;
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
     QJsonDocument doc(config);//把全局对象config转换成JSON文档
@@ -884,11 +886,57 @@ void applyMainWindowNoActivate(){
     SetWindowLongPtr(hwnd,GWL_EXSTYLE,exStyle | WS_EX_NOACTIVATE);
 }
 
+void setMainWindowNoActivateEnabled(bool enabled){
+    if(!pchuangkou) return;
+    HWND hwnd=(HWND)pchuangkou->winId();
+    LONG_PTR exStyle=GetWindowLongPtr(hwnd,GWL_EXSTYLE);
+    if(enabled){
+        exStyle|=WS_EX_NOACTIVATE;
+    }
+    else{
+        exStyle&=~WS_EX_NOACTIVATE;
+    }
+    SetWindowLongPtr(hwnd,GWL_EXSTYLE,exStyle);
+    SetWindowPos(hwnd,nullptr,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+}
+
 void stopQuickSayKeyboardHook(){
     if(g_keyboardHook){
         UnhookWindowsHookEx(g_keyboardHook);
         g_keyboardHook=nullptr;
     }
+}
+
+void startQuickSayKeyboardHook();
+
+void enterSearchMode(){
+    if(!pchuangkou || !g_search) return;
+
+    g_searchMode=true;
+    g_lastForegroundBeforeSearch=GetForegroundWindow();
+    stopQuickSayKeyboardHook();
+    setMainWindowNoActivateEnabled(false);
+
+    if(!pchuangkou->isVisible()) pchuangkou->show();
+    pchuangkou->raise();
+    pchuangkou->activateWindow();
+    g_search->setFocus(Qt::ShortcutFocusReason);
+    g_search->selectAll();
+}
+
+void leaveSearchMode(bool restorePreviousFocus=true){
+    if(!pchuangkou || !g_search) return;
+
+    g_searchMode=false;
+    g_search->clearFocus();
+    setMainWindowNoActivateEnabled(true);
+    applyMainWindowNoActivate();
+    startQuickSayKeyboardHook();
+
+    if(restorePreviousFocus && g_lastForegroundBeforeSearch && IsWindow(g_lastForegroundBeforeSearch)){
+        SetForegroundWindow(g_lastForegroundBeforeSearch);
+    }
+    g_lastForegroundBeforeSearch=nullptr;
 }
 
 QListWidgetItem * visibleItemByBadgeIndex(int targetIndex){
@@ -929,6 +977,7 @@ bool hasQuickSayBlockingWindow(){
 }
 
 bool handleQuickSayBrowseKey(DWORD vkCode){
+    if(g_searchMode) return false;
     if(!pchuangkou || !pchuangkou->isVisible()) return false;
     if(hasQuickSayBlockingWindow()) return false;
 
@@ -938,6 +987,9 @@ bool handleQuickSayBrowseKey(DWORD vkCode){
                            (GetAsyncKeyState(VK_RWIN)&0x8000);
 
     switch(vkCode){
+    case VK_TAB:
+        enterSearchMode();
+        return true;
     case VK_ESCAPE:
         pchuangkou->close();
         return true;
@@ -987,12 +1039,13 @@ LRESULT CALLBACK quickSayKeyboardProc(int code,WPARAM wParam,LPARAM lParam){
 }
 
 void startQuickSayKeyboardHook(){
-    if(!g_keyboardHook){
+    if(!g_searchMode && !g_keyboardHook){
         g_keyboardHook=SetWindowsHookExW(WH_KEYBOARD_LL,quickSayKeyboardProc,GetModuleHandleW(nullptr),0);
     }
 }
 
 void showMainWindowNoActivate(QWidget & chuang){
+    g_searchMode=false;
     chuang.setAttribute(Qt::WA_ShowWithoutActivating,true);
     applyMainWindowNoActivate();
     if(!chuang.isVisible()) chuang.show();
@@ -1010,7 +1063,16 @@ public:
         if(!pchuangkou) return false;
         MSG * msg=reinterpret_cast<MSG *>(message);
         if(msg->message==WM_MOUSEACTIVATE){
+            if(g_searchMode) return false;
             HWND mainHwnd=(HWND)pchuangkou->winId();
+            if(g_search){
+                HWND searchHwnd=(HWND)g_search->winId();
+                if(msg->hwnd==searchHwnd || IsChild(searchHwnd,msg->hwnd)){
+                    enterSearchMode();
+                    *result=MA_ACTIVATE;
+                    return true;
+                }
+            }
             if(msg->hwnd==mainHwnd || IsChild(mainHwnd,msg->hwnd)){
                 *result=MA_NOACTIVATE;
                 return true;
@@ -1270,8 +1332,43 @@ public:
     MyEventFilter(QWidget * main,QWidget * tianjia,QWidget * xiugai,QPushButton * tjqx,QPushButton * xgqx,QListWidget * l,QTabBar * t,QLineEdit * s):chuangkou(main),tianjiachuangkou(tianjia),xiugaichuangkou(xiugai),tianjiaquxiao(tjqx),xiugaiquxiao(xgqx),liebiao(l),tabBar(t),search(s){}
 protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
+        if(obj==search && event->type()==QEvent::FocusOut && g_searchMode){
+            QTimer::singleShot(0,[](){
+                if(g_searchMode && (!g_search || !g_search->hasFocus())){
+                    leaveSearchMode(false);
+                }
+            });
+        }
         if(event->type()==QEvent::KeyPress){ //如果是键盘按下事件
             QKeyEvent * keyEvent=static_cast<QKeyEvent *>(event);
+            if(g_searchMode && search->hasFocus()){
+                if(keyEvent->key()==Qt::Key_Escape){
+                    if(!search->text().isEmpty()) search->clear();
+                    leaveSearchMode();
+                    return true;
+                }
+                if(keyEvent->key()==Qt::Key_Tab){
+                    leaveSearchMode();
+                    return true;
+                }
+                if(keyEvent->key()==Qt::Key_Return || keyEvent->key()==Qt::Key_Enter){
+                    QListWidgetItem * item=liebiao->currentItem();
+                    leaveSearchMode();
+                    if(item){
+                        shuchu(item,chuangkou);
+                    }
+                    return true;
+                }
+                if(keyEvent->key()==Qt::Key_Up){
+                    moveCurrentVisibleItem(-1);
+                    return true;
+                }
+                if(keyEvent->key()==Qt::Key_Down){
+                    moveCurrentVisibleItem(1);
+                    return true;
+                }
+                return false;
+            }
             if( keyEvent->key()==Qt::Key_Tab && chuangkou->isActiveWindow() ){ //如果按下的是Tab键，并且焦点在主窗口
                 if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
                 else search->setFocus();//如果焦点不在搜索框，那么给搜索框焦点
