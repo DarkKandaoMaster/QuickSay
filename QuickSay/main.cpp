@@ -764,11 +764,13 @@ private:
             break;
         }
         case QuickSayOutputActionType::Image:{
-            QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
-            setClipboardImageFileWin32(action);
-            moniCtrlV();
-            restorePressedPhysicalModifiers(snapshot);
-            finishAction();
+            QTimer::singleShot(1000,[&,action](){ //在微信输出图片时，有时会出现一个bug，经测试，在<img>标签前面加一个<sleep>能有效解决这个bug。于是我就实现了个：当用户输入<img>标签后，先延迟1秒，再来执行<img>标签的操作
+                QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
+                setClipboardImageFileWin32(action);
+                moniCtrlV();
+                restorePressedPhysicalModifiers(snapshot);
+                finishAction();
+            });
             break;
         }
         case QuickSayOutputActionType::Press:{
