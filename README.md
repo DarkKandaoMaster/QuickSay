@@ -1,6 +1,6 @@
 # QuickSay ---一款强大的快捷短语软件（还是用一个比较好？）
 ### 欢迎来测~ヾ(≧▽≦*)o
-###### 该软件只支持Windows 10/11，目前也不打算支持macOS/Linux/Windows 7
+###### 该软件目前只支持Windows 10/11，不打算支持macOS/Linux/Windows 7
 
 
 ## QuickSay是干什么的？
