@@ -45,6 +45,7 @@
 #include<QImage>
 #include<QStandardPaths>
 #include<QUuid>
+#include<climits>
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
 
@@ -623,6 +624,34 @@ bool parsePressCombo(const QString & combo,QuickSayOutputAction & action){
     return true;
 }
 
+bool parseSleepDurationMs(const QString & text,int & sleepMs){
+    QString duration=text.trimmed();
+    QString unit;
+    if(duration.endsWith("ms",Qt::CaseInsensitive)){
+        unit="ms";
+        duration.chop(2);
+    }
+    else if(duration.endsWith("s",Qt::CaseInsensitive)){
+        unit="s";
+        duration.chop(1);
+    }
+    else{
+        return false;
+    }
+
+    if(duration.isEmpty()) return false;
+    bool ok=false;
+    int value=duration.toInt(&ok);
+    if(!ok || value<0) return false;
+
+    if(unit=="s"){
+        if(value>INT_MAX/1000) return false;
+        value*=1000;
+    }
+    sleepMs=value;
+    return true;
+}
+
 bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
     QString trimmed=tag.trimmed();
     if(trimmed.isEmpty()) return false;
@@ -636,13 +665,8 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
 
     QStringList parts=trimmed.split(' ',Qt::SkipEmptyParts);
     if(parts.size()==2 && parts.at(0).compare("sleep",Qt::CaseInsensitive)==0){
-        QString msText=parts.at(1);
-        if(!msText.endsWith("ms",Qt::CaseInsensitive)) return false;
-        msText.chop(2);
-        if(msText.isEmpty()) return false;
-        bool ok=false;
-        int sleepMs=msText.toInt(&ok);
-        if(!ok || sleepMs<0) return false;
+        int sleepMs=0;
+        if(!parseSleepDurationMs(parts.at(1),sleepMs)) return false;
         action.type=QuickSayOutputActionType::Sleep;
         action.sleepMs=sleepMs;
         return true;
