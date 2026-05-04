@@ -43,6 +43,8 @@
 #include<QUrl>
 #include<QAbstractNativeEventFilter>
 #include<QImage>
+#include<QStandardPaths>
+#include<QUuid>
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
 
@@ -335,6 +337,13 @@ void moniCtrlV(){ //模拟Ctrl+V
     SendInput(4,inputs,sizeof(INPUT));
 }
 
+struct QuickSayDropFiles{
+    DWORD pFiles;
+    POINT pt;
+    BOOL fNC;
+    BOOL fWide;
+};
+
 enum class QuickSayOutputActionType{
     Text,
     Press,
@@ -349,7 +358,64 @@ struct QuickSayOutputAction{
     WORD key=0;
     int sleepMs=0;
     QImage image;
+    QString imagePath;
 };
+
+bool setClipboardFileWin32(const QString & filePath){
+    QFileInfo info(filePath);
+    if(!info.exists() || !info.isFile()) return false;
+
+    QString nativePath=QDir::toNativeSeparators(info.absoluteFilePath());
+    int pathBytes=(nativePath.size()+2)*sizeof(wchar_t);
+    SIZE_T totalSize=sizeof(QuickSayDropFiles)+pathBytes;
+    HGLOBAL hMem=GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT,totalSize);
+    if(!hMem) return false;
+
+    BYTE * ptr=(BYTE*)GlobalLock(hMem);
+    if(!ptr){
+        GlobalFree(hMem);
+        return false;
+    }
+
+    QuickSayDropFiles * dropFiles=(QuickSayDropFiles*)ptr;
+    dropFiles->pFiles=sizeof(QuickSayDropFiles);
+    dropFiles->fWide=TRUE;
+    memcpy(ptr+sizeof(QuickSayDropFiles),nativePath.utf16(),pathBytes-sizeof(wchar_t));
+    GlobalUnlock(hMem);
+
+    if(!OpenClipboard(nullptr)){
+        GlobalFree(hMem);
+        return false;
+    }
+
+    EmptyClipboard();
+    bool ok=SetClipboardData(CF_HDROP,hMem)!=nullptr;
+    CloseClipboard();
+    if(!ok) GlobalFree(hMem);
+    return ok;
+}
+
+QString saveImageToClipboardTempFile(const QImage & image){
+    if(image.isNull()) return QString();
+
+    QString dirPath=QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if(dirPath.isEmpty()) dirPath=QDir::tempPath()+"/QuickSay";
+
+    QDir dir(dirPath);
+    if(!dir.exists() && !dir.mkpath(".")) return QString();
+
+    QString path=dir.filePath("clipboard-image-"+QUuid::createUuid().toString(QUuid::WithoutBraces)+".png");
+    if(!image.save(path,"PNG")) return QString();
+    return path;
+}
+
+bool setClipboardImageFileWin32(const QuickSayOutputAction & action){
+    if(!action.imagePath.isEmpty() && setClipboardFileWin32(action.imagePath)) return true;
+
+    QString tempPath=saveImageToClipboardTempFile(action.image);
+    if(tempPath.isEmpty()) return false;
+    return setClipboardFileWin32(tempPath);
+}
 
 struct QuickSayModifierSnapshot{
     bool lCtrl=false;
@@ -599,6 +665,7 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
         if(image.isNull()) return false;
         action.type=QuickSayOutputActionType::Image;
         action.image=image;
+        action.imagePath=info.absoluteFilePath();
         return true;
     }
 
@@ -698,7 +765,7 @@ private:
         }
         case QuickSayOutputActionType::Image:{
             QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
-            QApplication::clipboard()->setImage(action.image);
+            setClipboardImageFileWin32(action);
             moniCtrlV();
             restorePressedPhysicalModifiers(snapshot);
             finishAction();
