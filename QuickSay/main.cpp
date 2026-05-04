@@ -306,6 +306,7 @@ bool showTabDialog(QWidget & parent,const QString & title,QString & tabName,int 
     QHBoxLayout btnLayout;//创建一个水平布局，用于放置“确定”和“取消”按钮
     QPushButton btnCancel("取消",&dialog);//创建一个文本为“取消”的按钮
     QPushButton btnOk("确定",&dialog);//创建一个文本为“确定”的按钮
+    btnOk.setDefault(true);//把“确定”设为默认按钮，这样对话框里按回车时行为和点击“确定”一致
     btnLayout.addStretch();//在按钮左侧添加一个弹簧，把两个按钮挤到窗口的右下角，看起来更美观
     btnLayout.addWidget(&btnCancel);//把“取消”按钮放入水平布局
     btnLayout.addWidget(&btnOk);//把“确定”按钮放入水平布局
