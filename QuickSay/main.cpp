@@ -35,6 +35,7 @@
 #include<QVector>
 #include<QTabBar>
 #include<QWheelEvent>
+#include<QMouseEvent>
 #include<QInputDialog>
 #include<QStyledItemDelegate>
 #include<QPainter>
@@ -45,6 +46,7 @@
 #include<QAbstractNativeEventFilter>
 #include<QImage>
 #include<QStandardPaths>
+#include<QToolTip>
 #include<QUuid>
 #include<climits>
 #include<windows.h>
@@ -1356,6 +1358,75 @@ protected:
     }
 };
 
+//为短语列表单独处理悬停提示，避免无焦点主窗口下Qt默认的item tooltip不触发
+class PhraseItemToolTipFilter:public QObject{
+private:
+    QListWidget * list_;
+    QTimer showTimer_;
+    QPoint lastViewportPos_;
+    QPoint lastGlobalPos_;
+    QListWidgetItem * lastItem_=nullptr;
+public:
+    PhraseItemToolTipFilter(QListWidget * list,QObject * parent=nullptr):QObject(parent),list_(list){
+        showTimer_.setSingleShot(true);
+        showTimer_.setInterval(700);
+        QObject::connect(&showTimer_,&QTimer::timeout,[&](){
+            showToolTipForLastItem();
+        });
+    }
+protected:
+    bool eventFilter(QObject * obj,QEvent * event) override{
+        if(!list_ || obj!=list_->viewport()) return QObject::eventFilter(obj,event);
+
+        if(event->type()==QEvent::MouseMove){
+            QMouseEvent * mouseEvent=static_cast<QMouseEvent *>(event);
+            QListWidgetItem * item=list_->itemAt(mouseEvent->pos());
+            if(item && !item->isHidden() && !item->toolTip().isEmpty()){
+                if(item!=lastItem_ || mouseEvent->pos()!=lastViewportPos_){
+                    QToolTip::hideText();
+                    lastItem_=item;
+                    lastViewportPos_=mouseEvent->pos();
+                    lastGlobalPos_=list_->viewport()->mapToGlobal(mouseEvent->pos());
+                    showTimer_.start();
+                }
+            }
+            else{
+                hideToolTip();
+            }
+            return false;
+        }
+
+        if(event->type()==QEvent::ToolTip){
+            if(showToolTipForLastItem()) return true;
+            hideToolTip();
+            return true;
+        }
+
+        if(event->type()==QEvent::Leave ||
+           event->type()==QEvent::Wheel ||
+           event->type()==QEvent::MouseButtonPress ||
+           event->type()==QEvent::MouseButtonRelease){
+            hideToolTip();
+        }
+
+        return QObject::eventFilter(obj,event);
+    }
+private:
+    bool showToolTipForLastItem(){
+        if(!list_ || !lastItem_ || lastItem_->isHidden() || lastItem_->toolTip().isEmpty()) return false;
+        QRect itemRect=list_->visualItemRect(lastItem_);
+        if(!itemRect.contains(lastViewportPos_)) return false;
+        QToolTip::showText(lastGlobalPos_,lastItem_->toolTip(),list_->viewport(),itemRect);
+        return true;
+    }
+
+    void hideToolTip(){
+        showTimer_.stop();
+        lastItem_=nullptr;
+        QToolTip::hideText();
+    }
+};
+
 //为快捷键输入框tianjia_kjjkuang、xiugai_kjjkuang自定义一个事件过滤器类，用于拦截它们的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
 class KjjHotkeyEditFilter:public QObject{
 private:
@@ -1755,6 +1826,9 @@ int main(int argc, char *argv[]){
     liebiao.setItemDelegate(new BadgeDelegate(&liebiao));//给列表设置BadgeDelegate委托类对象，实现绘制角标
     liebiao.setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);//开启像素级滚动
     liebiao.verticalScrollBar()->setSingleStep(config["gundong"].toInt());//设置滚动条滚动速度
+    liebiao.setMouseTracking(true);
+    liebiao.viewport()->setMouseTracking(true);
+    liebiao.viewport()->installEventFilter(new PhraseItemToolTipFilter(&liebiao,&liebiao));
     QVector<QHotkey *> itemHotkeys;//创建一个动态数组，保存所有短语项对应的QHotkey *对象，并且保证它们的下标（0~n-1）与短语项的行号一一对应。因此如果对应短语项的快捷键字符串为空字符串，那么对应QHotkey *对象为空指针
     rebuildItemHotkeys(liebiao,itemHotkeys,&a);//程序启动时为liebiao中的短语项注册快捷键
     //实现liebiao选项拖动排序
