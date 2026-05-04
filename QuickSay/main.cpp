@@ -192,7 +192,7 @@ void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取d
         };
         addDefaultItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加短语：点右上角加号\n修改/删除：右键短语\n排序：拖动短语");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
         addDefaultItem("点击短语：输入对应短语\n鼠标悬停：查看完整短语\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处短语");
-        addDefaultItem("右键标签：添加/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
+        addDefaultItem("右键标签：新建/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
         addDefaultItem("感谢使用QuickSay！\n如果觉得好用记得去Github点个Star！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
         saveListToJson(liebiao,dataPath);
     }
@@ -232,7 +232,7 @@ void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json
                     int item_height=obj["item_height"].toInt();//取出"item_height"字段，即短语项高度
                     //兼容旧版本
                     if(item_height==0) item_height=config["default_item_height"].toInt();//如果"item_height"为0，那么使用默认短语项高度
-                    tabBar.addTab(tab);//把标签添加到标签栏
+                    tabBar.addTab(tab);//把标签新建到标签栏
                     tabBar.setTabData(tabBar.count()-1,item_height);//把短语项高度存到对应标签的tabData中。因为目前我们只需要保存一个“短语项高度”，所以为了图省事，我们直接把这个值塞进了tabData。如果以后要加字段，那么可以往tabData里塞一个字典
                 }
             }
@@ -243,7 +243,7 @@ void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json
         tabBar.setTabData(0,70);
         tabBar.addTab("短语2");
         tabBar.setTabData(1,config["default_item_height"].toInt());
-        tabBar.addTab("右键可添加标签");
+        tabBar.addTab("右键可新建标签");
         tabBar.setTabData(2,config["default_item_height"].toInt());
         saveTabToJson(tabBar,tabPath);
     }
@@ -280,7 +280,7 @@ void filterListByTab(QListWidget & liebiao,const QString & currentTab,const QStr
     }
 }
 
-bool isTabNameDuplicate(QTabBar & tabBar,const QString & tabName){ //判断添加/修改标签时用户给出的标签名称是否重复
+bool isTabNameDuplicate(QTabBar & tabBar,const QString & tabName){ //判断新建/修改标签时用户给出的标签名称是否重复
     for(int i=0;i<tabBar.count();i++){ //遍历标签栏中的所有标签
         if(   tabBar.tabText(i)   ==tabName) return true;//如果名称重复，那么返回true
     }
@@ -1989,7 +1989,7 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-    liebiao.setStyleSheet(QString("QListWidget::item{ height: %1px; }").arg(   tabBar.tabData(tabBar.currentIndex()).toInt()   ));//程序启动时根据当前选中标签取出并应用短语项高度（注意程序启动时默认选中的是第一个标签。这是因为：在空标签栏里添加第一个标签（loadTabFromJson是一个个添加标签的），Qt就会自动选中该标签）
+    liebiao.setStyleSheet(QString("QListWidget::item{ height: %1px; }").arg(   tabBar.tabData(tabBar.currentIndex()).toInt()   ));//程序启动时根据当前选中标签取出并应用短语项高度（注意程序启动时默认选中的是第一个标签。这是因为loadTabFromJson是在空标签栏里一个个新建标签的，所以Qt会选中第一个标签）
     filterListByTab(liebiao,tabBar.tabText(tabBar.currentIndex()),search.text());//程序启动时根据当前选中标签和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
     for(int i=0;i<liebiao.count();i++){ //然后选中没有隐藏的第一个短语项
         if(!liebiao.item(i)->isHidden()){ //如果该短语项没有隐藏
@@ -2017,18 +2017,18 @@ int main(int argc, char *argv[]){
     QObject::connect(&tabBar,&QWidget::customContextMenuRequested,
                      [&](const QPoint & pos){
                          int index=tabBar.tabAt(pos);//根据点击位置，返回该位置处标签的索引（如果点到空白区域则返回-1）
-                         if(index<0){ //如果点到空白区域，那么弹出菜单，上面有添加标签一个选项 //虽然它返回的是-1，但因为C++标准库很多函数“未找到”时返回的都是负数，而不仅仅是-1，所以这里还是填<0更让我放心一点
+                         if(index<0){ //如果点到空白区域，那么弹出菜单，上面有新建标签一个选项 //虽然它返回的是-1，但因为C++标准库很多函数“未找到”时返回的都是负数，而不仅仅是-1，所以这里还是填<0更让我放心一点
                              QMenu menu2;
-                             QAction tianjia("添加标签",&menu2);
+                             QAction tianjia("新建标签",&menu2);
                              menu2.addAction(&tianjia);
                              QAction * selectedAction=menu2.exec(tabBar.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，等待用户选择一个QAction
-                             if(selectedAction==&tianjia){ //如果用户选了“添加标签”
+                             if(selectedAction==&tianjia){ //如果用户选了“新建标签”
                                  QString tabName="";
                                  int itemHeight=config["default_item_height"].toInt();//取出config里的默认短语项高度，用作弹窗输入框里的默认值
-                                 bool ok=showTabDialog(chuangkou,"添加标签",tabName,itemHeight);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight里面存储的就是用户输入的数据
+                                 bool ok=showTabDialog(chuangkou,"新建标签",tabName,itemHeight);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight里面存储的就是用户输入的数据
                                  if( ok && !tabName.isEmpty() ){ //如果用户选了“确认”并且输入的标签名称不为空
                                      if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户输入的标签名称不重复
-                                         tabBar.addTab(tabName);//在标签栏末尾添加新标签
+                                         tabBar.addTab(tabName);//在标签栏末尾新建标签
                                          tabBar.setTabData(tabBar.count()-1,itemHeight);//把用户输入的短语项高度存到该标签的tabData中
                                          tabBar.setCurrentIndex(tabBar.count()-1);//设置选中标签为该标签
                                          saveTabToJson(tabBar,tabPath);
@@ -2040,22 +2040,22 @@ int main(int argc, char *argv[]){
                                  }
                              }
                          }
-                         else{ //如果点到某个标签，那么弹出菜单，上面有在当前标签后添加标签、修改标签、删除标签三个选项
+                         else{ //如果点到某个标签，那么弹出菜单，上面有在当前标签后新建标签、修改标签、删除标签三个选项
                              QMenu menu2;
-                             QAction tianjia("在当前标签后添加标签",&menu2);
+                             QAction tianjia("在当前标签后新建标签",&menu2);
                              menu2.addAction(&tianjia);
                              QAction xiugai("修改标签",&menu2);
                              menu2.addAction(&xiugai);
                              QAction shanchu("删除标签",&menu2);
                              menu2.addAction(&shanchu);
                              QAction * selectedAction=menu2.exec(tabBar.mapToGlobal(pos));//在鼠标点击的位置弹出菜单，等待用户选择一个QAction
-                             if(selectedAction==&tianjia){ //如果用户选了“在当前标签后添加标签”
+                             if(selectedAction==&tianjia){ //如果用户选了“在当前标签后新建标签”
                                  QString tabName="";
                                  int itemHeight=config["default_item_height"].toInt();//取出config里的默认短语项高度，用作弹窗输入框里的默认值
-                                 bool ok=showTabDialog(chuangkou,"添加标签",tabName,itemHeight);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight里面存储的就是用户输入的数据
+                                 bool ok=showTabDialog(chuangkou,"新建标签",tabName,itemHeight);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight里面存储的就是用户输入的数据
                                  if( ok && !tabName.isEmpty() ){ //如果用户选了“确认”并且输入的标签名称不为空
                                      if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户输入的标签名称不重复
-                                         tabBar.insertTab(index+1,tabName);//在当前标签后添加新标签
+                                         tabBar.insertTab(index+1,tabName);//在当前标签后新建标签
                                          tabBar.setTabData(index+1,itemHeight);//把用户输入的短语项高度存到该标签的tabData中
                                          tabBar.setCurrentIndex(index+1);//设置选中标签为该标签
                                          saveTabToJson(tabBar,tabPath);
