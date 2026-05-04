@@ -59,6 +59,7 @@ QTabBar * g_tabBar=nullptr;
 QLineEdit * g_search=nullptr;
 HHOOK g_keyboardHook=nullptr;
 int g_quickSayPressBlockCount=0;
+bool g_quickSayIsOutputting=false;
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
     QJsonDocument doc(config);//把全局对象config转换成JSON文档
@@ -736,9 +737,14 @@ public:
         runCurrentAction();
     }
 private:
+    void finishOutput(){
+        g_quickSayIsOutputting=false;
+        deleteLater();
+    }
+
     void finishAction(){
         if(index_>=actions_.size()){
-            deleteLater();
+            finishOutput();
             return;
         }
         QTimer::singleShot(   config["delay"].toInt()   ,[&](){ //动作之间等多久
@@ -748,7 +754,7 @@ private:
 
     void runCurrentAction(){
         if(index_>=actions_.size()){
-            deleteLater();
+            finishOutput();
             return;
         }
 
@@ -795,6 +801,8 @@ private:
 };
 
 void startQuickSayOutput(const QString & text){
+    if(g_quickSayIsOutputting) return;
+
     QVector<QuickSayOutputAction> actions;
     if(!parseQuickSayOutputActions(text,actions)){
         QuickSayOutputAction action;
@@ -802,6 +810,7 @@ void startQuickSayOutput(const QString & text){
         action.text=text;
         actions.append(action);
     }
+    g_quickSayIsOutputting=true;
     QuickSayOutputRunner * runner=new QuickSayOutputRunner(actions,qApp);
     runner->start();
 }
