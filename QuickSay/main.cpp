@@ -1280,7 +1280,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
       <li>如果真的想输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
-      <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为 QQ、微信上传图片需要一点时间。</li>
+      <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为QQ、微信等软件发送图片需要时间。之后把这句话删掉</li>
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
 
