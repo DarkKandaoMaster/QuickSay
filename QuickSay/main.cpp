@@ -670,7 +670,7 @@ bool parseSleepDurationMs(const QString & text,int & sleepMs){
     else{
         double seconds=duration.toDouble(&ok);
         if(!ok || seconds<0 || seconds>INT_MAX/1000.0) return false;
-        value=static_cast<int>(seconds*1000.0+0.5);
+        value=static_cast<int>(seconds*1000.0+0.5);//四舍五入
     }
     sleepMs=value;
     return true;
