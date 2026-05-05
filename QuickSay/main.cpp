@@ -17,6 +17,7 @@
 #include<QHotkey>
 #include<QPushButton>
 #include<QPlainTextEdit>
+#include<QTextBrowser>
 #include<QJsonArray>
 #include<QJsonObject>
 #include<QJsonDocument>
@@ -1195,41 +1196,100 @@ void showAdvancedInputHelp(QWidget & parent){
     helpWindow->setWindowIcon(parent.windowIcon());
     helpWindow->setFixedSize(620,520);
 
-    QPlainTextEdit * helpEdit=new QPlainTextEdit(helpWindow);
+    QTextBrowser * helpEdit=new QTextBrowser(helpWindow);
     helpEdit->setReadOnly(true);
-    helpEdit->setPlainText(
-R"(高级输入：在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片。
+    helpEdit->setHtml(
+R"(
+<html>
+<head>
+<style>
+body{
+    color:#222222;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+    font-size:14px;
+    line-height:1.55;
+}
+h2{
+    margin:0 0 10px 0;
+    font-size:20px;
+}
+h3{
+    margin:18px 0 8px 0;
+    font-size:16px;
+}
+p{
+    margin:6px 0;
+}
+table{
+    border-collapse:collapse;
+    width:100%;
+}
+th,td{
+    border:1px solid #dddddd;
+    padding:6px 8px;
+    text-align:left;
+    vertical-align:top;
+}
+th{
+    background:#f3f5f7;
+}
+code{
+    color:#9a3412;
+    background:#fff3e8;
+    padding:1px 4px;
+    border-radius:3px;
+    font-family:"Consolas","Microsoft YaHei",monospace;
+}
+pre{
+    background:#f7f7f7;
+    border:1px solid #dddddd;
+    padding:8px;
+    font-family:"Consolas","Microsoft YaHei",monospace;
+    white-space:pre-wrap;
+}
+ol{
+    margin-top:6px;
+    padding-left:22px;
+}
+</style>
+</head>
+<body>
+<h2>高级输入</h2>
+<p>在短语中插入标签，让 QuickSay 除了输入文字，还能按键、等待、粘贴图片。</p>
 
-常用写法：
+<h3>常用写法</h3>
+<table>
+<tr><th>功能</th><th>写法</th><th>效果</th></tr>
+<tr><td>换行/发送</td><td><code>&lt;Enter&gt;</code></td><td>模拟按下回车</td></tr>
+<tr><td>按 Tab</td><td><code>&lt;Tab&gt;</code></td><td>模拟按下 Tab</td></tr>
+<tr><td>按方向键</td><td><code>&lt;Left&gt;</code> / <code>&lt;Right&gt;</code> / <code>&lt;Up&gt;</code> / <code>&lt;Down&gt;</code></td><td>模拟方向键</td></tr>
+<tr><td>等待</td><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
+<tr><td>等待指定时间</td><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
+<tr><td>等待指定秒数</td><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
+<tr><td>粘贴图片</td><td><code>&lt;img D:\图片.png&gt;</code></td><td>把图片放入剪贴板并粘贴</td></tr>
+<tr><td>组合快捷键</td><td><code>&lt;press Ctrl+A&gt;</code></td><td>模拟 Ctrl+A</td></tr>
+<tr><td>单个按键</td><td><code>&lt;press F5&gt;</code></td><td>模拟 F5</td></tr>
+</table>
 
-功能        写法                    效果
-换行/发送   <Enter>                 模拟按下回车
-按 Tab      <Tab>                   模拟按下 Tab
-按方向键    <Left>/<Right>/<Up>/<Down>  模拟方向键
-等待        <sleep>                 等待 1 秒
-等待指定时间 <sleep 500ms>           等待 500 毫秒
-等待指定秒数 <sleep 2s>              等待 2 秒
-粘贴图片    <img D:\图片.png>        把图片放入剪贴板并粘贴
-组合快捷键  <press Ctrl+A>           模拟 Ctrl+A
-单个按键    <press F5>              模拟 F5
+<h3>示例</h3>
+<pre>你好&lt;Enter&gt;这是第二行
 
-示例：
+请看这张图：&lt;img D:\图片.png&gt;&lt;sleep&gt;&lt;Enter&gt;
 
-你好<Enter>这是第二行
+&lt;press Ctrl+A&gt;&lt;press Backspace&gt;重新输入的内容</pre>
 
-请看这张图：<img D:\图片.png><sleep><Enter>
-
-<press Ctrl+A><press Backspace>重新输入的内容
-
-补充规则：
-
-1. 普通文字会直接输入。
-2. 标签不符合规则时，会按原文输出。
-3. 如果想真的输入 <Enter>，写成 \<Enter>。
-4. 图片后面如果要立刻按 Enter，建议加 <sleep>，因为 QQ、微信上传图片需要一点时间。
-5. 高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。)"
+<h3>补充规则</h3>
+<ol>
+<li>普通文字会直接输入。</li>
+<li>标签不符合规则时，会按原文输出。</li>
+<li>如果想真的输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
+<li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为 QQ、微信上传图片需要一点时间。</li>
+<li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
+</ol>
+</body>
+</html>)"
     );
-    helpEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
+    helpEdit->setLineWrapMode(QTextEdit::NoWrap);
     helpEdit->setGeometry(0,0,620,520);
 
     helpWindow->move(parent.x()+30,parent.y()+30);
