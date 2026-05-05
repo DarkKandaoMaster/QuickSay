@@ -1648,7 +1648,12 @@ class BadgeDelegate:public QStyledItemDelegate{ //自定义一个委托类，用
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
     void paint(QPainter * painter,const QStyleOptionViewItem & option, const QModelIndex & index) const override{ //重写绘制函数，用于自定义显示效果
-        QStyledItemDelegate::paint(painter,option,index);//先调用默认的绘制方法，画好背景和文字
+        QStyleOptionViewItem opt(option);
+        QVariant foreground=index.data(Qt::ForegroundRole);
+        if(   (opt.state & QStyle::State_Selected)   &&   foreground.canConvert<QBrush>()   ){
+            opt.palette.setBrush(QPalette::HighlightedText,foreground.value<QBrush>());//选中时仍使用短语项自己的字体颜色
+        }
+        QStyledItemDelegate::paint(painter,opt,index);//先调用默认的绘制方法，画好背景和文字
         QString badgeText=index.data(Qt::UserRole+4).toString();//通过数据模型，从当前短语项的Qt::UserRole+4中取出角标字符
         if(!badgeText.isEmpty()){ //如果角标不为空 //【【【注：想修改角标样式在这里修改】】】
             painter->save();//保存画笔状态
@@ -1794,7 +1799,6 @@ int main(int argc, char *argv[]){
     QListWidget::item:selected{
         background-color: #e5f3ff;                  /*鼠标选中短语项背景：偏蓝一点的白色*/
         border-color: #0078d4;                      /*鼠标选中短语项边框：蓝色*/
-        color: #005a9e;                             /*鼠标选中短语项字体颜色：深蓝色*/
     }
     QListWidget::item:selected:hover{
         background-color: #cce7ff;                  /*鼠标选中且悬停，短语项背景：浅蓝色*/
