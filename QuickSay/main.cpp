@@ -1264,7 +1264,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
       <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
       <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
-      <tr><td><code>&lt;press F5&gt;</code></td><td>按单个按键</td></tr>
+      <tr><td><code>&lt;press A&gt;</code></td><td>按单个按键</td></tr>
       <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
