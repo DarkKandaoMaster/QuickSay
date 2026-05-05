@@ -1258,16 +1258,14 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>常用写法</h3>
     <table>
-      <tr><th>功能</th><th>写法</th><th>效果</th></tr>
-      <tr><td>粘贴图片</td><td><code>&lt;img 图片路径&gt;</code></td><td>把图片放入剪贴板并粘贴</td></tr>
-      <tr><td>换行/发送</td><td><code>&lt;Enter&gt;</code></td><td>模拟按下回车</td></tr>
-      <tr><td>按 Tab</td><td><code>&lt;Tab&gt;</code></td><td>模拟按下 Tab</td></tr>
-      <tr><td>按方向键</td><td><code>&lt;Left&gt;</code> / <code>&lt;Right&gt;</code> / <code>&lt;Up&gt;</code> / <code>&lt;Down&gt;</code></td><td>模拟方向键</td></tr>
-      <tr><td>等待</td><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
-      <tr><td>等待指定时间</td><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
-      <tr><td>等待指定秒数</td><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
-      <tr><td>组合快捷键</td><td><code>&lt;press Ctrl+A&gt;</code></td><td>模拟 Ctrl+A</td></tr>
-      <tr><td>单个按键</td><td><code>&lt;press F5&gt;</code></td><td>模拟 F5</td></tr>
+      <tr><th>写法</th><th>效果</th></tr>
+      <tr><td><code>&lt;img 图片路径&gt;</code></td><td>粘贴图片</td></tr>
+      <tr><td><code>&lt;Enter&gt;</code></td><td>按回车</td></tr>
+      <tr><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
+      <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
+      <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
+      <tr><td><code>&lt;press F5&gt;</code></td><td>按单个按键</td></tr>
+      <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
     <h3>示例</h3>
@@ -1285,6 +1283,12 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为 QQ、微信上传图片需要一点时间。</li>
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
+
+    <table>
+      <tr><th>写法</th><th>效果</th></tr>
+      <tr><td><code>&lt;Tab&gt;</code></td><td>按Tab</td></tr>
+      <tr><td><code>&lt;Left&gt;</code>/<code>&lt;Right&gt;</code>/<code>&lt;Up&gt;</code>/<code>&lt;Down&gt;</code></td><td>按方向键</td></tr>
+    </table>
   </body>
 </html>
     )");
