@@ -1204,7 +1204,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <style>
       body{
         color:#222222;
-        font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+        font-family:"Microsoft YaHei","Microsoft YaHei UI","Source Han Sans SC","Segoe UI","PingFang SC",Arial,sans-serif;
         font-size:14px;
         line-height:1.55;
       }
@@ -1253,8 +1253,8 @@ void showAdvancedInputHelp(QWidget & parent){
     </style>
   </head>
   <body>
-    <h2>高级输入</h2>
-    <p>在短语中插入标签，让 QuickSay 除了输入文字，还能按键、等待、粘贴图片。</p>
+    <h2>什么是高级输入？</h2>
+    <p>在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片。</p>
 
     <h3>常用写法</h3>
     <table>
@@ -1281,7 +1281,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <ol>
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
-      <li>如果想真的输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
+      <li>如果真的想输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
       <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为 QQ、微信上传图片需要一点时间。</li>
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
