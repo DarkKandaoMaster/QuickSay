@@ -1259,13 +1259,13 @@ void showAdvancedInputHelp(QWidget & parent){
     <h3>常用写法</h3>
     <table>
       <tr><th>功能</th><th>写法</th><th>效果</th></tr>
+      <tr><td>粘贴图片</td><td><code>&lt;img 图片路径&gt;</code></td><td>把图片放入剪贴板并粘贴</td></tr>
       <tr><td>换行/发送</td><td><code>&lt;Enter&gt;</code></td><td>模拟按下回车</td></tr>
       <tr><td>按 Tab</td><td><code>&lt;Tab&gt;</code></td><td>模拟按下 Tab</td></tr>
       <tr><td>按方向键</td><td><code>&lt;Left&gt;</code> / <code>&lt;Right&gt;</code> / <code>&lt;Up&gt;</code> / <code>&lt;Down&gt;</code></td><td>模拟方向键</td></tr>
       <tr><td>等待</td><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
       <tr><td>等待指定时间</td><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
       <tr><td>等待指定秒数</td><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
-      <tr><td>粘贴图片</td><td><code>&lt;img D:\图片.png&gt;</code></td><td>把图片放入剪贴板并粘贴</td></tr>
       <tr><td>组合快捷键</td><td><code>&lt;press Ctrl+A&gt;</code></td><td>模拟 Ctrl+A</td></tr>
       <tr><td>单个按键</td><td><code>&lt;press F5&gt;</code></td><td>模拟 F5</td></tr>
     </table>
