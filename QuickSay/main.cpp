@@ -1264,16 +1264,14 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><th>写法</th><th>效果</th></tr>
       <tr><td><code>&lt;img 图片路径&gt;</code></td><td>粘贴图片</td></tr>
       <tr><td><code>&lt;Enter&gt;</code></td><td>按回车</td></tr>
-      <tr><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
-      <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
-      <tr><td><code>&lt;sleep 0.2s&gt;</code></td><td>等待 200 毫秒</td></tr>
-      <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
+      <tr><td><code>&lt;sleep&gt;</code></td><td>等待1秒</td></tr>
+      <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待2秒</td></tr>
       <tr><td><code>&lt;press A&gt;</code></td><td>按单个按键</td></tr>
       <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
     <h3>示例</h3>
-    <pre>你好&lt;Enter&gt;这是第二行
+    <pre>感谢使用QuickSay！&lt;Enter&gt;此时就发送消息成功了
 
     请看这张图：&lt;img D:\图片.png&gt;&lt;sleep&gt;&lt;Enter&gt;
 
@@ -1292,6 +1290,8 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><th>写法</th><th>效果</th></tr>
       <tr><td><code>&lt;Tab&gt;</code></td><td>按Tab</td></tr>
       <tr><td><code>&lt;Left&gt;</code>/<code>&lt;Right&gt;</code>/<code>&lt;Up&gt;</code>/<code>&lt;Down&gt;</code></td><td>按方向键</td></tr>
+      <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>等待500毫秒</td></tr>
+      <tr><td><code>&lt;sleep 0.2s&gt;</code></td><td>等待0.2毫秒</td></tr>
     </table>
   </body>
 </html>
