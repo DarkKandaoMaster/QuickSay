@@ -2434,7 +2434,8 @@ int main(int argc, char *argv[]){
                     );
 
     //创建tianjiachuangkou窗口
-    QString currentTabName="";//记录用户点击右上角加号时当前标签的名称
+    QString currentTabName="";//记录用户添加短语时使用的标签名称
+    int insertAfterRow=-1;//记录新增短语要插入到哪一行后面；-1表示追加到列表末尾
     QWidget tianjiachuangkou;
     g_tianjiachuangkou=&tianjiachuangkou;
     tianjiachuangkou.setWindowTitle("QuickSay-添加");
@@ -2485,7 +2486,12 @@ int main(int argc, char *argv[]){
                              newItem->setData(Qt::UserRole+2,currentTabName);//把记录的标签名称存到newItem的Qt::UserRole+2
                              newItem->setData(Qt::UserRole+3,seq.toString());//把用户输入的快捷键字符串存到对应短语项的Qt::UserRole+3
                              updateItemDisplay(newItem);//更新对应短语项的显示
-                             liebiao.addItem(newItem);//把newItem添加到列表
+                             if(insertAfterRow>=0 && insertAfterRow<liebiao.count()){ //如果是通过右键“在当前短语后添加短语”打开的添加窗口
+                                 liebiao.insertItem(insertAfterRow+1,newItem);//把newItem插入到当前短语后面
+                             }
+                             else{
+                                 liebiao.addItem(newItem);//把newItem添加到列表末尾
+                             }
                              saveListToJson(liebiao,dataPath);//添加后写入列表内容到data.json
                              rebuildItemHotkeys(liebiao,itemHotkeys,&a);//添加后为liebiao中的短语项注册快捷键
                              filterListByTab(liebiao,tabBar.tabText(tabBar.currentIndex()),search.text());//添加后根据当前选中标签和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
@@ -2509,6 +2515,7 @@ int main(int argc, char *argv[]){
                          tianjia_beizhukuang.clear();
                          tianjia_kjjkuang.clear();
                          currentTabName=tabBar.tabText(tabBar.currentIndex());//记录用户点击右上角加号时当前标签的名称
+                         insertAfterRow=-1;//右上角加号仍然追加到列表末尾
                          tianjiachuangkou.move(config["tianjiachuangkou_x"].toInt(),config["tianjiachuangkou_y"].toInt());//把tianjiachuangkou移动到记录的位置
                          xianshi(tianjiachuangkou);
                          tianjiakuang.setFocus();//把焦点给到tianjiakuang，而不是其他控件
@@ -2616,6 +2623,8 @@ int main(int argc, char *argv[]){
     QMenu menu1;
     QAction xiugai("修改",&menu1);
     menu1.addAction(&xiugai);
+    QAction tianjia_after("在当前短语后添加短语",&menu1);
+    menu1.addAction(&tianjia_after);
     QAction shanchu("删除",&menu1);
     menu1.addAction(&shanchu);
     liebiao.setContextMenuPolicy(Qt::CustomContextMenu);//为liebiao设置自定义右键菜单
@@ -2637,6 +2646,16 @@ int main(int argc, char *argv[]){
                                  xianshi(xiugaichuangkou);
                                  xiugaikuang.setFocus();//把焦点给到xiugaikuang，而不是其他控件
                                  xiugaikuang.selectAll();//全选输入框里的所有文本
+                             }
+                             else if(selectedAction==&tianjia_after){ //如果用户选了“在当前短语后添加短语”
+                                 tianjiakuang.clear();
+                                 tianjia_beizhukuang.clear();
+                                 tianjia_kjjkuang.clear();
+                                 currentTabName=item->data(Qt::UserRole+2).toString();//新短语使用被右键短语所在的标签
+                                 insertAfterRow=liebiao.row(item);//记录要插入到哪一行后面
+                                 tianjiachuangkou.move(config["tianjiachuangkou_x"].toInt(),config["tianjiachuangkou_y"].toInt());//把tianjiachuangkou移动到记录的位置
+                                 xianshi(tianjiachuangkou);
+                                 tianjiakuang.setFocus();//把焦点给到tianjiakuang，而不是其他控件
                              }
                              else if(selectedAction==&shanchu){ //如果用户选了“删除”
                                  delete item;
