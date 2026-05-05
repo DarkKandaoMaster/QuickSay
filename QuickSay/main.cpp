@@ -662,12 +662,15 @@ bool parseSleepDurationMs(const QString & text,int & sleepMs){
 
     if(duration.isEmpty()) return false;
     bool ok=false;
-    int value=duration.toInt(&ok);
-    if(!ok || value<0) return false;
-
-    if(unit=="s"){
-        if(value>INT_MAX/1000) return false;
-        value*=1000;
+    int value=0;
+    if(unit=="ms"){
+        value=duration.toInt(&ok);
+        if(!ok || value<0) return false;
+    }
+    else{
+        double seconds=duration.toDouble(&ok);
+        if(!ok || seconds<0 || seconds>INT_MAX/1000.0) return false;
+        value=static_cast<int>(seconds*1000.0+0.5);
     }
     sleepMs=value;
     return true;
@@ -1263,6 +1266,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;Enter&gt;</code></td><td>按回车</td></tr>
       <tr><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
       <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
+      <tr><td><code>&lt;sleep 0.2s&gt;</code></td><td>等待 200 毫秒</td></tr>
       <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
       <tr><td><code>&lt;press A&gt;</code></td><td>按单个按键</td></tr>
       <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
