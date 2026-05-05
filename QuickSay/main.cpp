@@ -49,6 +49,7 @@
 #include<QImage>
 #include<QStandardPaths>
 #include<QToolTip>
+#include<QFontDatabase>
 #include<QUuid>
 #include<climits>
 #include<windows.h>
@@ -1706,6 +1707,7 @@ protected:
 
 int main(int argc, char *argv[]){
     SingleApplication a(argc, argv);//将QApplication替换为SingleApplication。写了这句代码，就可以确保程序只有一个实例正在运行了。如果尝试启动第二个实例，那么会终止并通知第一个实例
+    // QFontDatabase::addApplicationFont(QCoreApplication::applicationDirPath()+"/fonts/SourceHanSansSC-Regular-2.otf");//程序启动后注册 /fonts/SourceHanSansSC-Regular-2.otf
     //当用户启动程序时，如果程序已经有实例正在运行，那么触发
     QObject::connect(&a,&SingleApplication::instanceStarted,
                      [](){
@@ -1720,7 +1722,7 @@ int main(int argc, char *argv[]){
     /*====================全局基础样式====================*/
     QWidget{
         background-color: #f3f3f3;                                                      /*主背景色：浅灰色*/
-        font-family: "Segoe UI","Microsoft YaHei UI","PingFang SC",Arial,sans-serif;    /*字体优先级：Segoe UI（Windows系统默认UI字体）>微软雅黑UI版本>PingFang SC（苹果系统默认字体）>Arial>系统默认无衬线字体*/
+        font-family: "Microsoft YaHei UI","Source Han Sans SC","Segoe UI","PingFang SC",Arial,sans-serif;     /*字体优先级： 微软雅黑UI版本 > Source Han Sans SC（思源黑体） > Segoe UI > PingFang SC（苹果系统默认字体） > Arial > 系统默认无衬线字体 */
         font-size: 9pt;                                                                 /*全局字体大小：9磅*/
         font-weight: 400;                                                               /*全局字体粗细*/
         color: #323130;                                                                 /*全局字体颜色：深灰色*/
