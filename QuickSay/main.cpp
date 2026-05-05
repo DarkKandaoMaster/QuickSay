@@ -1029,6 +1029,9 @@ bool handleQuickSayBrowseKey(DWORD vkCode){
         enterSearchMode();
         return true;
     case VK_ESCAPE:
+        if(QWidget * popup=QApplication::activePopupWidget()){ //如果右键菜单还在显示，先关闭右键菜单
+            popup->close();
+        }
         pchuangkou->close();
         return true;
     case VK_RETURN:
@@ -1424,6 +1427,9 @@ protected:
             }
             if(keyEvent->key()==Qt::Key_Escape){ //如果按下的是Esc键
                 if(chuangkou->isActiveWindow()){ //如果焦点在主窗口
+                    if(QWidget * popup=QApplication::activePopupWidget()){ //如果右键菜单还在显示，先关闭右键菜单
+                        popup->close();
+                    }
                     chuangkou->close();//关闭主窗口
                     return true;
                 }
