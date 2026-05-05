@@ -1775,7 +1775,6 @@ int main(int argc, char *argv[]){
         background-color: #ffffff;                  /*短语项背景：纯白色*/
         border: 1px solid #e5e5e5;                  /*短语项边框：1像素浅灰色*/
         border-radius: 4px;                         /*短语项圆角，与列表圆角一致*/
-        padding: 12px 16px;                         /*短语项内边距：上下12像素，左右16像素*//*【【【注：想修改短语项高度在这里也可以修改】】】*/
         margin: 2px 2px;                            /*短语项外边距：上下2像素，左右2像素*//*【【【注：想让短语项更紧凑一点在这里修改】】】*/
     }
     QListWidget::item:hover{
