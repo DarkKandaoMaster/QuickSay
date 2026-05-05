@@ -1200,74 +1200,74 @@ void showAdvancedInputHelp(QWidget & parent){
     helpEdit->setReadOnly(true);
     helpEdit->setHtml(R"(
 <html>
-    <head>
+  <head>
     <style>
-    body{
+      body{
         color:#222222;
         font-family:"Microsoft YaHei","Segoe UI",sans-serif;
         font-size:14px;
         line-height:1.55;
-    }
-    h2{
+      }
+      h2{
         margin:0 0 10px 0;
         font-size:20px;
-    }
-    h3{
+      }
+      h3{
         margin:18px 0 8px 0;
         font-size:16px;
-    }
-    p{
+      }
+      p{
         margin:6px 0;
-    }
-    table{
+      }
+      table{
         border-collapse:collapse;
         width:100%;
-    }
-    th,td{
+      }
+      th,td{
         border:1px solid #dddddd;
         padding:6px 8px;
         text-align:left;
         vertical-align:top;
-    }
-    th{
+      }
+      th{
         background:#f3f5f7;
-    }
-    code{
+      }
+      code{
         color:#9a3412;
         background:#fff3e8;
         padding:1px 4px;
         border-radius:3px;
         font-family:"Consolas","Microsoft YaHei",monospace;
-    }
-    pre{
+      }
+      pre{
         background:#f7f7f7;
         border:1px solid #dddddd;
         padding:8px;
         font-family:"Consolas","Microsoft YaHei",monospace;
         white-space:pre-wrap;
-    }
-    ol{
+      }
+      ol{
         margin-top:6px;
         padding-left:22px;
-    }
+      }
     </style>
-    </head>
-    <body>
+  </head>
+  <body>
     <h2>高级输入</h2>
     <p>在短语中插入标签，让 QuickSay 除了输入文字，还能按键、等待、粘贴图片。</p>
 
     <h3>常用写法</h3>
     <table>
-    <tr><th>功能</th><th>写法</th><th>效果</th></tr>
-    <tr><td>换行/发送</td><td><code>&lt;Enter&gt;</code></td><td>模拟按下回车</td></tr>
-    <tr><td>按 Tab</td><td><code>&lt;Tab&gt;</code></td><td>模拟按下 Tab</td></tr>
-    <tr><td>按方向键</td><td><code>&lt;Left&gt;</code> / <code>&lt;Right&gt;</code> / <code>&lt;Up&gt;</code> / <code>&lt;Down&gt;</code></td><td>模拟方向键</td></tr>
-    <tr><td>等待</td><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
-    <tr><td>等待指定时间</td><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
-    <tr><td>等待指定秒数</td><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
-    <tr><td>粘贴图片</td><td><code>&lt;img D:\图片.png&gt;</code></td><td>把图片放入剪贴板并粘贴</td></tr>
-    <tr><td>组合快捷键</td><td><code>&lt;press Ctrl+A&gt;</code></td><td>模拟 Ctrl+A</td></tr>
-    <tr><td>单个按键</td><td><code>&lt;press F5&gt;</code></td><td>模拟 F5</td></tr>
+      <tr><th>功能</th><th>写法</th><th>效果</th></tr>
+      <tr><td>换行/发送</td><td><code>&lt;Enter&gt;</code></td><td>模拟按下回车</td></tr>
+      <tr><td>按 Tab</td><td><code>&lt;Tab&gt;</code></td><td>模拟按下 Tab</td></tr>
+      <tr><td>按方向键</td><td><code>&lt;Left&gt;</code> / <code>&lt;Right&gt;</code> / <code>&lt;Up&gt;</code> / <code>&lt;Down&gt;</code></td><td>模拟方向键</td></tr>
+      <tr><td>等待</td><td><code>&lt;sleep&gt;</code></td><td>等待 1 秒</td></tr>
+      <tr><td>等待指定时间</td><td><code>&lt;sleep 500ms&gt;</code></td><td>等待 500 毫秒</td></tr>
+      <tr><td>等待指定秒数</td><td><code>&lt;sleep 2s&gt;</code></td><td>等待 2 秒</td></tr>
+      <tr><td>粘贴图片</td><td><code>&lt;img D:\图片.png&gt;</code></td><td>把图片放入剪贴板并粘贴</td></tr>
+      <tr><td>组合快捷键</td><td><code>&lt;press Ctrl+A&gt;</code></td><td>模拟 Ctrl+A</td></tr>
+      <tr><td>单个按键</td><td><code>&lt;press F5&gt;</code></td><td>模拟 F5</td></tr>
     </table>
 
     <h3>示例</h3>
@@ -1279,13 +1279,13 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>补充规则</h3>
     <ol>
-    <li>普通文字会直接输入。</li>
-    <li>标签不符合规则时，会按原文输出。</li>
-    <li>如果想真的输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
-    <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为 QQ、微信上传图片需要一点时间。</li>
-    <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
+      <li>普通文字会直接输入。</li>
+      <li>标签不符合规则时，会按原文输出。</li>
+      <li>如果想真的输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
+      <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为 QQ、微信上传图片需要一点时间。</li>
+      <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
-    </body>
+  </body>
 </html>
     )");
     helpEdit->setLineWrapMode(QTextEdit::NoWrap);
