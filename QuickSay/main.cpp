@@ -258,7 +258,7 @@ void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json
         tabBar.setTabData(0,70);
         tabBar.addTab("短语2");
         tabBar.setTabData(1,config["default_item_height"].toInt());
-        tabBar.addTab("右键可新建标签");
+        tabBar.addTab("此处可以右键");
         tabBar.setTabData(2,config["default_item_height"].toInt());
         saveTabToJson(tabBar,tabPath);
     }
