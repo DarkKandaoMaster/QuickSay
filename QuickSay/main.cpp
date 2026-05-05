@@ -1198,63 +1198,36 @@ void showAdvancedInputHelp(QWidget & parent){
     QPlainTextEdit * helpEdit=new QPlainTextEdit(helpWindow);
     helpEdit->setReadOnly(true);
     helpEdit->setPlainText(
-R"(规则：
-<img 图片绝对路径>
-<press Enter>
-<press Return> #等价于<press Enter>
-<press Tab>
-<press Space>
-<press Esc>
-<press Escape> #等价于<press Esc>
-<press Backspace>
-<press Left>
-<press Right>
-<press Up>
-<press Down>
-<press Insert>
-<press Ins> #等价于<press Insert>
-<press A> #支持A-Z
-<press 0> #支持0-9
-<press F1> #支持F1-F24
-<press Meta+Ctrl+Alt+Shift+A> #修饰键的顺序无所谓，因此该写法等价于<press Ctrl+Shift+Alt+Meta+A>
-<sleep 500ms> #停顿500ms
-<sleep 2s>
-<sleep 2> #停顿2s，等价于<sleep 2s>
+R"(高级输入：在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片。
 
-常用单键允许简写。也就是：
-<Enter>
-<Tab>
-<Space>
-<Esc>
-<Backspace>
-<Left>
-<Right>
-<Up>
-<Down>
-<sleep> #停顿1秒
+常用写法：
 
-支持的修饰键：
-Ctrl #也可写作Control
-Alt
-Shift
-Meta #也可写作Win或Windows
+功能        写法                    效果
+换行/发送   <Enter>                 模拟按下回车
+按 Tab      <Tab>                   模拟按下 Tab
+按方向键    <Left>/<Right>/<Up>/<Down>  模拟方向键
+等待        <sleep>                 等待 1 秒
+等待指定时间 <sleep 500ms>           等待 500 毫秒
+等待指定秒数 <sleep 2s>              等待 2 秒
+粘贴图片    <img D:\图片.png>        把图片放入剪贴板并粘贴
+组合快捷键  <press Ctrl+A>           模拟 Ctrl+A
+单个按键    <press F5>              模拟 F5
 
+示例：
 
-同时语法上支持转义，比如用户真的想输入<Enter>，可以写：“\<Enter>”
+你好<Enter>这是第二行
 
-如果语法不合规，那么原样输出
+请看这张图：<img D:\图片.png><sleep><Enter>
 
-例如我使用QuickSay在QQ里输入以下短语：
-“请详细讲述一下<Enter>相关<img D:\图片.png>知<sleep>识。”
-DarkKandaoMaster是最强的！！【【【【【待处理
+<press Ctrl+A><press Backspace>重新输入的内容
 
-于是QuickSay就会在输入“请详细讲述一下”后，模拟输入一个回车，发送消息
+补充规则：
 
-于是在Ctrl+V输入“请详细讲述一下”之后，会模拟输入一个回车，Ctrl+V输入“相关”之后，会停顿1秒，最后Ctrl+V输入“知识。”
-全程执行完当前步骤后，停顿 config["delay"].toInt() ms，再安排下一步骤。
-直接点击一条短语就可以啪啪啪啪自己发送三到四条信息
-
-提示一下用户，因为QQ、微信等软件图片上传需要时间，所以如果要使用<img><Enter>标签，那么最好在后面加一个<sleep>)"
+1. 普通文字会直接输入。
+2. 标签不符合规则时，会按原文输出。
+3. 如果想真的输入 <Enter>，写成 \<Enter>。
+4. 图片后面如果要立刻按 Enter，建议加 <sleep>，因为 QQ、微信上传图片需要一点时间。
+5. 高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。)"
     );
     helpEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
     helpEdit->setGeometry(0,0,620,520);
