@@ -1363,7 +1363,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td>组合快捷键</td><td>例如<code>&lt;press Ctrl+Shift+A&gt;</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table><br>
-    <p>组合快捷键说明</p>
+    <p>组合快捷键说明：</p>
     <ol>
       <li>修饰键可以写<code>Ctrl</code>（可以写成<code>Control</code>）、<code>Shift</code>、<code>Alt</code>、<code>Win</code>（可以写成<code>Meta</code>或<code>Windows</code>）。</li>
       <li>每个组合快捷键只能有一个主键。例如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press Ctrl+A+B&gt;</code>不可以。</li>
@@ -1377,14 +1377,10 @@ void showAdvancedInputHelp(QWidget & parent){
     </ol>
 
     <h3>&lt;img&gt;、&lt;file&gt;相关</h3>
-    <ol>
-      <li><code>&lt;img&gt;</code>执行前会自动等待1秒。如果发送图片后还要继续输入文字，建议再手动加一个<code>&lt;sleep&gt;</code>，避免顺序错乱。</li>
-    </ol>
-
-    <h3>路径说明</h3>
+    <p>图片、文件路径说明：</p>
     <ol>
       <li>只能写绝对路径。</li>
-      <li>可以加引号。比如<code>&lt;img "C:\图片.png"&gt;</code>。</li>
+      <li>可以加引号。例如<code>&lt;img "C:\图片.png"&gt;</code>。</li>
       <li>如果路径不存在，会原样输入。</li>
     </ol>
   </body>
