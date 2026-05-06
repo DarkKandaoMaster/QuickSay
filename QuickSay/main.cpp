@@ -1277,7 +1277,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为图片。</li>
-      <li>等待1秒。微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可有效减少文字与图片顺序错乱的情况。【【【【【此处应处理，比如删减</li>
+      <li>等待1秒。微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可以手动指定等待<br>时间，等待图片发送完成后再执行下一次高级输入，防止文字与图片顺序错乱。</li>
       <li>第二条为“输入结束”。</li>
     </ol>
 
