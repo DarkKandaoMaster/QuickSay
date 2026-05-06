@@ -626,7 +626,7 @@ bool parsePressCombo(const QString & combo,QuickSayOutputAction & action){
         hasPrimary=true;
     }
 
-    if(!hasPrimary) return false;
+    if(!hasPrimary && !hasCtrl && !hasAlt && !hasShift && !hasMeta) return false;
     action.type=QuickSayOutputActionType::Press;
     if(hasCtrl) action.modifiers.append(VK_LCONTROL);
     if(hasAlt) action.modifiers.append(VK_LMENU);
@@ -713,7 +713,9 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
     if(lower=="enter" || lower=="return" || lower=="tab" || lower=="space" ||
        lower=="esc" || lower=="escape" || lower=="backspace" ||
        lower=="left" || lower=="right" || lower=="up" || lower=="down" ||
-       lower=="insert" || lower=="ins"){
+       lower=="insert" || lower=="ins" ||
+       lower=="ctrl" || lower=="control" || lower=="shift" || lower=="alt" ||
+       lower=="win" || lower=="meta" || lower=="windows"){
         return parsePressCombo(trimmed,action);
     }
 
@@ -760,8 +762,10 @@ void sendPressAction(const QuickSayOutputAction & action){
     for(WORD modifier:action.modifiers){
         sendVirtualKey(modifier);
     }
-    sendVirtualKey(action.key);
-    sendVirtualKey(action.key,true);
+    if(action.key!=0){
+        sendVirtualKey(action.key);
+        sendVirtualKey(action.key,true);
+    }
     for(int i=action.modifiers.size()-1;i>=0;i--){
         sendVirtualKey(action.modifiers.at(i),true);
     }
@@ -1354,6 +1358,10 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>Right</code></td><td>无</td><td>右方向键</td></tr>
       <tr><td><code>Up</code></td><td>无</td><td>上方向键</td></tr>
       <tr><td><code>Down</code></td><td>无</td><td>下方向键</td></tr>
+      <tr><td><code>Ctrl</code></td><td><code>Control</code></td><td>Ctrl键</td></tr>
+      <tr><td><code>Shift</code></td><td>无</td><td>Shift键</td></tr>
+      <tr><td><code>Alt</code></td><td>无</td><td>Alt键</td></tr>
+      <tr><td><code>Win</code></td><td><code>Meta</code>、<code>Windows</code></td><td>Windows键</td></tr>
     </table><br>
     <p>只能写在<code>&lt;press ...&gt;</code>里的按键：</p>
     <table>
@@ -1368,7 +1376,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <ol>
       <li>修饰键可以写<code>Ctrl</code>（可以写成<code>Control</code>）、<code>Shift</code>、<code>Alt</code>、<code>Win</code>（可以写成<code>Meta</code>或<code>Windows</code>）。</li>
       <li>修饰键的顺序无所谓。</li>
-      <li>每个组合快捷键只能有一个主键。例如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press Ctrl+A+B&gt;</code>不可以。</li>
+      <li>每个组合快捷键最多只能有一个主键。例如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press Ctrl+A+B&gt;</code>不可以。</li>
     </ol>
 
     <h3>&lt;sleep&gt;相关</h3>
