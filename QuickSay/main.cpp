@@ -1192,6 +1192,7 @@ void showAdvancedInputHelp(QWidget & parent){
 
     QTextBrowser * helpEdit=new QTextBrowser(helpWindow);
     helpEdit->setReadOnly(true);
+    helpEdit->setOpenLinks(false);
     helpEdit->setHtml(R"(
 <html>
   <head>
@@ -1244,6 +1245,15 @@ void showAdvancedInputHelp(QWidget & parent){
         margin-top:6px;
         padding-left:22px;
       }
+      a.button{
+        display:inline-block;
+        color:#ffffff;
+        background:#2563eb;
+        text-decoration:none;
+        padding:8px 14px;
+        border-radius:4px;
+        font-weight:600;
+      }
     </style>
   </head>
   <body>
@@ -1280,6 +1290,44 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
 
+    <p><a href="quicksay://full-tutorial" class="button">查看更完整的教程</a></p>
+  </body>
+</html>
+    )");
+
+    const QString fullTutorialHtml=R"(
+<html>
+  <head>
+    <style>
+      body{
+        color:#222222;
+        font-family:"Microsoft YaHei","Microsoft YaHei UI","Source Han Sans SC","Segoe UI","PingFang SC",Arial,sans-serif;
+        font-size:14px;
+        line-height:1.55;
+      }
+      table{
+        border-collapse:collapse;
+        width:100%;
+      }
+      th,td{
+        border:1px solid #dddddd;
+        padding:6px 8px;
+        text-align:left;
+        vertical-align:top;
+      }
+      th{
+        background:#f3f5f7;
+      }
+      code{
+        color:#9a3412;
+        background:#fff3e8;
+        padding:1px 4px;
+        border-radius:3px;
+        font-family:"Consolas","Microsoft YaHei",monospace;
+      }
+    </style>
+  </head>
+  <body>
     <table>
       <tr><th>写法</th><th>效果</th></tr>
       <tr><td><code>&lt;Tab&gt;</code></td><td>按Tab</td></tr>
@@ -1289,7 +1337,15 @@ void showAdvancedInputHelp(QWidget & parent){
     </table>
   </body>
 </html>
-    )");
+    )";
+
+    QObject::connect(helpEdit,&QTextBrowser::anchorClicked,
+                     [helpEdit,fullTutorialHtml](const QUrl & url){
+                         if(url==QUrl("quicksay://full-tutorial")){
+                             helpEdit->setHtml(fullTutorialHtml);
+                         }
+                     }
+                    );
     helpEdit->setLineWrapMode(QTextEdit::NoWrap);
     helpEdit->setGeometry(0,0,500,500);
 
