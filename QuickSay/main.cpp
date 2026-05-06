@@ -1189,7 +1189,6 @@ void showAdvancedInputHelp(QWidget & parent){
     helpWindow->setAttribute(Qt::WA_DeleteOnClose);
     helpWindow->setWindowTitle("如何更高级地输入？");
     helpWindow->setWindowIcon(parent.windowIcon());
-    helpWindow->setFixedSize(500,500);
 
     QTextBrowser * helpEdit=new QTextBrowser(helpWindow);
     helpEdit->setReadOnly(true);
@@ -1335,11 +1334,15 @@ void showAdvancedInputHelp(QWidget & parent){
     )";
 
     QObject::connect(helpEdit,&QTextBrowser::anchorClicked,
-                     [helpEdit,basicTutorialHtml,fullTutorialHtml](const QUrl & url){
+                     [helpWindow,helpEdit,basicTutorialHtml,fullTutorialHtml](const QUrl & url){
                          if(url==QUrl("quicksay://full-tutorial")){
+                             helpWindow->setFixedSize(700,500);
+                             helpEdit->setGeometry(0,0,700,500);
                              helpEdit->setHtml(fullTutorialHtml);
                          }
                          else if(url==QUrl("quicksay://basic-tutorial")){
+                             helpWindow->setFixedSize(500,500);
+                             helpEdit->setGeometry(0,0,500,500);
                              helpEdit->setHtml(basicTutorialHtml);
                          }
                      }
@@ -1347,6 +1350,7 @@ void showAdvancedInputHelp(QWidget & parent){
     helpEdit->setHtml(basicTutorialHtml);
     helpEdit->setLineWrapMode(QTextEdit::WidgetWidth);
     helpEdit->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    helpWindow->setFixedSize(500,500);
     helpEdit->setGeometry(0,0,500,500);
 
     helpWindow->move(parent.x()+30,parent.y()+30);
