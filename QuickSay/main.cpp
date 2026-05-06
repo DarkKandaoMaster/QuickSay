@@ -1297,6 +1297,17 @@ void showAdvancedInputHelp(QWidget & parent){
         font-size:14px;
         line-height:1.55;
       }
+      h2{
+        margin:0 0 10px 0;
+        font-size:20px;
+      }
+      h3{
+        margin:18px 0 8px 0;
+        font-size:16px;
+      }
+      p{
+        margin:6px 0;
+      }
       table{
         border-collapse:collapse;
         width:100%;
@@ -1317,14 +1328,85 @@ void showAdvancedInputHelp(QWidget & parent){
         border-radius:3px;
         font-family:"Consolas","Microsoft YaHei",monospace;
       }
+      ol{
+        margin-top:6px;
+        padding-left:22px;
+      }
     </style>
   </head>
   <body>
     <p><a href="quicksay://basic-tutorial">↩返回基础教程</a></p>
 
+    <h2>更完整的高级输入教程</h2>
     <table>
       <tr><th>写法</th><th>简写</th><th>效果</th></tr>
+      <tr><td><code>&lt;img C:\图片.png&gt;</code></td><td>无</td><td>把指定图片放到剪贴板，然后粘贴</td></tr>
+      <tr><td><code>&lt;file C:\文件.txt&gt;</code></td><td>无</td><td>把指定文件放到剪贴板，然后粘贴</td></tr>
+      <tr><td><code>&lt;sleep&gt;</code></td><td>无</td><td>等待1秒</td></tr>
+      <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>无</td><td>等待500毫秒</td></tr>
+      <tr><td><code>&lt;sleep 1.5s&gt;</code></td><td>无</td><td>等待1.5秒</td></tr>
+      <tr><td><code>&lt;press Enter&gt;</code></td><td><code>&lt;Enter&gt;</code></td><td>按回车</td></tr>
+      <tr><td><code>&lt;press Ctrl+V&gt;</code></td><td>无</td><td>按Ctrl+V</td></tr>
+      <tr><td><code>&lt;press Win+D&gt;</code></td><td>无</td><td>按Win+D</td></tr>
     </table>
+
+    <h3>按键名称</h3>
+    <p>可以直接写成<code>&lt;Enter&gt;</code>这种简写的按键：</p>
+    <table>
+      <tr><th>按键</th><th>别名</th><th>效果</th></tr>
+      <tr><td><code>Enter</code></td><td><code>Return</code></td><td>回车</td></tr>
+      <tr><td><code>Tab</code></td><td>无</td><td>Tab键</td></tr>
+      <tr><td><code>Space</code></td><td>无</td><td>空格</td></tr>
+      <tr><td><code>Esc</code></td><td><code>Escape</code></td><td>Esc键</td></tr>
+      <tr><td><code>Backspace</code></td><td>无</td><td>退格</td></tr>
+      <tr><td><code>Left</code></td><td>无</td><td>左方向键</td></tr>
+      <tr><td><code>Right</code></td><td>无</td><td>右方向键</td></tr>
+      <tr><td><code>Up</code></td><td>无</td><td>上方向键</td></tr>
+      <tr><td><code>Down</code></td><td>无</td><td>下方向键</td></tr>
+    </table>
+
+    <p>只能写在<code>&lt;press ...&gt;</code>里的按键：</p>
+    <table>
+      <tr><th>写法</th><th>说明</th></tr>
+      <tr><td><code>A</code>到<code>Z</code></td><td>字母键</td></tr>
+      <tr><td><code>0</code>到<code>9</code></td><td>数字键</td></tr>
+      <tr><td><code>F1</code>到<code>F24</code></td><td>功能键</td></tr>
+      <tr><td><code>Ins</code></td><td>也可以写<code>Insert</code></td></tr>
+    </table>
+
+    <h3>组合键规则</h3>
+    <ol>
+      <li>组合键写在<code>&lt;press ...&gt;</code>里，用<code>+</code>连接。</li>
+      <li>修饰键可以用<code>Ctrl</code>、<code>Alt</code>、<code>Shift</code>、<code>Win</code>。</li>
+      <li><code>Ctrl</code>也可以写<code>Control</code>；<code>Win</code>也可以写<code>Meta</code>或<code>Windows</code>。</li>
+      <li>每个组合键只能有一个主键。比如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press A+B&gt;</code>不可以。</li>
+    </ol>
+
+    <h3>路径规则</h3>
+    <ol>
+      <li><code>&lt;img ...&gt;</code>和<code>&lt;file ...&gt;</code>后面必须写已经存在的绝对路径。</li>
+      <li>路径可以加引号。比如<code>&lt;file "C:\我的文件\测试.txt"&gt;</code>。</li>
+      <li>路径不符合规则时，整段标签会原样输入。</li>
+    </ol>
+
+    <h3>更多示例</h3>
+    <p>写法1：<br>
+      <code>您好，资料如下：&lt;Enter&gt;&lt;file C:\资料.pdf&gt;</code>
+    </p>
+    <p>效果：先输入文字并回车，再粘贴文件。</p>
+
+    <p>写法2：<br>
+      <code>&lt;press Ctrl+A&gt;&lt;press Backspace&gt;替换后的文字</code>
+    </p>
+    <p>效果：全选当前输入框内容，删除，然后输入新文字。</p>
+
+    <h3>补充规则</h3>
+    <ol>
+      <li>标签大小写不敏感。比如<code>&lt;enter&gt;</code>和<code>&lt;Enter&gt;</code>一样。</li>
+      <li>如果标签不符合规则，会原样输入。</li>
+      <li>如果想原样输入<code>&lt;Enter&gt;</code>，请写成<code>\&lt;Enter&gt;</code>。</li>
+      <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一下。</li>
+    </ol>
   </body>
 </html>
     )";
