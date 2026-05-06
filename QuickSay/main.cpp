@@ -1365,7 +1365,7 @@ void showAdvancedInputHelp(QWidget & parent){
     </table><br>
     <p>组合快捷键说明</p>
     <ol>
-      <li>修饰键可以写<code>Ctrl</code>（可以写成<code>Control</code>）、<code>Alt</code>、<code>Shift</code>、<code>Win</code>（可以写成<code>Meta</code>或<code>Windows</code>）。</li>
+      <li>修饰键可以写<code>Ctrl</code>（可以写成<code>Control</code>）、<code>Shift</code>、<code>Alt</code>、<code>Win</code>（可以写成<code>Meta</code>或<code>Windows</code>）。</li>
       <li>每个组合快捷键只能有一个主键。例如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press Ctrl+A+B&gt;</code>不可以。</li>
     </ol>
 
@@ -1376,7 +1376,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <h3>路径规则</h3>
     <ol>
       <li><code>&lt;img ...&gt;</code>和<code>&lt;file ...&gt;</code>后面必须写已经存在的绝对路径。</li>
-      <li>路径可以加引号。比如<code>&lt;file "C:\我的文件\测试.txt"&gt;</code>。</li>
+      <li>路径可以加引号。比如<code>&lt;img "C:\图片.png"&gt;</code>。</li>
       <li>如果路径不存在，会原样输入。</li>
     </ol>
   </body>
