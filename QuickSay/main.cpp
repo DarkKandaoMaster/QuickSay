@@ -1338,19 +1338,6 @@ void showAdvancedInputHelp(QWidget & parent){
   <body>
     <p><a href="quicksay://basic-tutorial">↩返回基础教程</a></p>
 
-    <h2>更完整的高级输入教程</h2>
-    <table>
-      <tr><th>写法</th><th>简写</th><th>效果</th></tr>
-      <tr><td><code>&lt;img C:\图片.png&gt;</code></td><td>无</td><td>把指定图片放到剪贴板，然后粘贴</td></tr>
-      <tr><td><code>&lt;file C:\文件.txt&gt;</code></td><td>无</td><td>把指定文件放到剪贴板，然后粘贴</td></tr>
-      <tr><td><code>&lt;sleep&gt;</code></td><td>无</td><td>等待1秒</td></tr>
-      <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>无</td><td>等待500毫秒</td></tr>
-      <tr><td><code>&lt;sleep 1.5s&gt;</code></td><td>无</td><td>等待1.5秒</td></tr>
-      <tr><td><code>&lt;press Enter&gt;</code></td><td><code>&lt;Enter&gt;</code></td><td>按回车</td></tr>
-      <tr><td><code>&lt;press Ctrl+V&gt;</code></td><td>无</td><td>按Ctrl+V</td></tr>
-      <tr><td><code>&lt;press Win+D&gt;</code></td><td>无</td><td>按Win+D</td></tr>
-    </table>
-
     <h3>按键名称</h3>
     <p>可以直接写成<code>&lt;Enter&gt;</code>这种简写的按键：</p>
     <table>
