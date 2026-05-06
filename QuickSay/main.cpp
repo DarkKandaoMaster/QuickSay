@@ -1235,13 +1235,6 @@ void showAdvancedInputHelp(QWidget & parent){
         border-radius:3px;
         font-family:"Consolas","Microsoft YaHei",monospace;
       }
-      pre{
-        background:#f7f7f7;
-        border:1px solid #dddddd;
-        padding:8px;
-        font-family:"Consolas","Microsoft YaHei",monospace;
-        white-space:pre-wrap;
-      }
       ol{
         margin-top:6px;
         padding-left:22px;
@@ -1266,7 +1259,7 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>示例（以微信为例）</h3>
     <p>写法1：</p>
-    <pre>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;</pre>
+    <code>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;</code>
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为“感谢使用QuickSay！”。</li>
@@ -1274,7 +1267,7 @@ void showAdvancedInputHelp(QWidget & parent){
     </ol>
 
     <p>写法2：</p>
-    <pre>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</pre>
+    <code>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</code>
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为图片。</li>
