@@ -1280,6 +1280,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>如果标签不符合规则，会原样输入。</li>
       <li>如果想原样输入<code>&lt;Enter&gt;</code>，请写成<code>\&lt;Enter&gt;</code>。</li>
       <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一下。</li>
+      <li>标签大小写不敏感。也就是说<code>&lt;Enter&gt;</code>可以写成<code>&lt;enter&gt;</code>。</li>
     </ol>
 
     <p><a href="quicksay://full-tutorial">查看更完整的教程</a></p>
@@ -1399,14 +1400,6 @@ void showAdvancedInputHelp(QWidget & parent){
       <code>&lt;press Ctrl+A&gt;&lt;press Backspace&gt;替换后的文字</code>
     </p>
     <p>效果：全选当前输入框内容，删除，然后输入新文字。</p>
-
-    <h3>补充规则</h3>
-    <ol>
-      <li>标签大小写不敏感。比如<code>&lt;enter&gt;</code>和<code>&lt;Enter&gt;</code>一样。</li>
-      <li>如果标签不符合规则，会原样输入。</li>
-      <li>如果想原样输入<code>&lt;Enter&gt;</code>，请写成<code>\&lt;Enter&gt;</code>。</li>
-      <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一下。</li>
-    </ol>
   </body>
 </html>
     )";
@@ -1414,8 +1407,8 @@ void showAdvancedInputHelp(QWidget & parent){
     QObject::connect(helpEdit,&QTextBrowser::anchorClicked,
                      [helpWindow,helpEdit,basicTutorialHtml,fullTutorialHtml](const QUrl & url){
                          if(url==QUrl("quicksay://full-tutorial")){
-                             helpWindow->setFixedSize(700,500);
-                             helpEdit->setGeometry(0,0,700,500);
+                             helpWindow->setFixedSize(500,500);
+                             helpEdit->setGeometry(0,0,500,500);
                              helpEdit->setHtml(fullTutorialHtml);
                          }
                          else if(url==QUrl("quicksay://basic-tutorial")){
