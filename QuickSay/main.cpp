@@ -1370,13 +1370,13 @@ void showAdvancedInputHelp(QWidget & parent){
     </ol>
 
     <h3>&lt;sleep&gt;相关</h3>
+
     <h3>&lt;img&gt;、&lt;file&gt;相关</h3>
 
-
-    <h3>路径规则</h3>
+    <h3>路径说明</h3>
     <ol>
-      <li><code>&lt;img ...&gt;</code>和<code>&lt;file ...&gt;</code>后面必须写已经存在的绝对路径。</li>
-      <li>路径可以加引号。比如<code>&lt;img "C:\图片.png"&gt;</code>。</li>
+      <li>只能写绝对路径。</li>
+      <li>可以加引号。比如<code>&lt;img "C:\图片.png"&gt;</code>。</li>
       <li>如果路径不存在，会原样输入。</li>
     </ol>
   </body>
