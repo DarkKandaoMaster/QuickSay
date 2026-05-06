@@ -256,7 +256,7 @@ void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json
         tabBar.setTabData(0,70);
         tabBar.addTab("短语2");
         tabBar.setTabData(1,config["default_item_height"].toInt());
-        tabBar.addTab("此处可右键");
+        tabBar.addTab("此处可右键点击");
         tabBar.setTabData(2,config["default_item_height"].toInt());
         saveTabToJson(tabBar,tabPath);
     }
@@ -1352,7 +1352,6 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>Up</code></td><td>无</td><td>上方向键</td></tr>
       <tr><td><code>Down</code></td><td>无</td><td>下方向键</td></tr>
     </table>
-
     <p>只能写在<code>&lt;press ...&gt;</code>里的按键：</p>
     <table>
       <tr><th>按键</th><th>说明</th></tr>
@@ -1362,8 +1361,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>Insert</code></td><td>也可以写成<code>Ins</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table>
-
-    <h3>组合快捷键规则</h3>
+    <p>组合快捷键规则</p>
     <ol>
       <li>组合键写在<code>&lt;press ...&gt;</code>里，用<code>+</code>连接。</li>
       <li>修饰键可以用<code>Ctrl</code>、<code>Alt</code>、<code>Shift</code>、<code>Win</code>。</li>
