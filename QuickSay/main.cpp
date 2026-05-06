@@ -1345,8 +1345,8 @@ void showAdvancedInputHelp(QWidget & parent){
     <table>
       <tr><th>按键</th><th>别名</th><th>说明</th></tr>
       <tr><td><code>Enter</code></td><td><code>Return</code></td><td>回车键</td></tr>
-      <tr><td><code>Tab</code></td><td>无</td><td>Tab键</td></tr>
       <tr><td><code>Space</code></td><td>无</td><td>空格键</td></tr>
+      <tr><td><code>Tab</code></td><td>无</td><td>Tab键</td></tr>
       <tr><td><code>Esc</code></td><td><code>Escape</code></td><td>Esc键</td></tr>
       <tr><td><code>Backspace</code></td><td>无</td><td>退格键</td></tr>
       <tr><td><code>Insert</code></td><td><code>Ins</code></td><td>Insert键</td></tr>
