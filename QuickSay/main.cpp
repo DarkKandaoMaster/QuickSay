@@ -1265,7 +1265,6 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>第一条为“感谢使用QuickSay！”。</li>
       <li>第二条为“如果觉得好用记得点个Star！”。</li>
     </ol>
-
     <p>写法2：</p>
     <code>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</code>
     <p>效果：连发两条消息，</p>
@@ -1275,7 +1274,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>第二条为“输入结束”。</li>
     </ol>
 
-    <h3>补充规则</h3>
+    <h3>补充</h3>
     <ol>
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
