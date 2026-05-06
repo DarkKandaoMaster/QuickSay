@@ -1263,7 +1263,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <table>
       <tr><th>写法</th><th>效果</th></tr>
       <tr><td><code>&lt;img 图片路径&gt;</code></td><td>粘贴图片</td></tr>
-      <tr><td><code>&lt;Enter&gt;</code></td><td>按回车</td></tr>
+      <tr><td><code>&lt;Enter&gt;</code></td><td>按回车。相当于你在键盘按下回车键</td></tr>
       <tr><td><code>&lt;sleep&gt;</code></td><td>等待1秒</td></tr>
       <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待2秒</td></tr>
       <tr><td><code>&lt;press A&gt;</code></td><td>按单个按键</td></tr>
