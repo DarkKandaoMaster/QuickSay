@@ -1,7 +1,7 @@
 //版本：1.6.0
 //更新内容：
 //1. 实现了无焦点主窗口。主窗口不会再抢焦点了。
-//2. 短语文本可以支持某些特定规则，于是实现高级输入：“在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片/文件。”
+//2. 短语文本可以支持某些特定规则，于是实现高级输入：“在短语中插入标签，让QuickSay除了输入文字，还能按键、停顿、粘贴图片/文件。”
 //3. 新增了短语项左右内边距、短语项上下内边距设置。
 //4. 新增了右键短语项时的在当前短语后添加短语选项。
 //5. 其他一些小改动，比如修改了一下默认短语。
@@ -710,9 +710,10 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
         return true;
     }
 
-    if(lower=="enter" || lower=="tab" || lower=="space" || lower=="esc" ||
-       lower=="backspace" || lower=="left" || lower=="right" ||
-       lower=="up" || lower=="down"){
+    if(lower=="enter" || lower=="return" || lower=="tab" || lower=="space" ||
+       lower=="esc" || lower=="escape" || lower=="backspace" ||
+       lower=="left" || lower=="right" || lower=="up" || lower=="down" ||
+       lower=="insert" || lower=="ins"){
         return parsePressCombo(trimmed,action);
     }
 
@@ -1242,7 +1243,7 @@ void showAdvancedInputHelp(QWidget & parent){
   </head>
   <body>
     <h2>什么是高级输入？</h2>
-    <p>在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片/文件。</p>
+    <p>在短语中插入标签，让QuickSay除了输入文字，还能按键、停顿、粘贴图片/文件。</p>
 
     <h3>常用写法</h3>
     <table>
@@ -1250,8 +1251,8 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;img 图片路径&gt;</code></td><td>粘贴图片</td></tr>
       <tr><td><code>&lt;file 文件路径&gt;</code></td><td>粘贴文件</td></tr>
       <tr><td><code>&lt;Enter&gt;</code></td><td>按回车。相当于你在键盘按下回车键</td></tr>
-      <tr><td><code>&lt;sleep&gt;</code></td><td>等待1秒</td></tr>
-      <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待2秒</td></tr>
+      <tr><td><code>&lt;sleep&gt;</code></td><td>停顿1秒</td></tr>
+      <tr><td><code>&lt;sleep 2s&gt;</code></td><td>停顿2秒</td></tr>
       <tr><td><code>&lt;press A&gt;</code></td><td>按单个按键</td></tr>
       <tr><td><code>&lt;press Ctrl+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
@@ -1272,7 +1273,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <ol>
       <li>第一条为“输入图片”。</li>
       <li>第二条为图片。</li>
-      <li>等待1秒。微信上传图片需要时间，因此可以使用<code>&lt;sleep&gt;</code>手动指定等待时间，等待图片上传完成后再执行后续操作，防止文字与图片顺序错乱。</li>
+      <li>停顿1秒。微信上传图片需要时间，因此可以使用<code>&lt;sleep&gt;</code>手动指定停顿时间，等待图片上传完成后再执行后续操作，防止文字与图片顺序错乱。</li>
       <li>第三条为“输入结束”。</li>
     </ol>
 
@@ -1372,9 +1373,9 @@ void showAdvancedInputHelp(QWidget & parent){
     <h3>&lt;sleep&gt;相关</h3>
     <ol>
       <li><code>&lt;sleep 2s&gt;</code>可以写成<code>&lt;sleep 2&gt;</code>。</li>
-      <li>sleep最小等待时间是毫秒。例如<code>&lt;sleep 100ms&gt;</code>可以，<code>&lt;sleep 100.5ms&gt;</code>不可以。</li>
+      <li>sleep最小停顿时间是毫秒。例如<code>&lt;sleep 100ms&gt;</code>可以，<code>&lt;sleep 100.5ms&gt;</code>不可以。</li>
       <li><code>&lt;sleep 0.1005s&gt;</code>可以，此时它会四舍五入，相当于<code>&lt;sleep 0.101s&gt;</code>。</li>
-      <li>如果等待时间不符合规则，会原样输入。</li>
+      <li>如果停顿时间不符合规则，会原样输入。</li>
     </ol>
 
     <h3>&lt;img&gt;、&lt;file&gt;相关</h3>
