@@ -1266,21 +1266,22 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>第二条为“如果觉得好用记得点个Star！”。</li>
     </ol>
     <p>写法2：<br>
-      <code>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</code>
+      <code>输入图片&lt;Enter&gt;&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</code>
     </p>
-    <p>效果：连发两条消息，</p>
+    <p>效果：连发三条消息，</p>
     <ol>
-      <li>第一条为图片。</li>
-      <li>等待1秒。微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可以手动指定等待时间，等待图片发送完成后再执行后续操作，防止文字与图片顺序错乱。</li>
-      <li>第二条为“输入结束”。</li>
+      <li>第一条为“输入图片”。</li>
+      <li>第二条为图片。</li>
+      <li>等待1秒。微信发送图片需要时间，因此可以使用<code>&lt;sleep&gt;</code>手动指定等待时间，等待图片发送完成后再执行后续操作，防止文字与图片顺序错乱。</li>
+      <li>第三条为“输入结束”。</li>
     </ol>
 
     <h3>补充规则</h3>
     <ol>
       <li>如果标签不符合规则，会原样输入。</li>
       <li>如果想原样输入<code>&lt;Enter&gt;</code>，请写成<code>\&lt;Enter&gt;</code>。</li>
-      <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一下。</li>
       <li>标签大小写不敏感。也就是说<code>&lt;Enter&gt;</code>可以写成<code>&lt;enter&gt;</code>。</li>
+      <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一下。</li>
     </ol>
 
     <p><a href="quicksay://full-tutorial">查看更完整的教程</a></p>
@@ -1378,17 +1379,6 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>路径可以加引号。比如<code>&lt;file "C:\我的文件\测试.txt"&gt;</code>。</li>
       <li>如果路径不存在，会原样输入。</li>
     </ol>
-
-    <h3>更多示例</h3>
-    <p>写法1：<br>
-      <code>您好，资料如下：&lt;Enter&gt;&lt;file C:\资料.pdf&gt;</code>
-    </p>
-    <p>效果：先输入文字并回车，再粘贴文件。</p>
-
-    <p>写法2：<br>
-      <code>&lt;press Ctrl+A&gt;&lt;press Backspace&gt;替换后的文字</code>
-    </p>
-    <p>效果：全选当前输入框内容，删除，然后输入新文字。</p>
   </body>
 </html>
     )";
