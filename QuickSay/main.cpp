@@ -1263,12 +1263,14 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
-    <h3>示例（以微信为例）</h3>
+    <h3>示例1（以微信为例）</h3>
     <pre>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;
     效果
     连发两条消息，第一条为“感谢使用QuickSay！”，第二条为“如果觉得好用记得点个Star！”。
-
-    请看这张图：&lt;img D:\图片.png&gt;&lt;sleep&gt;&lt;Enter&gt;
+    示例2
+    &lt;img D:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;
+    效果
+    连发两条消息，第一条为图片，然后等待1秒（因为微信发送图片需要时间），第二条为“输入结束”
 
     请看这个文件：&lt;file D:\文档.pdf&gt;&lt;sleep&gt;&lt;Enter&gt;
 
