@@ -1351,7 +1351,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>Right</code></td><td>无</td><td>右方向键</td></tr>
       <tr><td><code>Up</code></td><td>无</td><td>上方向键</td></tr>
       <tr><td><code>Down</code></td><td>无</td><td>下方向键</td></tr>
-    </table>
+    </table><br>
     <p>只能写在<code>&lt;press ...&gt;</code>里的按键：</p>
     <table>
       <tr><th>按键</th><th>说明</th></tr>
@@ -1359,8 +1359,9 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>0</code>~<code>9</code></td><td>无</td></tr>
       <tr><td><code>F1</code>~<code>F24</code></td><td>无</td></tr>
       <tr><td><code>Insert</code></td><td>也可以写成<code>Ins</code></td></tr>
+      <tr><td>组合快捷键</td><td>例如</td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
-    </table>
+    </table><br>
     <p>组合快捷键规则</p>
     <ol>
       <li>组合键写在<code>&lt;press ...&gt;</code>里，用<code>+</code>连接。</li>
