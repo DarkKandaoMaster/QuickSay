@@ -1258,15 +1258,17 @@ void showAdvancedInputHelp(QWidget & parent){
     </table>
 
     <h3>示例（以微信为例）</h3>
-    <p>写法1：</p>
-    <code>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;</code>
+    <p>写法1：<br>
+      <code>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;</code>
+    </p>
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为“感谢使用QuickSay！”。</li>
       <li>第二条为“如果觉得好用记得点个Star！”。</li>
     </ol>
-    <p>写法2：</p>
-    <code>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</code>
+    <p>写法2：<br>
+      <code>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</code>
+    </p>
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为图片。</li>
