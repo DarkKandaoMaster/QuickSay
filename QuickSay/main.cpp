@@ -1734,6 +1734,11 @@ protected:
 class BadgeDelegate:public QStyledItemDelegate{ //自定义一个委托类，用于在短语项左上角或者右上角绘制角标
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
+    QSize sizeHint(const QStyleOptionViewItem & option,const QModelIndex & index) const override{
+        QSize size=QStyledItemDelegate::sizeHint(option,index);
+        size.setWidth(0);
+        return size;
+    }
     void paint(QPainter * painter,const QStyleOptionViewItem & option, const QModelIndex & index) const override{ //重写绘制函数，用于自定义显示效果
         QStyleOptionViewItem opt(option);
         QVariant foreground=index.data(Qt::ForegroundRole);
