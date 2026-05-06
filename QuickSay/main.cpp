@@ -1342,11 +1342,11 @@ void showAdvancedInputHelp(QWidget & parent){
     <p>可以写成<code>&lt;Enter&gt;</code>这种简写的按键：</p>
     <table>
       <tr><th>按键</th><th>别名</th><th>说明</th></tr>
-      <tr><td><code>Enter</code></td><td><code>Return</code></td><td>回车</td></tr>
+      <tr><td><code>Enter</code></td><td><code>Return</code></td><td>回车键</td></tr>
       <tr><td><code>Tab</code></td><td>无</td><td>Tab键</td></tr>
-      <tr><td><code>Space</code></td><td>无</td><td>空格</td></tr>
+      <tr><td><code>Space</code></td><td>无</td><td>空格键</td></tr>
       <tr><td><code>Esc</code></td><td><code>Escape</code></td><td>Esc键</td></tr>
-      <tr><td><code>Backspace</code></td><td>无</td><td>退格</td></tr>
+      <tr><td><code>Backspace</code></td><td>无</td><td>退格键</td></tr>
       <tr><td><code>Left</code></td><td>无</td><td>左方向键</td></tr>
       <tr><td><code>Right</code></td><td>无</td><td>右方向键</td></tr>
       <tr><td><code>Up</code></td><td>无</td><td>上方向键</td></tr>
@@ -1356,9 +1356,9 @@ void showAdvancedInputHelp(QWidget & parent){
     <p>只能写在<code>&lt;press ...&gt;</code>里的按键：</p>
     <table>
       <tr><th>按键</th><th>说明</th></tr>
-      <tr><td><code>A</code>到<code>Z</code></td><td>无</td></tr>
-      <tr><td><code>0</code>到<code>9</code></td><td>无</td></tr>
-      <tr><td><code>F1</code>到<code>F24</code></td><td>无</td></tr>
+      <tr><td><code>A</code>~<code>Z</code></td><td>无</td></tr>
+      <tr><td><code>0</code>~<code>9</code></td><td>无</td></tr>
+      <tr><td><code>F1</code>~<code>F24</code></td><td>无</td></tr>
       <tr><td><code>Insert</code></td><td>也可以写成<code>Ins</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table>
