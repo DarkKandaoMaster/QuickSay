@@ -1272,7 +1272,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <ol>
       <li>第一条为“输入图片”。</li>
       <li>第二条为图片。</li>
-      <li>等待1秒。微信发送图片需要时间，因此可以使用<code>&lt;sleep&gt;</code>手动指定等待时间，等待图片发送完成后再执行后续操作，防止文字与图片顺序错乱。</li>
+      <li>等待1秒。微信上传图片需要时间，因此可以使用<code>&lt;sleep&gt;</code>手动指定等待时间，等待图片上传完成后再执行后续操作，防止文字与图片顺序错乱。</li>
       <li>第三条为“输入结束”。</li>
     </ol>
 
