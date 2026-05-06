@@ -1323,11 +1323,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <p><a href="quicksay://basic-tutorial">↩返回基础教程</a></p>
 
     <table>
-      <tr><th>写法</th><th>效果</th></tr>
-      <tr><td><code>&lt;Tab&gt;</code></td><td>按Tab</td></tr>
-      <tr><td><code>&lt;Left&gt;</code>/<code>&lt;Right&gt;</code>/<code>&lt;Up&gt;</code>/<code>&lt;Down&gt;</code></td><td>按方向键</td></tr>
-      <tr><td><code>&lt;sleep 500ms&gt;</code></td><td>等待500毫秒</td></tr>
-      <tr><td><code>&lt;sleep 0.2s&gt;</code></td><td>等待0.2毫秒</td></tr>
+      <tr><th>写法</th><th>简写</th><th>效果</th></tr>
     </table>
   </body>
 </html>
