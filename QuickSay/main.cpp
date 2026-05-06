@@ -1197,7 +1197,7 @@ void showAdvancedInputHelp(QWidget & parent){
     helpWindow->setAttribute(Qt::WA_DeleteOnClose);
     helpWindow->setWindowTitle("如何更高级地输入？");
     helpWindow->setWindowIcon(parent.windowIcon());
-    helpWindow->setFixedSize(620,520);
+    helpWindow->setFixedSize(500,500);
 
     QTextBrowser * helpEdit=new QTextBrowser(helpWindow);
     helpEdit->setReadOnly(true);
@@ -1297,7 +1297,7 @@ void showAdvancedInputHelp(QWidget & parent){
 </html>
     )");
     helpEdit->setLineWrapMode(QTextEdit::NoWrap);
-    helpEdit->setGeometry(0,0,620,520);
+    helpEdit->setGeometry(0,0,500,500);
 
     helpWindow->move(parent.x()+30,parent.y()+30);
     helpWindow->show();
