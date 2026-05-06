@@ -1319,7 +1319,7 @@ void showAdvancedInputHelp(QWidget & parent){
     </style>
   </head>
   <body>
-    <p><a href="quicksay://basic-tutorial">返回简明教程</a></p>
+    <p><a href="quicksay://basic-tutorial">返回基础教程</a></p>
 
     <table>
       <tr><th>写法</th><th>效果</th></tr>
