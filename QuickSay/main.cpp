@@ -47,11 +47,8 @@
 #include<QDesktopServices>
 #include<QUrl>
 #include<QAbstractNativeEventFilter>
-#include<QImage>
-#include<QStandardPaths>
 #include<QToolTip>
 #include<QFontDatabase>
-#include<QUuid>
 #include<climits>
 #include<windows.h>
 #pragma comment(lib,"user32.lib")
@@ -380,7 +377,6 @@ struct QuickSayOutputAction{
     QVector<WORD> modifiers;
     WORD key=0;
     int sleepMs=0;
-    QImage image;
     QString imagePath;
 };
 
@@ -418,26 +414,8 @@ bool setClipboardFileWin32(const QString & filePath){
     return ok;
 }
 
-QString saveImageToClipboardTempFile(const QImage & image){
-    if(image.isNull()) return QString();
-
-    QString dirPath=QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-    if(dirPath.isEmpty()) dirPath=QDir::tempPath()+"/QuickSay";
-
-    QDir dir(dirPath);
-    if(!dir.exists() && !dir.mkpath(".")) return QString();
-
-    QString path=dir.filePath("clipboard-image-"+QUuid::createUuid().toString(QUuid::WithoutBraces)+".png");
-    if(!image.save(path,"PNG")) return QString();
-    return path;
-}
-
 bool setClipboardImageFileWin32(const QuickSayOutputAction & action){
-    if(!action.imagePath.isEmpty() && setClipboardFileWin32(action.imagePath)) return true;
-
-    QString tempPath=saveImageToClipboardTempFile(action.image);
-    if(tempPath.isEmpty()) return false;
-    return setClipboardFileWin32(tempPath);
+    return !action.imagePath.isEmpty() && setClipboardFileWin32(action.imagePath);
 }
 
 struct QuickSayModifierSnapshot{
@@ -710,10 +688,7 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
         }
         QFileInfo info(path);
         if(!info.isAbsolute() || !info.exists() || !info.isFile()) return false;
-        QImage image(path);
-        if(image.isNull()) return false;
         action.type=QuickSayOutputActionType::Image;
-        action.image=image;
         action.imagePath=info.absoluteFilePath();
         return true;
     }
