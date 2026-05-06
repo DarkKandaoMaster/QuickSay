@@ -1263,7 +1263,8 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
-    <h3>示例1（以微信为例）</h3>
+    <h3>示例（以微信为例）</h3>
+    <p>写法1：</p>
     <pre>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;</pre>
     <p>效果：连发两条消息，</p>
     <ol>
@@ -1271,15 +1272,14 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>第二条为“如果觉得好用记得点个Star！”。</li>
     </ol>
 
-    <h3>示例2</h3>
+    <p>写法2：</p>
     <pre>&lt;img C:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</pre>
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为图片。</li>
-      <li>等待1秒。</li>
+      <li>等待1秒。微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可有效减少文字与图片顺序错乱的情况。【【【【【此处应处理，比如删减</li>
       <li>第二条为“输入结束”。</li>
     </ol>
-    <p>提示：微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可有效减少文字与图片顺序错乱的情况。【【【【【此处应处理，比如删减</p>
 
     <h3>补充规则</h3>
     <ol>
