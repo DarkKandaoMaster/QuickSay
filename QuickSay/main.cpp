@@ -1734,7 +1734,17 @@ protected:
 class BadgeDelegate:public QStyledItemDelegate{ //自定义一个委托类，用于在短语项左上角或者右上角绘制角标
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
-    QSize sizeHint(const QStyleOptionViewItem & option,const QModelIndex & index) const override{
+    // 如果data.json中最后一个短语项为：
+    // wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+    // 或者
+    // 我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我我
+    // 那么所有短语项就会被撑宽，而不是在合适的时候自动换行。其中一个现象是出现水平滚动条。
+    // 但如果再添加一个较短的短语，使得data.json中最后一个短语项为：
+    // 我
+    // 那么所有短语项都会恢复正常的宽度，都会在合适的时候自动换行。其中一个现象是水平滚动条消失。
+    // 原因是 QListWidget/QListView 会根据 item delegate 的 sizeHint() 估算内容区域宽度。最后一个可见短语如果是很长的连续英文或中文，没有自然断点，它的宽度提示会变得很大，于是列表内容宽度被撑大，水平滚动条出现；item 绘制区域也随之变宽，所以其他短语看起来也不按窗口宽度换行。最后一项变短后，估算宽度恢复，现象消失。
+    // 解决方法就是这个函数↓
+    QSize sizeHint(const QStyleOptionViewItem & option,const QModelIndex & index) const override{ //重写 sizeHint()，沿用 QStyledItemDelegate::sizeHint() 的高度，但把返回宽度压小，例如设为 0
         QSize size=QStyledItemDelegate::sizeHint(option,index);
         size.setWidth(0);
         return size;
