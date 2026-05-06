@@ -1265,15 +1265,21 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>示例1（以微信为例）</h3>
     <pre>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;</pre>
-    <p>效果：连发两条消息，第一条为“感谢使用QuickSay！”，第二条为“如果觉得好用记得点个Star！”。</p>
+    <p>效果：连发两条消息，</p>
+    <ol>
+      <li>第一条为“感谢使用QuickSay！”。</li>
+      <li>第二条为“如果觉得好用记得点个Star！”。</li>
+    </ol>
 
     <h3>示例2</h3>
     <pre>&lt;img D:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</pre>
-    <p>效果：连发两条消息，第一条为图片，然后等待1秒，第二条为“输入结束”。</p>
-    <p>说明：微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可有效防止文字与图片顺序错误。</p>
-
-    <h3>示例3</h3>
-    <pre>&lt;press Ctrl+A&gt;&lt;press Backspace&gt;重新输入的内容</pre>
+    <p>效果：连发两条消息，</p>
+    <ol>
+      <li>第一条为图片。</li>
+      <li>等待1秒。</li>
+      <li>第二条为“输入结束”。</li>
+    </ol>
+    <p>提示：微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可有效减少文字与图片顺序错乱的情况。</p>
 
     <h3>补充规则</h3>
     <ol>
