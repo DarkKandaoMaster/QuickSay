@@ -1349,6 +1349,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>Space</code></td><td>无</td><td>空格键</td></tr>
       <tr><td><code>Esc</code></td><td><code>Escape</code></td><td>Esc键</td></tr>
       <tr><td><code>Backspace</code></td><td>无</td><td>退格键</td></tr>
+      <tr><td><code>Insert</code></td><td><code>Ins</code></td><td>Insert键</td></tr>
       <tr><td><code>Left</code></td><td>无</td><td>左方向键</td></tr>
       <tr><td><code>Right</code></td><td>无</td><td>右方向键</td></tr>
       <tr><td><code>Up</code></td><td>无</td><td>上方向键</td></tr>
@@ -1360,7 +1361,6 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>A</code>~<code>Z</code></td><td>无</td></tr>
       <tr><td><code>0</code>~<code>9</code></td><td>无</td></tr>
       <tr><td><code>F1</code>~<code>F24</code></td><td>无</td></tr>
-      <tr><td><code>Insert</code></td><td>可以写成<code>Ins</code></td></tr>
       <tr><td>组合快捷键</td><td>例如<code>&lt;press Ctrl+Shift+A&gt;</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table><br>
