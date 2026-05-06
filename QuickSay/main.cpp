@@ -1253,7 +1253,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;sleep&gt;</code></td><td>等待1秒</td></tr>
       <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待2秒</td></tr>
       <tr><td><code>&lt;press A&gt;</code></td><td>按单个按键</td></tr>
-      <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
+      <tr><td><code>&lt;press Ctrl+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
     <h3>使用示例（以微信为例）</h3>
@@ -1359,7 +1359,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>0</code>~<code>9</code></td><td>无</td></tr>
       <tr><td><code>F1</code>~<code>F24</code></td><td>无</td></tr>
       <tr><td><code>Insert</code></td><td>也可以写成<code>Ins</code></td></tr>
-      <tr><td>组合快捷键</td><td>例如</td></tr>
+      <tr><td>组合快捷键</td><td>例如<code>&lt;press Ctrl+Shift+A&gt;</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table><br>
     <p>组合快捷键规则</p>
