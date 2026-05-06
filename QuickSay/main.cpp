@@ -1371,6 +1371,7 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>&lt;sleep&gt;相关</h3>
     <ol>
+      <li><code>&lt;sleep 2s&gt;</code>可以写成<code>&lt;sleep 2&gt;</code>。</li>
       <li>sleep最小等待时间是毫秒。例如<code>&lt;sleep 100ms&gt;</code>可以，<code>&lt;sleep 100.5ms&gt;</code>不可以。</li>
       <li><code>&lt;sleep 0.1005s&gt;</code>可以，此时它会四舍五入，相当于<code>&lt;sleep 0.101s&gt;</code>。</li>
       <li>如果等待时间不符合规则，会原样输入。</li>
