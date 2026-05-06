@@ -1347,11 +1347,11 @@ void showAdvancedInputHelp(QWidget & parent){
                          }
                      }
                     );
+    helpWindow->setFixedSize(500,500);
+    helpEdit->setGeometry(0,0,500,500);
     helpEdit->setHtml(basicTutorialHtml);
     helpEdit->setLineWrapMode(QTextEdit::WidgetWidth);
     helpEdit->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-    helpWindow->setFixedSize(500,500);
-    helpEdit->setGeometry(0,0,500,500);
 
     helpWindow->move(parent.x()+30,parent.y()+30);
     helpWindow->show();
