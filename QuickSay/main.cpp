@@ -1193,7 +1193,7 @@ void showAdvancedInputHelp(QWidget & parent){
     QTextBrowser * helpEdit=new QTextBrowser(helpWindow);
     helpEdit->setReadOnly(true);
     helpEdit->setOpenLinks(false);
-    helpEdit->setHtml(R"(
+    const QString basicTutorialHtml=R"(
 <html>
   <head>
     <style>
@@ -1284,7 +1284,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <p><a href="quicksay://full-tutorial">查看更完整的教程</a></p>
   </body>
 </html>
-    )");
+    )";
 
     const QString fullTutorialHtml=R"(
 <html>
@@ -1319,6 +1319,8 @@ void showAdvancedInputHelp(QWidget & parent){
     </style>
   </head>
   <body>
+    <p><a href="quicksay://basic-tutorial">返回简明教程</a></p>
+
     <table>
       <tr><th>写法</th><th>效果</th></tr>
       <tr><td><code>&lt;Tab&gt;</code></td><td>按Tab</td></tr>
@@ -1331,12 +1333,16 @@ void showAdvancedInputHelp(QWidget & parent){
     )";
 
     QObject::connect(helpEdit,&QTextBrowser::anchorClicked,
-                     [helpEdit,fullTutorialHtml](const QUrl & url){
+                     [helpEdit,basicTutorialHtml,fullTutorialHtml](const QUrl & url){
                          if(url==QUrl("quicksay://full-tutorial")){
                              helpEdit->setHtml(fullTutorialHtml);
                          }
+                         else if(url==QUrl("quicksay://basic-tutorial")){
+                             helpEdit->setHtml(basicTutorialHtml);
+                         }
                      }
                     );
+    helpEdit->setHtml(basicTutorialHtml);
     helpEdit->setLineWrapMode(QTextEdit::NoWrap);
     helpEdit->setGeometry(0,0,500,500);
 
