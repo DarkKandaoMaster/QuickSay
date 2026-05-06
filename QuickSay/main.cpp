@@ -1391,6 +1391,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <p>图片、文件路径说明：</p>
     <ol>
       <li>只能写绝对路径。</li>
+      <li>不能写文件夹路径。</li>
       <li>可以加引号。例如<code>&lt;img "C:\图片.png"&gt;</code>。</li>
       <li>如果路径不存在，会原样输入。</li>
     </ol>
