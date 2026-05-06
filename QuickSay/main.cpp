@@ -1371,11 +1371,9 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>&lt;sleep&gt;相关</h3>
     <ol>
-      <li><code>&lt;sleep&gt;</code>默认等待1秒。</li>
-      <li>可以写<code>&lt;sleep 2s&gt;</code>，表示等待2秒。</li>
-      <li>可以写<code>&lt;sleep 500ms&gt;</code>，表示等待500毫秒。</li>
-      <li>也可以写小数秒，比如<code>&lt;sleep 0.5s&gt;</code>。</li>
-      <li>等待时间写错时，标签会原样输入。</li>
+      <li>sleep最小等待时间是毫秒。例如<code>&lt;sleep 100ms&gt;</code>可以，<code>&lt;sleep 100.5ms&gt;</code>不可以。</li>
+      <li><code>&lt;sleep 0.1005s&gt;</code>可以，此时它会四舍五入，相当于<code>&lt;sleep 0.101s&gt;</code>。</li>
+      <li>如果等待时间不符合规则，会原样输入。</li>
     </ol>
 
     <h3>&lt;img&gt;、&lt;file&gt;相关</h3>
