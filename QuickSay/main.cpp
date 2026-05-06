@@ -1363,7 +1363,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table>
 
-    <h3>组合键规则</h3>
+    <h3>组合快捷键规则</h3>
     <ol>
       <li>组合键写在<code>&lt;press ...&gt;</code>里，用<code>+</code>连接。</li>
       <li>修饰键可以用<code>Ctrl</code>、<code>Alt</code>、<code>Shift</code>、<code>Win</code>。</li>
