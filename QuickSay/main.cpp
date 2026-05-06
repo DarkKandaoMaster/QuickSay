@@ -1367,6 +1367,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <p>组合快捷键说明：</p>
     <ol>
       <li>修饰键可以写<code>Ctrl</code>（可以写成<code>Control</code>）、<code>Shift</code>、<code>Alt</code>、<code>Win</code>（可以写成<code>Meta</code>或<code>Windows</code>）。</li>
+      <li>修饰键的顺序无所谓。</li>
       <li>每个组合快捷键只能有一个主键。例如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press Ctrl+A+B&gt;</code>不可以。</li>
     </ol>
 
