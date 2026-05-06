@@ -690,10 +690,14 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
         return parsePressCombo(parts.at(1),action);
     }
 
-    if(trimmed.size()>3 &&
-       trimmed.left(3).compare("img",Qt::CaseInsensitive)==0 &&
-       trimmed.at(3).isSpace()){
-        QString path=cleanQuickSayPath(trimmed.mid(4));
+    bool isImgTag=trimmed.size()>3 &&
+                  trimmed.left(3).compare("img",Qt::CaseInsensitive)==0 &&
+                  trimmed.at(3).isSpace();
+    bool isFileTag=trimmed.size()>4 &&
+                   trimmed.left(4).compare("file",Qt::CaseInsensitive)==0 &&
+                   trimmed.at(4).isSpace();
+    if(isImgTag || isFileTag){
+        QString path=cleanQuickSayPath(trimmed.mid(isImgTag?4:5));
         if(   (path.startsWith('"') && path.endsWith('"')) ||
               (path.startsWith('\'') && path.endsWith('\''))   ){
             path=cleanQuickSayPath(path.mid(1,path.size()-2));
@@ -1244,12 +1248,13 @@ void showAdvancedInputHelp(QWidget & parent){
   </head>
   <body>
     <h2>什么是高级输入？</h2>
-    <p>在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片。</p>
+    <p>在短语中插入标签，让QuickSay除了输入文字，还能按键、等待、粘贴图片、粘贴文件。</p>
 
     <h3>常用写法</h3>
     <table>
       <tr><th>写法</th><th>效果</th></tr>
       <tr><td><code>&lt;img 图片路径&gt;</code></td><td>粘贴图片</td></tr>
+      <tr><td><code>&lt;file 文件路径&gt;</code></td><td>粘贴文件</td></tr>
       <tr><td><code>&lt;Enter&gt;</code></td><td>按回车。相当于你在键盘按下回车键</td></tr>
       <tr><td><code>&lt;sleep&gt;</code></td><td>等待1秒</td></tr>
       <tr><td><code>&lt;sleep 2s&gt;</code></td><td>等待2秒</td></tr>
@@ -1261,6 +1266,8 @@ void showAdvancedInputHelp(QWidget & parent){
     <pre>感谢使用QuickSay！&lt;Enter&gt;此时就发送消息成功了
 
     请看这张图：&lt;img D:\图片.png&gt;&lt;sleep&gt;&lt;Enter&gt;
+
+    请看这个文件：&lt;file D:\文档.pdf&gt;&lt;sleep&gt;&lt;Enter&gt;
 
     &lt;press Ctrl+A&gt;&lt;press Backspace&gt;重新输入的内容</pre>
 
