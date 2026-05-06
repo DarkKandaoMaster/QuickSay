@@ -1277,7 +1277,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <p>效果：连发两条消息，</p>
     <ol>
       <li>第一条为图片。</li>
-      <li>等待1秒。微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可以手动指定等待<br>时间，等待图片发送完成后再执行下一次高级输入，防止文字与图片顺序错乱。</li>
+      <li>等待1秒。微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可以手动指定等待<br>时间，等待图片发送完成后再执行下一次高级输入，防止文字与图<br>片顺序错乱。</li>
       <li>第二条为“输入结束”。</li>
     </ol>
 
@@ -1286,7 +1286,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
       <li>如果真的想输入<code>&lt;Enter&gt;</code>，请写成<code>\&lt;Enter&gt;</code>。</li>
-      <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一下。【【【【【此处应处理，比如删减</li>
+      <li>每执行一次高级输入，会按照设置里的“高级输入间隔”停顿一<br>下。</li>
     </ol>
 
     <p><a href="quicksay://full-tutorial">查看更完整的教程</a></p>
