@@ -418,6 +418,18 @@ bool setClipboardImageFileWin32(const QuickSayOutputAction & action){
     return !action.imagePath.isEmpty() && setClipboardFileWin32(action.imagePath);
 }
 
+QString cleanQuickSayPath(QString path){
+    const ushort hiddenChars[]={
+        0x200E,0x200F,
+        0x202A,0x202B,0x202C,0x202D,0x202E,
+        0x2066,0x2067,0x2068,0x2069
+    };
+    for(ushort code:hiddenChars){
+        path.remove(QChar(code));
+    }
+    return path.trimmed();
+}
+
 struct QuickSayModifierSnapshot{
     bool lCtrl=false;
     bool rCtrl=false;
@@ -681,10 +693,10 @@ bool parseQuickSayTag(const QString & tag,QuickSayOutputAction & action){
     if(trimmed.size()>3 &&
        trimmed.left(3).compare("img",Qt::CaseInsensitive)==0 &&
        trimmed.at(3).isSpace()){
-        QString path=trimmed.mid(4).trimmed();
+        QString path=cleanQuickSayPath(trimmed.mid(4));
         if(   (path.startsWith('"') && path.endsWith('"')) ||
               (path.startsWith('\'') && path.endsWith('\''))   ){
-            path=path.mid(1,path.size()-2);
+            path=cleanQuickSayPath(path.mid(1,path.size()-2));
         }
         QFileInfo info(path);
         if(!info.isAbsolute() || !info.exists() || !info.isFile()) return false;
