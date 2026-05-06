@@ -1279,7 +1279,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <ol>
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
-      <li>如果真的想输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
+      <li>如果真的想输入<code>&lt;Enter&gt;</code>，请写成<code>\&lt;Enter&gt;</code>。</li>
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
 
