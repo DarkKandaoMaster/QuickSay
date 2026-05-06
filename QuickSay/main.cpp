@@ -1270,7 +1270,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <h3>示例2</h3>
     <pre>&lt;img D:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;</pre>
     <p>效果：连发两条消息，第一条为图片，然后等待1秒，第二条为“输入结束”。</p>
-    <p>说明：微信发送图片需要时间，添加 <code>&lt;sleep&gt;</code> 可有效防止文字与图片顺序错误。</p>
+    <p>说明：微信发送图片需要时间，添加<code>&lt;sleep&gt;</code>可有效防止文字与图片顺序错误。</p>
 
     <h3>示例3</h3>
     <pre>&lt;press Ctrl+A&gt;&lt;press Backspace&gt;重新输入的内容</pre>
@@ -1280,7 +1280,6 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
       <li>如果真的想输入 <code>&lt;Enter&gt;</code>，写成 <code>\&lt;Enter&gt;</code>。</li>
-      <li>图片后面如果要立刻按 Enter，建议加 <code>&lt;sleep&gt;</code>，因为QQ、微信等软件发送图片需要时间。之后把这句话删掉</li>
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
 
