@@ -1270,7 +1270,7 @@ void showAdvancedInputHelp(QWidget & parent){
     示例2
     &lt;img D:\图片.png&gt;&lt;Enter&gt;&lt;sleep&gt;输入结束&lt;Enter&gt;
     效果
-    连发两条消息，第一条为图片，然后等待1秒（因为微信发送图片需要时间），第二条为“输入结束”
+    连发两条消息，第一条为图片，然后等待1秒（因为微信发送图片需要时间，这样可以有效防止文字与图片顺序错误），第二条为“输入结束”
 
     请看这个文件：&lt;file D:\文档.pdf&gt;&lt;sleep&gt;&lt;Enter&gt;
 
