@@ -1358,16 +1358,15 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>A</code>~<code>Z</code></td><td>无</td></tr>
       <tr><td><code>0</code>~<code>9</code></td><td>无</td></tr>
       <tr><td><code>F1</code>~<code>F24</code></td><td>无</td></tr>
-      <tr><td><code>Insert</code></td><td>也可以写成<code>Ins</code></td></tr>
+      <tr><td><code>Insert</code></td><td>可以写成<code>Ins</code></td></tr>
       <tr><td>组合快捷键</td><td>例如<code>&lt;press Ctrl+Shift+A&gt;</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table><br>
-    <p>组合快捷键规则</p>
+    <p>组合快捷键说明</p>
     <ol>
-      <li>组合键写在<code>&lt;press ...&gt;</code>里，用<code>+</code>连接。</li>
       <li>修饰键可以用<code>Ctrl</code>、<code>Alt</code>、<code>Shift</code>、<code>Win</code>。</li>
-      <li><code>Ctrl</code>也可以写<code>Control</code>；<code>Win</code>也可以写<code>Meta</code>或<code>Windows</code>。</li>
-      <li>每个组合键只能有一个主键。比如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press A+B&gt;</code>不可以。</li>
+      <li><code>Ctrl</code>可以写成<code>Control</code>；<code>Win</code>可以写成<code>Meta</code>或<code>Windows</code>。</li>
+      <li>每个组合快捷键只能有一个主键。比如<code>&lt;press Ctrl+A&gt;</code>可以，<code>&lt;press A+B&gt;</code>不可以。</li>
     </ol>
 
     <h3>&lt;sleep&gt;相关</h3>
