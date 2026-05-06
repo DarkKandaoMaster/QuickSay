@@ -1378,10 +1378,6 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <h3>&lt;img&gt;、&lt;file&gt;相关</h3>
     <ol>
-      <li><code>&lt;img 图片路径&gt;</code>用于粘贴图片文件，常用于微信、QQ这类聊天窗口。</li>
-      <li><code>&lt;file 文件路径&gt;</code>用于粘贴普通文件。</li>
-      <li>在Windows 10/11里，QuickSay会把对应文件放进剪贴板，然后模拟<code>Ctrl+V</code>粘贴。</li>
-      <li>图片或文件是否真的能发出去，取决于当前输入框是否支持粘贴文件。</li>
       <li><code>&lt;img&gt;</code>执行前会自动等待1秒。如果发送图片后还要继续输入文字，建议再手动加一个<code>&lt;sleep&gt;</code>，避免顺序错乱。</li>
     </ol>
 
