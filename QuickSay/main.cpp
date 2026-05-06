@@ -1274,7 +1274,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>第二条为“输入结束”。</li>
     </ol>
 
-    <h3>补充</h3>
+    <h3>补充规则</h3>
     <ol>
       <li>普通文字会直接输入。</li>
       <li>标签不符合规则时，会按原文输出。</li>
