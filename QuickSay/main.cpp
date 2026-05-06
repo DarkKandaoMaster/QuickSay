@@ -205,7 +205,7 @@ void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取d
         addDefaultItem("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加短语：点右上角加号\n修改/删除：右键短语\n排序：拖动短语");//【【【注：想修改默认列表内容（也就是新手教程）在这里修改】】】
         addDefaultItem("点击短语：输入对应短语\n鼠标悬停：查看完整短语\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处短语");
         addDefaultItem("右键标签：新建/修改/删除标签\n标签排序：拖动标签\n左右方向键←→：切换标签\n鼠标滚轮：也可以切换标签");
-        addDefaultItem("感谢使用QuickSay！\n如果觉得好用记得去Github点个Star！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
+        addDefaultItem("感谢使用QuickSay！\n如果觉得好用记得点个Star！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~");
         saveListToJson(liebiao,dataPath);
     }
 }
@@ -1263,8 +1263,10 @@ void showAdvancedInputHelp(QWidget & parent){
       <tr><td><code>&lt;press Ctrl+Alt+Shift+A&gt;</code></td><td>按组合快捷键</td></tr>
     </table>
 
-    <h3>示例</h3>
-    <pre>感谢使用QuickSay！&lt;Enter&gt;此时就发送消息成功了
+    <h3>示例（以微信为例）</h3>
+    <pre>感谢使用QuickSay！&lt;Enter&gt;如果觉得好用记得点个Star！&lt;Enter&gt;
+    效果
+    连发两条消息，第一条为“感谢使用QuickSay！”，第二条为“如果觉得好用记得点个Star！”。
 
     请看这张图：&lt;img D:\图片.png&gt;&lt;sleep&gt;&lt;Enter&gt;
 
