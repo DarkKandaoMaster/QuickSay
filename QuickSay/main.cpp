@@ -1245,15 +1245,6 @@ void showAdvancedInputHelp(QWidget & parent){
         margin-top:6px;
         padding-left:22px;
       }
-      a.button{
-        display:inline-block;
-        color:#ffffff;
-        background:#2563eb;
-        text-decoration:none;
-        padding:8px 14px;
-        border-radius:4px;
-        font-weight:600;
-      }
     </style>
   </head>
   <body>
@@ -1290,7 +1281,7 @@ void showAdvancedInputHelp(QWidget & parent){
       <li>高级输入每执行一步后，会按照设置里的“高级输入间隔”暂停一下。</li>
     </ol>
 
-    <p><a href="quicksay://full-tutorial" class="button">查看更完整的教程</a></p>
+    <p><a href="quicksay://full-tutorial">查看更完整的教程</a></p>
   </body>
 </html>
     )");
