@@ -1338,10 +1338,10 @@ void showAdvancedInputHelp(QWidget & parent){
   <body>
     <p><a href="quicksay://basic-tutorial">↩返回基础教程</a></p>
 
-    <h3>按键名称</h3>
-    <p>可以直接写成<code>&lt;Enter&gt;</code>这种简写的按键：</p>
+    <h3>&lt;press&gt;相关</h3>
+    <p>可以写成<code>&lt;Enter&gt;</code>这种简写的按键：</p>
     <table>
-      <tr><th>按键</th><th>别名</th><th>效果</th></tr>
+      <tr><th>按键</th><th>别名</th><th>说明</th></tr>
       <tr><td><code>Enter</code></td><td><code>Return</code></td><td>回车</td></tr>
       <tr><td><code>Tab</code></td><td>无</td><td>Tab键</td></tr>
       <tr><td><code>Space</code></td><td>无</td><td>空格</td></tr>
@@ -1355,11 +1355,12 @@ void showAdvancedInputHelp(QWidget & parent){
 
     <p>只能写在<code>&lt;press ...&gt;</code>里的按键：</p>
     <table>
-      <tr><th>写法</th><th>说明</th></tr>
-      <tr><td><code>A</code>到<code>Z</code></td><td>字母键</td></tr>
-      <tr><td><code>0</code>到<code>9</code></td><td>数字键</td></tr>
-      <tr><td><code>F1</code>到<code>F24</code></td><td>功能键</td></tr>
-      <tr><td><code>Ins</code></td><td>也可以写<code>Insert</code></td></tr>
+      <tr><th>按键</th><th>说明</th></tr>
+      <tr><td><code>A</code>到<code>Z</code></td><td>无</td></tr>
+      <tr><td><code>0</code>到<code>9</code></td><td>无</td></tr>
+      <tr><td><code>F1</code>到<code>F24</code></td><td>无</td></tr>
+      <tr><td><code>Insert</code></td><td>也可以写成<code>Ins</code></td></tr>
+      <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table>
 
     <h3>组合键规则</h3>
