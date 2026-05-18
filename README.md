@@ -30,7 +30,7 @@ QuickSay文件夹
 2_QuickSay使用操作.txt
 ```
 直接把 **QuickSay文件夹** 放在随便什么文件夹里，然后双击QuickSay.exe。  
-文件夹名称有中文空格都行，但是不要放在Program Files之类的需要管理员权限的文件夹里。  
+路径有中文空格都行，但是不要放在Program Files之类的需要管理员权限的文件夹里。  
 #### 方法二：
 点进这个蓝奏云链接：https://wwlt.lanzoum.com/b014wmlo5g 密码:star  
 然后点击链接QuickSay_v1.6.0.7z，再点下载按钮，于是开始下载。  
