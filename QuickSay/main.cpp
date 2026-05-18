@@ -1,10 +1,6 @@
-//版本：1.6.0
+//版本：1.6.1
 //更新内容：
-//1. 主窗口改为无焦点显示，呼出QuickSay时不会再抢走当前输入位置的焦点。
-//2. 新增高级输入功能。在短语中插入标签，让QuickSay除了输入文字，还能按键、停顿、粘贴图片/文件。
-//3. 设置中新增短语项左右内边距、上下内边距选项。
-//4. 右键短语时新增“在当前短语后添加短语”，可以直接在指定位置插入新短语。
-//5. 其他亿些小改动。
+//1. 
 
 #include<QApplication>
 #include<QWidget>
@@ -2585,7 +2581,7 @@ int main(int argc, char *argv[]){
     QHBoxLayout versionLayout(&versionWidget);//创建一个水平布局，放置在刚才创建的容器中
     versionLayout.setSpacing(4);//控件之间间距4像素
     versionLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
-    QPushButton versionButton("1.6.0",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
+    QPushButton versionButton("1.6.1",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
     versionButton.setFixedWidth(100);//固定版本号按钮的宽度为100像素
     versionButton.setCursor(Qt::PointingHandCursor);//当鼠标悬停在该按钮上时，鼠标光标变成手形状
     versionWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
