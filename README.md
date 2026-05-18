@@ -1,6 +1,6 @@
-<h1 align="center">QuickSay</h1>
+<h1 align="center">QuickSay ---一款强大的快捷短语软件</h1>
 
-<div align="center">一款强大的快捷短语软件</div>
+<!-- <div align="center">一款强大的快捷短语软件</div> -->
 
 <div align="center">
   <img src="./QuickSay/icons/软件图标.svg" alt="QuickSay Logo" width="120">
