@@ -1209,7 +1209,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <style>
       body{
         color:#222222;
-        font-family:"Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif;
+        font-family: "Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif,"Segoe UI Symbol","Euphemia","Gadugi";
         font-size:14px;
         line-height:1.55;
       }
@@ -1305,7 +1305,7 @@ void showAdvancedInputHelp(QWidget & parent){
     <style>
       body{
         color:#222222;
-        font-family:"Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif;
+        font-family: "Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif,"Segoe UI Symbol","Euphemia","Gadugi";
         font-size:14px;
         line-height:1.55;
       }
@@ -1907,7 +1907,7 @@ int main(int argc, char *argv[]){
     /*====================全局基础样式====================*/
     QWidget{
         background-color: #f3f3f3;                                                      /*主背景色：浅灰色*/
-        font-family: "Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif; /*字体优先级： Inter > Segoe UI > 微软雅黑UI版本 > 微软雅黑 > Source Han Sans SC（思源黑体） > PingFang SC（苹果系统默认字体） > Helvetica Neue > Arial > 系统默认无衬线字体 */
+        font-family: "Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif,"Segoe UI Symbol","Euphemia","Gadugi"; /*字体优先级： Inter > Segoe UI > 微软雅黑UI版本 > 微软雅黑 > Source Han Sans SC（思源黑体） > PingFang SC（苹果系统默认字体） > Helvetica Neue > Arial > 系统默认无衬线字体 */
         font-size: 9pt;                                                                 /*全局字体大小：9磅*/
         font-weight: 400;                                                               /*全局字体粗细*/
         color: #323130;                                                                 /*全局字体颜色：深灰色*/
