@@ -1,6 +1,6 @@
 //版本：1.6.1
 //更新内容：
-//1. 
+//1. 默认高级输入间隔改成200毫秒
 
 #include<QApplication>
 #include<QWidget>
