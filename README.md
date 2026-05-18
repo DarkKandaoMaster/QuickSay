@@ -1,25 +1,21 @@
-<h1 align="center">QuickClipboard</h1>
+<h1 align="center">QuickSay</h1>
 
-<p align="center">
-  <strong>重新定义你的复制粘贴体验 🚀</strong><br>
-  Windows 高效剪贴板管理工具 · 快捷 · 智能 · 优雅
-</p>
-
+<div align="center">一款强大的快捷短语软件</div>
 
 <div align="center">
-  <img src="./QuickSay/icons/软件图标.svg" alt="QuickClipboard Logo" width="120">
+  <img src="./QuickSay/icons/软件图标.svg" alt="QuickSay Logo" width="120">
   <br><br>
-  <a href="https://github.com/mosheng1/QuickClipboard/stargazers">
-    <img src="https://img.shields.io/github/stars/mosheng1/QuickClipboard?style=for-the-badge&logo=github&color=yellow" alt="Stars">
+  <a href="https://github.com/DarkKandaoMaster/QuickSay/stargazers">
+    <img src="https://img.shields.io/github/stars/DarkKandaoMaster/QuickSay?style=for-the-badge&logo=github&color=yellow" alt="Stars">
   </a>
-  <a href="https://github.com/mosheng1/QuickClipboard/releases">
-    <img src="https://img.shields.io/github/v/release/mosheng1/QuickClipboard?style=for-the-badge&label=Release&color=brightgreen" alt="Release">
+  <a href="https://github.com/DarkKandaoMaster/QuickSay/releases">
+    <img src="https://img.shields.io/github/v/release/DarkKandaoMaster/QuickSay?style=for-the-badge&label=Release&color=brightgreen" alt="Release">
   </a>
-  <a href="https://github.com/mosheng1/QuickClipboard/releases">
-    <img src="https://img.shields.io/github/downloads/mosheng1/QuickClipboard/total.svg?style=for-the-badge&color=blueviolet" alt="Downloads">
+  <a href="https://github.com/DarkKandaoMaster/QuickSay/releases">
+    <img src="https://img.shields.io/github/downloads/DarkKandaoMaster/QuickSay/total.svg?style=for-the-badge&color=blueviolet" alt="Downloads">
   </a>
-  <a href="https://github.com/mosheng1/QuickClipboard/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/mosheng1/QuickClipboard.svg?style=for-the-badge&color=orange" alt="License">
+  <a href="https://github.com/DarkKandaoMaster/QuickSay/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/DarkKandaoMaster/QuickSay.svg?style=for-the-badge&color=orange" alt="License">
   </a>
 </div>
 
