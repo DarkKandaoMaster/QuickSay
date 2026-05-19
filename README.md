@@ -9,8 +9,6 @@
   <a href="https://github.com/DarkKandaoMaster"><img src="https://img.shields.io/badge/Create_by_DarkKandaoMaster-with_Love_%E2%9D%A4-pink?style=flat-square" /></a>
 </div>
 
-
-
 ---
 
 ### 欢迎来测~ヾ(≧▽≦*)o
