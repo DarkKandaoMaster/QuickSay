@@ -2,7 +2,6 @@
   <img src="./QuickSay/icons/软件图标.svg" alt="QuickSay Logo" width="150">
   <h1>QuickSay</h1>
   <p>一款强大的快捷短语软件</p>
-  <p>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases/latest"><img src="https://img.shields.io/github/v/release/DarkKandaoMaster/QuickSay?style=flat-square" /></a>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/stargazers"><img src="https://img.shields.io/github/stars/DarkKandaoMaster/QuickSay?style=flat-square&logo=github&color=yellow" /></a>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases"><img src="https://img.shields.io/github/downloads/DarkKandaoMaster/QuickSay/total?style=flat-square" /></a><br>
