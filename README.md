@@ -6,7 +6,6 @@
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases/latest"><img src="https://img.shields.io/github/v/release/DarkKandaoMaster/QuickSay?style=flat-square" /></a>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/stargazers"><img src="https://img.shields.io/github/stars/DarkKandaoMaster/QuickSay?style=flat-square" /></a>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases"><img src="https://img.shields.io/github/downloads/DarkKandaoMaster/QuickSay/total?style=flat-square" /></a>
-  <a href="https://github.com/DarkKandaoMaster/QuickSay/blob/main/LICENSE"><img src="https://img.shields.io/github/license/DarkKandaoMaster/QuickSay?style=flat-square" /></a>
   <a href="https://github.com/DarkKandaoMaster"><img src="https://img.shields.io/badge/%F0%9F%8E%89_Create_by_DarkKandaoMaster-with_Love_%E2%9D%A4-pink?style=flat-square" /></a>
 </div>
 
