@@ -6,6 +6,7 @@
 //3. 设置中新增“钉住窗口时按下短语项对应角标输入短语？”和“钉住窗口时按下回车键输入短语？”两个选项。方便钉住QuickSay时在其他程序里正常打字。
 //4. 限制了鼠标悬停提示的宽度和高度。现在鼠标悬停提示单行过长会自动换行（限制宽度）、总行数过多会截断并以省略号结尾（限制高度）。
 //5. 把主窗口左上角用来归类短语的“标签”改名为“分组”，避免和短语里插入的标签（如<Enter>）混淆。
+//6. 呼出QuickSay的快捷键改为开关式：窗口没显示时按下就显示并拉到屏幕最前；窗口已经在最前时按下就关闭窗口到托盘。
 
 #include<QApplication>
 #include<QWidget>
@@ -1138,6 +1139,16 @@ void showMainWindowNoActivate(QWidget & chuang){
     HWND insertAfter=config["zhiding"].toBool()?HWND_TOPMOST:HWND_TOP;
     SetWindowPos(hwnd,insertAfter,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     startQuickSayKeyboardHook();
+}
+
+bool isWindowFrontmost(QWidget & chuang){ //判断窗口当前是否在屏幕最前方（没有被其他窗口盖住），用窗口中心点处最前方的可见窗口是不是它来判断
+    HWND hwnd=(HWND)chuang.winId();
+    RECT r;
+    if(!GetWindowRect(hwnd,&r)) return true;//取不到窗口矩形时，保守地认为它在最前
+    POINT pt{ (r.left+r.right)/2 , (r.top+r.bottom)/2 };//窗口中心点的屏幕坐标
+    HWND topHwnd=WindowFromPoint(pt);//返回该屏幕点处最前方的可见窗口
+    if(!topHwnd) return false;
+    return GetAncestor(topHwnd,GA_ROOT)==hwnd;//取得它的顶级窗口，如果就是本窗口，那么说明本窗口在中心点处没被盖住，在最前方
 }
 
 class NoActivateNativeFilter:public QAbstractNativeEventFilter{
@@ -2401,8 +2412,18 @@ int main(int argc, char *argv[]){
     //设置按下全局快捷键后会怎样
     QObject::connect(hotkey,&QHotkey::activated,
                      [&](){
-                         chuangkou.move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());//把chuangkou移动到记录的位置
-                         xianshi(chuangkou);
+                         //按下呼出快捷键时的切换逻辑：
+                         //窗口没显示 → 显示并拉到最前；
+                         //窗口已显示且开启了“主窗口始终置顶”（此时必然在最前） → 关闭窗口到托盘（相当于按下Esc）；
+                         //窗口已显示且没开启“主窗口始终置顶”：被其他窗口盖住 → 拉到最前；已在最前 → 关闭窗口到托盘（相当于按下Esc）。
+                         if(chuangkou.isVisible() && (config["zhiding"].toBool() || isWindowFrontmost(chuangkou))){ //窗口已显示，且开启了始终置顶（必然在最前）或没开启但已在最前 → 关闭窗口到托盘（相当于按下Esc）
+                             if(QWidget * popup=QApplication::activePopupWidget()) popup->close();//先关闭可能存在的右键菜单，和按下Esc行为保持一致
+                             chuangkou.close();//关闭窗口到托盘
+                         }
+                         else{ //窗口没显示，或被其他窗口盖住 → 移动到记录的位置并显示、拉到最前
+                             chuangkou.move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());//把chuangkou移动到记录的位置
+                             xianshi(chuangkou);//显示窗口并拉到屏幕最前
+                         }
                      }
                     );
     //使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复；2.当hotkeyEdit获得焦点时立即禁用当前已注册的全局快捷键；3.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
