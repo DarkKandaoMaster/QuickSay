@@ -1,6 +1,6 @@
 ﻿//版本：1.7.0
 //更新内容：
-//1. 
+//1. 修复了输出短语时偶尔会丢失其中某一行（粘贴成空行）的问题。原因是写入剪贴板后立刻粘贴，目标程序还没读到新内容就被粘贴，于是粘到了旧内容或空内容；现在写入剪贴板后会稍等片刻再粘贴。输出图片也做了同样处理。
 
 #include<QApplication>
 #include<QWidget>
@@ -807,18 +807,22 @@ private:
         case QuickSayOutputActionType::Text:{
             QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
             QApplication::clipboard()->setText(action.text);
-            moniCtrlV();
-            restorePressedPhysicalModifiers(snapshot);
-            finishAction();
+            QTimer::singleShot(   50   ,[&,snapshot](){ //写剪贴板后，到“目标程序能读到新内容”之间有一段传播延迟。若setText后立刻moniCtrlV()，Ctrl+V可能在这段窗口内到达，目标程序读到的还是上一条/空内容，导致这一行粘贴失败（剪贴板其实已写对，只是粘早了）。这里等50ms让剪贴板传播到位再粘，能明显降低输出失败概率。
+                moniCtrlV();
+                restorePressedPhysicalModifiers(snapshot);
+                finishAction();
+            });
             break;
         }
         case QuickSayOutputActionType::Image:{
             QTimer::singleShot(1000,[&,action](){ //在微信输出图片时，有时会出现一个bug，经测试，在<img>标签前面加一个<sleep>能有效解决这个bug。于是我就实现了个：当用户输入<img>标签后，先延迟1秒，再来执行<img>标签的操作
                 QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
                 setClipboardImageFileWin32(action);
-                moniCtrlV();
-                restorePressedPhysicalModifiers(snapshot);
-                finishAction();
+                QTimer::singleShot(   50   ,[&,snapshot](){ //同文本路径：写剪贴板和粘贴之间要留间隔。上面的1000ms是“写剪贴板之前”的微信缓冲，挡不住“写完立刻粘”这条竞态；所以这里在setClipboardImageFileWin32()之后、moniCtrlV()之前再等50ms，让剪贴板传播到位再粘。图片走的是同步的Win32 SetClipboardData，竞态窗口比文本小、失败更罕见，但加上更稳妥也和文本保持一致。
+                    moniCtrlV();
+                    restorePressedPhysicalModifiers(snapshot);
+                    finishAction();
+                });
             });
             break;
         }
