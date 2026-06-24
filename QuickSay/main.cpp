@@ -1,6 +1,8 @@
 ﻿//版本：1.7.0
 //更新内容：
-//1. 修复了输出短语时偶尔会丢失其中某一行（粘贴成空行）的问题。原因是写入剪贴板后立刻粘贴，目标程序还没读到新内容就被粘贴，于是粘到了旧内容或空内容；现在写入剪贴板后会稍等片刻再粘贴。输出图片也做了同样处理。
+//1. 修复了输出短语时偶尔会丢失其中某一行（粘贴成空行）的问题。原因是写入剪贴板后立刻粘贴，目标程序还没读到新内容就被粘贴，于是粘到了旧内容或空内容。现在写入剪贴板后会稍等片刻再粘贴。输出图片也做了同样处理。
+//2. 修复了短语输出结束后，修饰键（如Ctrl）有时会被卡在按下状态的问题。原因是输出过程中执行每个动作时程序都会记录用户是否按着修饰键，然后松开全部修饰键，并在执行每个动作结束后恢复刚才记录的修饰键的按下状态。但这种检测对程序自己模拟的按键有一点延迟，可能会把上一次模拟的修饰键误判成用户正按着的修饰键，导致输出结束后又把它按了下去却没人再抬起。现在改为输出开始时把用户当前按着的所有修饰键抬起一次、输出结束后不再把对应修饰键按回去；同时，改成这样后，输出过程中也不再受用户松开快捷键的影响，顺带降低了中途某一行粘贴失败的概率。
+//   因此该版本开始已不再支持 设置短语快捷键后，通过长按修饰键、连点主键不断触发对应短语。按下修饰键和主键触发对应短语后，想再次出发对应短语只能松开并重新按下修饰键和主键。
 
 #include<QApplication>
 #include<QWidget>
@@ -491,17 +493,6 @@ QuickSayModifierSnapshot releasePressedPhysicalModifiers(){
     return snapshot;
 }
 
-void restorePressedPhysicalModifiers(const QuickSayModifierSnapshot & snapshot){
-    if(snapshot.lCtrl) sendVirtualKey(VK_LCONTROL);
-    if(snapshot.rCtrl) sendVirtualKey(VK_RCONTROL);
-    if(snapshot.lAlt) sendVirtualKey(VK_LMENU);
-    if(snapshot.rAlt) sendVirtualKey(VK_RMENU);
-    if(snapshot.lShift) sendVirtualKey(VK_LSHIFT);
-    if(snapshot.rShift) sendVirtualKey(VK_RSHIFT);
-    if(snapshot.lMeta) sendVirtualKey(VK_LWIN);
-    if(snapshot.rMeta) sendVirtualKey(VK_RWIN);
-}
-
 void beginQuickSayPressBlock(){
     g_quickSayPressBlockCount++;
 }
@@ -777,6 +768,7 @@ public:
     QuickSayOutputRunner(const QVector<QuickSayOutputAction> & actions,QObject * parent=nullptr):QObject(parent),actions_(actions){}
 
     void start(){
+        releasePressedPhysicalModifiers(); //开始输出时，一次性抬起用户当前按着的修饰键（典型情况就是触发短语用的快捷键，比如Ctrl+1里的Ctrl），整段输出期间保持抬起，避免它干扰moniCtrlV()的粘贴或模拟按键。此处只“抬起”、绝不再“按回去”：因为输出过程中用户随时可能松开快捷键，若结束时再注入一次按下，物理键已松开就会把修饰键永久卡在按下状态。彻底不注入down，就根除了卡键。
         runCurrentAction();
     }
 private:
@@ -805,32 +797,26 @@ private:
         index_++;
         switch(action.type){
         case QuickSayOutputActionType::Text:{
-            QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
             QApplication::clipboard()->setText(action.text);
-            QTimer::singleShot(   50   ,[&,snapshot](){ //写剪贴板后，到“目标程序能读到新内容”之间有一段传播延迟。若setText后立刻moniCtrlV()，Ctrl+V可能在这段窗口内到达，目标程序读到的还是上一条/空内容，导致这一行粘贴失败（剪贴板其实已写对，只是粘早了）。这里等50ms让剪贴板传播到位再粘，能明显降低输出失败概率。
+            QTimer::singleShot(   50   ,[&](){ //写剪贴板后，到“目标程序能读到新内容”之间有一段传播延迟。若setText后立刻moniCtrlV()，Ctrl+V可能在这段窗口内到达，目标程序读到的还是上一条/空内容，导致这一行粘贴失败（剪贴板其实已写对，只是粘早了）。这里等50ms让剪贴板传播到位再粘，能明显降低输出失败概率。
                 moniCtrlV();
-                restorePressedPhysicalModifiers(snapshot);
                 finishAction();
             });
             break;
         }
         case QuickSayOutputActionType::Image:{
             QTimer::singleShot(1000,[&,action](){ //在微信输出图片时，有时会出现一个bug，经测试，在<img>标签前面加一个<sleep>能有效解决这个bug。于是我就实现了个：当用户输入<img>标签后，先延迟1秒，再来执行<img>标签的操作
-                QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
                 setClipboardImageFileWin32(action);
-                QTimer::singleShot(   50   ,[&,snapshot](){ //同文本路径：写剪贴板和粘贴之间要留间隔。上面的1000ms是“写剪贴板之前”的微信缓冲，挡不住“写完立刻粘”这条竞态；所以这里在setClipboardImageFileWin32()之后、moniCtrlV()之前再等50ms，让剪贴板传播到位再粘。图片走的是同步的Win32 SetClipboardData，竞态窗口比文本小、失败更罕见，但加上更稳妥也和文本保持一致。
+                QTimer::singleShot(   50   ,[&](){ //同文本路径：写剪贴板和粘贴之间要留间隔。上面的1000ms是“写剪贴板之前”的微信缓冲，挡不住“写完立刻粘”这条竞态；所以这里在setClipboardImageFileWin32()之后、moniCtrlV()之前再等50ms，让剪贴板传播到位再粘。图片走的是同步的Win32 SetClipboardData，竞态窗口比文本小、失败更罕见，但加上更稳妥也和文本保持一致。
                     moniCtrlV();
-                    restorePressedPhysicalModifiers(snapshot);
                     finishAction();
                 });
             });
             break;
         }
         case QuickSayOutputActionType::Press:{
-            QuickSayModifierSnapshot snapshot=releasePressedPhysicalModifiers();
             beginQuickSayPressBlock();
             sendPressAction(action);
-            restorePressedPhysicalModifiers(snapshot);
             QTimer::singleShot(   config["delay"].toInt()   ,[&](){ //程序在模拟按键后的动作延迟时间内，临时阻止 QuickSay 自己的键盘浏览逻辑处理这些按键，避免你模拟出来的按键又被 QuickSay 当成用户输入捕获。 //虽然这两个config["delay"].toInt()延迟语义不完全一样。但改成这样更方便管理
                 endQuickSayPressBlock();
                 finishAction();
