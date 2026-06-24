@@ -7,6 +7,7 @@
 //4. 限制了鼠标悬停提示的宽度和高度。现在鼠标悬停提示单行过长会自动换行（限制宽度）、总行数过多会截断并以省略号结尾（限制高度）。
 //5. 把主窗口左上角用来归类短语的“标签”改名为“分组”，避免和短语里插入的标签（如<Enter>）混淆。
 //6. 呼出QuickSay的快捷键改为开关式：窗口没显示时按下就显示并拉到屏幕最前；窗口已经在最前时按下就关闭窗口到托盘。
+//7. 其他一些小改动。
 
 #include<QApplication>
 #include<QWidget>
@@ -1589,6 +1590,9 @@ public:
     MyEventFilter(QWidget * main,QWidget * tianjia,QWidget * xiugai,QPushButton * tjqx,QPushButton * xgqx,QListWidget * l,QTabBar * t,QLineEdit * s):chuangkou(main),tianjiachuangkou(tianjia),xiugaichuangkou(xiugai),tianjiaquxiao(tjqx),xiugaiquxiao(xgqx),liebiao(l),tabBar(t),search(s){}
 protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
+        if(obj==chuangkou && event->type()==QEvent::Hide){//主窗口关闭到托盘时，一并隐藏可能还在显示的鼠标悬停提示
+            QToolTip::hideText();
+        }
         if(obj==search && event->type()==QEvent::FocusOut && g_searchMode){
             QTimer::singleShot(0,[](){
                 if(g_searchMode && (!g_search || !g_search->hasFocus()) && (!pchuangkou || !pchuangkou->isActiveWindow())){
