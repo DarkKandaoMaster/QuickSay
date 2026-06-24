@@ -798,6 +798,7 @@ private:
         switch(action.type){
         case QuickSayOutputActionType::Text:{
             QApplication::clipboard()->setText(action.text);
+            //【【【【【这里的延迟考虑写进设置里，让用户自定义？
             QTimer::singleShot(   50   ,[&](){ //写剪贴板后，到“目标程序能读到新内容”之间有一段传播延迟。若setText后立刻moniCtrlV()，Ctrl+V可能在这段窗口内到达，目标程序读到的还是上一条/空内容，导致这一行粘贴失败（剪贴板其实已写对，只是粘早了）。这里等50ms让剪贴板传播到位再粘，能明显降低输出失败概率。
                 moniCtrlV();
                 finishAction();
