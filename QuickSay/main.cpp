@@ -7,7 +7,8 @@
 //4. 限制了鼠标悬停提示的宽度和高度。现在鼠标悬停提示单行过长会自动换行（限制宽度）、总行数过多会截断并以省略号结尾（限制高度）。
 //5. 把主窗口左上角用来归类短语的“标签”改名为“分组”，避免和短语里插入的标签（如<Enter>）混淆。
 //6. 呼出QuickSay的快捷键改为开关式：窗口没显示时按下就显示并拉到屏幕最前；窗口已经在最前时按下就关闭窗口到托盘。
-//7. 其他一些小改动。
+//7. 主窗口可见时，按下反引号 ` 键可以钉住/取消钉住窗口。
+//8. 其他一些小改动。
 
 #include<QApplication>
 #include<QWidget>
@@ -68,6 +69,7 @@ QWidget * g_xiugaichuangkou=nullptr;
 QListWidget * g_liebiao=nullptr;
 QTabBar * g_tabBar=nullptr;
 QLineEdit * g_search=nullptr;
+QPushButton * g_tuding=nullptr;//指向主窗口右上角的图钉按钮，用于让键盘钩子能触发“切换钉住”
 HHOOK g_keyboardHook=nullptr;
 int g_quickSayPressBlockCount=0;
 bool g_quickSayIsOutputting=false;
@@ -1063,6 +1065,9 @@ bool handleQuickSayBrowseKey(DWORD vkCode){
     switch(vkCode){
     case VK_TAB:
         enterSearchMode();
+        return true;
+    case VK_OEM_3://反引号`键，作为图钉按钮的触发键，按一下就切换钉住（和点击图钉按钮等效）//注意：主窗口可见时此键会被吞掉，无法输入反引号字符
+        if(g_tuding) g_tuding->click();//直接触发图钉按钮的点击，复用其换图标/换提示/改tudingflag/落盘的逻辑，避免状态脱节
         return true;
     case VK_ESCAPE:
         if(QWidget * popup=QApplication::activePopupWidget()){ //如果右键菜单还在显示，先关闭右键菜单
@@ -2832,14 +2837,15 @@ int main(int argc, char *argv[]){
 
     //在chuangkou右上角放一个图钉按钮
     QPushButton tuding("",&chuangkou);//创建图钉按钮，文本为空字符串
+    g_tuding=&tuding;//把图钉按钮地址赋值给全局指针，用于让键盘钩子能通过反引号`键触发“切换钉住”
     tuding.setObjectName("iconButton");//应用图标按钮样式
     if(config["tudingflag"].toBool()==true){ //如果钉住窗口
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//设置按钮图标为实心图钉
-        tuding.setToolTip("已开启连续输入");//设置鼠标悬停提示文字为“已开启连续输入”
+        tuding.setToolTip("钉住/取消钉住窗口（ ` ）");//设置鼠标悬停提示文字为“钉住/取消钉住窗口（ ` ）”
     }
     else{ //如果没有钉住窗口
         tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//设置按钮图标为空心图钉
-        tuding.setToolTip("已关闭连续输入");//设置鼠标悬停提示文字为“已关闭连续输入”
+        tuding.setToolTip("钉住/取消钉住窗口（ ` ）");//设置鼠标悬停提示文字为“钉住/取消钉住窗口（ ` ）”
     }
     tuding.setIconSize(QSize(20,20));//调整图标大小为20*20像素
     //当按下图钉按钮时，切换按钮图标
@@ -2847,13 +2853,13 @@ int main(int argc, char *argv[]){
                      [&](){
                          if(config["tudingflag"].toBool()==true){ //如果钉住窗口
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/空心图钉.svg"));//切换按钮图标为空心图钉
-                             tuding.setToolTip("已关闭连续输入");//设置鼠标悬停提示文字为“已关闭连续输入”
+                             tuding.setToolTip("钉住/取消钉住窗口（ ` ）");//设置鼠标悬停提示文字为“钉住/取消钉住窗口（ ` ）”
                              config["tudingflag"]=false;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
                          else{ //如果没有钉住窗口
                              tuding.setIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/实心图钉.svg"));//切换按钮图标为实心图钉
-                             tuding.setToolTip("已开启连续输入");//设置鼠标悬停提示文字为“已开启连续输入”
+                             tuding.setToolTip("钉住/取消钉住窗口（ ` ）");//设置鼠标悬停提示文字为“钉住/取消钉住窗口（ ` ）”
                              config["tudingflag"]=true;
                              saveConfig(configPath);//写入程序设置到config.json
                          }
