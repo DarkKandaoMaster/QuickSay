@@ -15,8 +15,8 @@
 
 
 ## QuickSay是干什么的？
-如果你经常把常用短语（命令行、<strong title="输入Prompt真的很好用">AI提示词</strong>、固定的话术）保存在一个文本文件里，并在需要时打开这个文件复制粘贴。  
-那么你就可以试用一下QuickSay。把常用短语保存在QuickSay里，并在需要时使用QuickSay输入。  
+如果您经常把常用短语（命令行、<strong title="输入Prompt真的很好用">AI提示词</strong>、固定的话术）保存在一个文本文件里，并在需要时打开这个文件复制粘贴。  
+那么您就可以试用一下QuickSay。把常用短语保存在QuickSay里，并在需要时使用QuickSay输入。  
 
 QuickSay的优势：  
 - UI好看。简洁、现代、美观、高效。  
@@ -33,7 +33,7 @@ QuickSay的优势：
 
 ## 如何下载和安装
 #### 方法一：
-看到右边的Releases（发行版）了吗？点它，于是进入项目发布页，再点击链接QuickSay_v1.6.1.7z，于是开始下载。  
+看到右边的Releases（发行版）了吗？点它，于是进入项目发布页，再点击链接QuickSay_v1.7.0.7z，于是开始下载。  
 下载完成后，将得到的文件解压，得到：  
 ```
 QuickSay文件夹
@@ -44,7 +44,7 @@ QuickSay文件夹
 路径有中文空格都行，但是不要放在Program Files之类的需要管理员权限的文件夹里。  
 #### 方法二：
 点进这个蓝奏云链接：https://wwlt.lanzoum.com/b014wmlo5g 密码:star  
-然后点击链接QuickSay_v1.6.1.7z，再点下载按钮，于是开始下载。  
+然后点击链接QuickSay_v1.7.0.7z，再点下载按钮，于是开始下载。  
 接下来的步骤同上。  
 
 
@@ -70,7 +70,7 @@ QuickSay文件夹
 
 ## 常见使用问题
 - 不要直接在解压软件里运行QuickSay.exe  
-- 修改短语或设置后，退出重进QuickSay，发现短语根本没被修改，那必然是因为你把QuickSay安装在Program Files之类的需要管理员权限的文件夹里  
+- 修改短语或设置后，退出重进QuickSay，发现短语根本没被修改，那必然是因为您把QuickSay安装在Program Files之类的需要管理员权限的文件夹里  
 × 解决方法：把QuickSay安装在其他文件夹  
 
 
@@ -80,7 +80,7 @@ QuickSay文件夹
 
 ## 如何复现？如何运行代码？
 1. 首先下载代码  
-2. 然后你需要去下载个QT。教程推荐这篇文章：https://blog.csdn.net/qq_62888264/article/details/132645054  
+2. 然后您需要去下载个QT。教程推荐这篇文章：https://blog.csdn.net/qq_62888264/article/details/132645054  
 3. 打开Qt Creator，按教程说的新建一个项目，名称写“QuickSay”，然后无脑下一步就行了  
 4. 在文件资源管理器里找到这个新建的项目，把第1步下载下来的 QuickSay文件夹里的东西 直接**移动**到这个项目文件夹里，选“替换目标中的文件”  
 5. 回到Qt Creator，点击左侧的“项目”，关闭“Shadow build：”这个选项  
@@ -98,7 +98,7 @@ QuickSay文件夹
 - 账号登录、同步  
 
 
-# 感谢使用QuickSay！如果觉得好用记得点个Star！砍刀会感谢你的！
+# 感谢使用QuickSay！如果觉得好用记得点个Star！砍刀会感谢您的！
 <img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
 
 ## 我的亿些碎碎念
