@@ -1,8 +1,6 @@
-﻿//版本：1.6.1
+﻿//版本：1.7.0
 //更新内容：
-//1. 设置中新增“上下方向键可以首尾循环选择短语项”选项。
-//2. 调整了字体优先级。现在字体看起来更舒服了。同时也解决了部分颜文字显示为方块的问题。
-//3. 其他一些小改动。
+//1. 
 
 #include<QApplication>
 #include<QWidget>
@@ -2610,7 +2608,7 @@ int main(int argc, char *argv[]){
     QHBoxLayout versionLayout(&versionWidget);//创建一个水平布局，放置在刚才创建的容器中
     versionLayout.setSpacing(4);//控件之间间距4像素
     versionLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
-    QPushButton versionButton("1.6.1",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
+    QPushButton versionButton("1.7.0",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
     versionButton.setFixedWidth(100);//固定版本号按钮的宽度为100像素
     versionButton.setCursor(Qt::PointingHandCursor);//当鼠标悬停在该按钮上时，鼠标光标变成手形状
     versionWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
