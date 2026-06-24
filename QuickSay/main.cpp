@@ -42,6 +42,8 @@
 #include<QStyledItemDelegate>
 #include<QPainter>
 #include<QScrollBar>
+#include<QScrollArea>
+#include<QVBoxLayout>
 #include<QDialog>
 #include<QDesktopServices>
 #include<QUrl>
@@ -2343,7 +2345,18 @@ int main(int argc, char *argv[]){
     g_shezhichuangkou=&shezhichuangkou;
     shezhichuangkou.setWindowTitle("QuickSay-设置");
     shezhichuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
-    QFormLayout * formLayout=new QFormLayout(&shezhichuangkou);//创建一个表单布局，并直接作用于设置窗口
+    //滚动区域：铺满整个设置窗口，当选项行数超出窗口高度时自动出现竖直滚动条
+    QScrollArea * scrollArea=new QScrollArea(&shezhichuangkou);//创建滚动区域，父对象为设置窗口，由设置窗口级联管理其内存
+    scrollArea->setWidgetResizable(true);//让内容控件随滚动区域宽度自适应
+    scrollArea->setFrameShape(QFrame::NoFrame);//去掉默认边框，外观更干净
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);//只保留竖直滚动条，不要水平滚动条
+    QWidget * scrollContent=new QWidget;//先不给父对象，下面的setWidget会接管它的所有权
+    QFormLayout * formLayout=new QFormLayout(scrollContent);//创建一个表单布局，作用于滚动内容控件（不再直接作用于设置窗口）
+    scrollArea->setWidget(scrollContent);//把内容控件放进滚动区域
+    //让滚动区域填满整个设置窗口
+    QVBoxLayout * outerLayout=new QVBoxLayout(&shezhichuangkou);//创建外层布局，直接作用于设置窗口
+    outerLayout->setContentsMargins(0,0,0,0);//去掉外层布局的默认边距，让滚动区域真正铺满窗口
+    outerLayout->addWidget(scrollArea);//把滚动区域加入外层布局
 
     //全局快捷键设置
     QKeySequenceEdit hotkeyEdit( QKeySequence(config["hotkey"].toString()) ,&shezhichuangkou);//创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着config里的快捷键
