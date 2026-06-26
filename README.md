@@ -99,8 +99,9 @@ QuickSay文件夹
 
 
 # 感谢使用QuickSay！如果觉得好用记得点个Star！砍刀会感谢您的！
-如有反馈或建议，欢迎直接在GitHub Issues中提交。因为这样我会收到邮件通知，肯定会及时回复。  
 <img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
+
+# 如有反馈或建议，欢迎直接在GitHub Issues中提交。因为这样我会收到邮件通知，肯定会及时回复。  
 
 ## 我的亿些碎碎念
 某天，厌倦了学习的砍刀突然想到：诶要是我也有一个项目，那该多好。  
