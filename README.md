@@ -101,3 +101,6 @@ QuickSay文件夹
 # 感谢使用QuickSay！如果觉得好用记得点个Star！砍刀会感谢您的！
 如有反馈或建议，欢迎直接在GitHub Issues中提交。因为这样我会收到邮件通知，肯定能及时回复。  
 <img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
+
+
+预计QuickSay会在八月底~九月初更新。大家等等我哈。最近我要做的事非常非常多...
