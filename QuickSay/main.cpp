@@ -1,14 +1,6 @@
-﻿//版本：1.7.0
+﻿//版本：1.8.0
 //更新内容：
-//1. 修复了输出短语时偶尔会丢失某一行（粘贴成空行）的问题。原因是写入剪贴板后立刻粘贴，目标程序还没读到新内容就被粘贴，于是粘到了旧内容或空内容。现在写入剪贴板后会稍等片刻再粘贴。输出图片也做了同样处理。
-//2. 修复了短语输出结束后，修饰键（如Ctrl）有时会被卡在按下状态的问题。原因是输出过程中执行每个动作时程序都会记录用户是否按着修饰键，然后松开全部修饰键，并在执行每个动作结束后恢复刚才记录的修饰键的按下状态。但这种检测对程序自己模拟的按键有一点延迟，可能会把上一次模拟的修饰键误判成用户正按着的修饰键，导致输出结束后又把它按了下去却没人再抬起。现在改为输出开始时把用户当前按着的所有修饰键抬起一次、输出结束后不再把对应修饰键按回去；同时，改成这样后，输出过程中也不再受用户松开快捷键的影响，顺带降低了中途某一行粘贴失败的概率。
-//   因此该版本开始已不再支持 设置短语快捷键后，通过长按修饰键、连点主键不断触发对应短语。按下修饰键和主键触发对应短语后，想再次触发对应短语只能松开并重新按下修饰键和主键。
-//3. 设置中新增“钉住窗口时按下短语项对应角标输入短语？”和“钉住窗口时按下回车键输入短语？”两个选项。方便钉住QuickSay时在其他程序里正常打字。
-//4. 限制了鼠标悬停提示的宽度和高度。现在鼠标悬停提示单行过长会自动换行（限制宽度）、总行数过多会截断并以省略号结尾（限制高度）。
-//5. 把主窗口左上角用来归类短语的“标签”改名为“分组”，避免和短语里插入的标签（如<Enter>）混淆。
-//6. 呼出QuickSay的快捷键改为开关式：窗口没显示时按下就显示并拉到屏幕最前；窗口已经在最前时按下就关闭窗口到托盘。
-//7. 主窗口可见时，按下反引号 ` 键可以钉住/取消钉住窗口。
-//8. 其他一些小改动。
+//1. 修改分组页面新增“每行短语数”选项。
 
 #include<QApplication>
 #include<QWidget>
@@ -72,6 +64,7 @@ QLineEdit * g_search=nullptr;
 QPushButton * g_tuding=nullptr;//指向主窗口右上角的图钉按钮，用于让键盘钩子能触发“切换钉住”
 HHOOK g_keyboardHook=nullptr;
 int g_quickSayPressBlockCount=0;
+int g_phraseCellWidth=0;//多列排列时每个短语项该有的宽度，由updatePhraseListColumns算出来、由BadgeDelegate::sizeHint报给列表。0表示单列，此时短语项宽度交给列表自己撑满
 bool g_quickSayIsOutputting=false;
 bool g_searchMode=false;
 HWND g_lastForegroundBeforeSearch=nullptr;
@@ -101,7 +94,6 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
             if(!config.contains("gundong")) config["gundong"]=10;//如果config里没有gundong，那么默认滚动条滚动速度10
             if(!config.contains("badge_key_input_phrase_when_pinned")) config["badge_key_input_phrase_when_pinned"]=false;//如果config里没有badge_key_input_phrase_when_pinned，那么默认钉住窗口时按下短语项对应角标不输入短语
             if(!config.contains("enter_key_input_phrase_when_pinned")) config["enter_key_input_phrase_when_pinned"]=false;//如果config里没有enter_key_input_phrase_when_pinned，那么默认钉住窗口时按下回车键不输入短语
-            if(!config.contains("arrow_key_cycle_select_phrase_item")) config["arrow_key_cycle_select_phrase_item"]=true;//如果config里没有arrow_key_cycle_select_phrase_item，那么默认上下方向键可以首尾循环选择短语项
         }
     }
     else{ //如果config.json不存在
@@ -118,7 +110,6 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
         config["jiaobiao"]=false;//默认角标放在右上角
         config["badge_key_input_phrase_when_pinned"]=false;//默认钉住窗口时按下短语项对应角标不输入短语
         config["enter_key_input_phrase_when_pinned"]=false;//默认钉住窗口时按下回车键不输入短语
-        config["arrow_key_cycle_select_phrase_item"]=true;//默认上下方向键可以首尾循环选择短语项
         config["ziqidong"]=true;//默认开机自启动
         config["tudingflag"]=true;//默认钉住窗口
         config["chuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2;//chuangkou默认显示位置 //获取屏幕的宽高，然后 (屏幕宽度-窗口宽度)/2 ，于是就获得了能让窗口在x轴上居中显示的位置
@@ -138,6 +129,29 @@ QString phraseItemStyle(int itemHeight){ //根据短语项高度和内边距生�
         .arg(itemHeight)
         .arg(config["phrase_item_padding_vertical"].toInt())
         .arg(config["phrase_item_padding_horizontal"].toInt());
+}
+
+void updatePhraseListColumns(QListWidget & liebiao,int columns){ //根据每行短语数，把列表排成一列或者若干列。短语按从左到右、从上到下的顺序排
+    //实现方式：改成从左到右排、允许自动换行，然后让每个短语项的宽度正好是 可视区宽度/每行短语数 。这样列表排满columns个就再也塞不下第columns+1个，自然换到下一行
+    //宽度是通过BadgeDelegate::sizeHint里的g_phraseCellWidth报给列表的。不能用setGridSize()，因为网格只管每一格摆在哪，短语项自己有多大还是问委托要的，结果就是短语项宽度还是0、什么都画不出来
+    int cellWidth=0;//0表示单列：一项独占一行、宽度撑满列表、文字自动折行，也就是老版本的样子
+    if(columns>1){
+        //列表判断“这一行还塞不塞得下”用的宽度不是viewport()->width()，而是 maximumViewportSize()-垂直滚动条宽度 （见Qt源码QListViewPrivate::prepareItemsLayout）
+        //横向排列时这个宽度是固定的，不管滚动条当前显不显示都要扣掉滚动条的位置，所以滚动条冒出来/收回去都不会影响一行排几个
+        int available=liebiao.maximumViewportSize().width()-liebiao.verticalScrollBar()->sizeHint().width()-4;//再多减4像素余量：Qt那边可能还会扣掉边框宽度。宁可少算几像素（右边留条不起眼的缝），也不能多算——多算就会挤掉一整列
+        cellWidth=(available-1)/columns;//再减1，是因为列表判断塞不塞得下用的是>=，正好除尽时这一行的最后一个会被挤到下一行去
+        if(cellWidth<1) cellWidth=1;//窗口还没显示出来时宽度可能是0，兜底一下
+    }
+    if(g_phraseCellWidth==cellWidth && liebiao.isWrapping()==(columns>1)) return;//没变就别再设一遍，省掉一次重新布局
+    g_phraseCellWidth=cellWidth;
+    liebiao.setFlow(   (columns>1)?QListView::LeftToRight:QListView::TopToBottom   );
+    liebiao.setWrapping(columns>1);
+    liebiao.doItemsLayout();//强制立刻重新布局。必须调，因为开了setUniformItemSizes的列表会把短语项尺寸缓存起来，不重新布局就一直用缓存里的旧宽度
+}
+
+void applyPhraseListLayout(QListWidget & liebiao,int itemHeight,int columns){ //应用某个分组的短语项高度和每行短语数。凡是会改变这两个值的地方都要调它
+    liebiao.setStyleSheet(phraseItemStyle(itemHeight));//应用短语项高度和内边距
+    updatePhraseListColumns(liebiao,columns);
 }
 
 QString clampTooltipText(const QString & text){ //限制鼠标悬停提示的长宽：单行过长则按宽度上限换行（限制宽度），总行数过多则截断并追加省略号（限制高度）
@@ -251,12 +265,34 @@ void loadListFromJson(QListWidget & liebiao,const QString & dataPath){ //读取d
     }
 }
 
+//每个分组自己的设置（短语项高度、每行短语数）都塞在QTabBar的tabData里（一个QVariantMap），下面三个函数是它唯一的出入口。以后再加分组设置就往这个map里加键，不要在别处直接读写tabData
+int tabItemHeight(const QTabBar & tabBar,int index){ //取出某个分组的短语项高度
+    int itemHeight=tabBar.tabData(index).toMap().value("item_height").toInt();
+    if(itemHeight<=0) itemHeight=config["default_item_height"].toInt();//取不到就用默认短语项高度
+    return itemHeight;
+}
+
+int tabColumns(const QTabBar & tabBar,int index){ //取出某个分组的每行短语数
+    int columns=tabBar.tabData(index).toMap().value("columns").toInt();
+    if(columns<1) columns=1;//旧数据没有这个字段，按每行1个短语处理
+    if(columns>10) columns=10;//上限10，和新建/修改分组窗口里输入框的范围保持一致
+    return columns;
+}
+
+void setTabData(QTabBar & tabBar,int index,int itemHeight,int columns){ //把短语项高度和每行短语数存进某个分组的tabData
+    QVariantMap map;
+    map["item_height"]=itemHeight;
+    map["columns"]=columns;
+    tabBar.setTabData(index,map);
+}
+
 void saveTabToJson(QTabBar & tabBar,const QString & tabPath){ //写入分组栏内容到tab.json
     QJsonArray jsonArray;//创建一个JSON数组
     for(int i=0;i<tabBar.count();i++){ //遍历分组栏中的所有分组
         QJsonObject obj;//创建一个JSON对象
         obj["tab"]=tabBar.tabText(i);//把当前分组的文本存到"tab"字段
-        obj["item_height"]=tabBar.tabData(i).toInt();//把当前分组的短语项高度存到"item_height"字段
+        obj["item_height"]=tabItemHeight(tabBar,i);//把当前分组的短语项高度存到"item_height"字段
+        obj["columns"]=tabColumns(tabBar,i);//把当前分组的每行短语数存到"columns"字段
         jsonArray.append(obj);//把对象加入数组
     }
     QJsonDocument doc(jsonArray);//把数组包装成JSON文档
@@ -283,21 +319,23 @@ void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json
                     QJsonObject obj=value.toObject();//转换为对象
                     QString tab=obj["tab"].toString();//取出"tab"字段，即分组
                     int item_height=obj["item_height"].toInt();//取出"item_height"字段，即短语项高度
+                    int columns=obj["columns"].toInt();//取出"columns"字段，即每行短语数
                     //兼容旧版本
                     if(item_height==0) item_height=config["default_item_height"].toInt();//如果"item_height"为0，那么使用默认短语项高度
+                    if(columns<1) columns=1;//旧版本的tab.json里没有"columns"字段（toInt会返回0），那么按每行1个短语处理
                     tabBar.addTab(tab);//把分组新建到分组栏
-                    tabBar.setTabData(tabBar.count()-1,item_height);//把短语项高度存到对应分组的tabData中。因为目前我们只需要保存一个“短语项高度”，所以为了图省事，我们直接把这个值塞进了tabData。如果以后要加字段，那么可以往tabData里塞一个字典
+                    setTabData(tabBar,tabBar.count()-1,item_height,columns);//把短语项高度和每行短语数存到对应分组的tabData中
                 }
             }
         }
     }
     else{ //如果tab.json不存在
         tabBar.addTab("短语1");//【【【注：想修改默认分组栏内容在这里修改】】】
-        tabBar.setTabData(0,70);
+        setTabData(tabBar,0,70,1);
         tabBar.addTab("短语2");
-        tabBar.setTabData(1,config["default_item_height"].toInt());
+        setTabData(tabBar,1,config["default_item_height"].toInt(),1);
         tabBar.addTab("此处可右键点击");
-        tabBar.setTabData(2,config["default_item_height"].toInt());
+        setTabData(tabBar,2,config["default_item_height"].toInt(),1);
         saveTabToJson(tabBar,tabPath);
     }
 }
@@ -340,10 +378,10 @@ bool isTabNameDuplicate(QTabBar & tabBar,const QString & tabName){ //判断新�
     return false;
 }
 
-bool showTabDialog(QWidget & parent,const QString & title,QString & tabName,int & itemHeight){ //用于弹出一个同时包含“分组名称”和“短语项高度”两个输入框的对话框【【【【【待处理，比如改下该窗口的UI
+bool showTabDialog(QWidget & parent,const QString & title,QString & tabName,int & itemHeight,int & columns){ //用于弹出一个同时包含“分组名称”“短语项高度”“每行短语数”三个输入框的对话框【【【【【待处理，比如改下该窗口的UI
     QDialog dialog(&parent);//创建一个局部对话框对象，将传入的 parent 作为父窗口，对话框关闭时内存会自动回收
     dialog.setWindowTitle(title);//设置对话框的标题文字
-    dialog.setFixedSize(280,130);//设置固定的窗口大小（宽280，高130），防止窗口被拉伸变形
+    dialog.setFixedSize(280,167);//设置固定的窗口大小（宽280，高167），防止窗口被拉伸变形
 
     QFormLayout layout(&dialog);//创建一个表单布局，用于整齐地将标签文字和输入框左右排列
 
@@ -355,6 +393,11 @@ bool showTabDialog(QWidget & parent,const QString & title,QString & tabName,int 
     heightSpin.setRange(10,100);//设置数字输入框的可输入范围为10到100像素【【【【【
     heightSpin.setValue(itemHeight);//将初始的高度值（如默认高度或已有高度）放入输入框中
     layout.addRow("短语项高度：",&heightSpin);//把提示文字和高度输入框作为一行添加到表单布局中
+
+    QSpinBox columnsSpin(&dialog);//创建一个数字输入框，用于让用户输入每行短语数
+    columnsSpin.setRange(1,10);//设置数字输入框的可输入范围为1到10个【【【【【
+    columnsSpin.setValue(columns);//将初始的每行短语数（新建分组是1，修改分组是该分组已有的值）放入输入框中
+    layout.addRow("每行短语数：",&columnsSpin);//把提示文字和每行短语数输入框作为一行添加到表单布局中
 
     QHBoxLayout btnLayout;//创建一个水平布局，用于放置“确定”和“取消”按钮
     QPushButton btnCancel("取消",&dialog);//创建一个文本为“取消”的按钮
@@ -373,6 +416,7 @@ bool showTabDialog(QWidget & parent,const QString & title,QString & tabName,int 
     if(dialog.exec()==QDialog::Accepted){ //弹出对话框并阻塞程序执行。如果用户点击了“确定”（返回值是 Accepted）
         tabName=nameEdit.text();//获取名称输入框里的文本，存入传入的 tabName 引用变量中
         itemHeight=heightSpin.value();//获取高度输入框里的数字，存入传入的 itemHeight 引用变量中
+        columns=columnsSpin.value();//获取每行短语数输入框里的数字，存入传入的 columns 引用变量中
         return true;//返回 true，告诉调用者用户确认了输入
     }
     return false;//如果用户点击了“取消”或按右上角关闭了窗口，返回 false
@@ -997,34 +1041,87 @@ QListWidgetItem * visibleItemByBadgeIndex(int targetIndex){
     return nullptr;
 }
 
-void moveCurrentVisibleItem(int direction){
-    if(!g_liebiao) return;
-    int itemCount=g_liebiao->count();
-    if(itemCount<=0) return;
-
-    int currentRow=g_liebiao->currentRow();
-    int row=currentRow;
-    if(row<0 || row>=itemCount){
-        row=(direction>0)?-1:itemCount;
+//下面这几个函数是键盘浏览短语的地基：因为短语可以排成多列，所以“上下左右”不能再按列表行号算，得先把当前分组里看得见的短语抽出来，再按 序号→(行,列) 换算
+QVector<QListWidgetItem *> visiblePhraseItems(){ //按列表顺序取出所有没隐藏的短语项，也就是当前分组里看得见的那些短语。它们在界面上就是从左到右、从上到下排的，所以下标就是它们的排列序号
+    QVector<QListWidgetItem *> items;
+    if(!g_liebiao) return items;
+    for(int i=0;i<g_liebiao->count();i++){
+        if(!g_liebiao->item(i)->isHidden()) items<<g_liebiao->item(i);
     }
-    for(int step=0;step<itemCount;step++){
-        row+=direction;
-        if(row<0){
-            if(!config["arrow_key_cycle_select_phrase_item"].toBool(true)) return;
-            row=itemCount-1;
-        }
-        else if(row>=itemCount){
-            if(!config["arrow_key_cycle_select_phrase_item"].toBool(true)) return;
-            row=0;
-        }
+    return items;
+}
 
-        QListWidgetItem * item=g_liebiao->item(row);
-        if(item && !item->isHidden()){
-            g_liebiao->setCurrentItem(item);
-            g_liebiao->scrollToItem(item,QAbstractItemView::PositionAtCenter);
+int currentVisibleIndex(const QVector<QListWidgetItem *> & items){ //当前选中的短语项在可见短语里排第几个。没选中，或者选中的是别的分组的（已隐藏），都返回-1
+    if(!g_liebiao) return -1;
+    return items.indexOf(g_liebiao->currentItem());
+}
+
+int currentTabColumns(){ //当前分组的每行短语数
+    if(!g_tabBar || g_tabBar->currentIndex()<0) return 1;
+    return tabColumns(*g_tabBar,g_tabBar->currentIndex());
+}
+
+void selectVisibleItemAt(int index){ //选中第index个可见短语项，并且滚动到它
+    QVector<QListWidgetItem *> items=visiblePhraseItems();
+    if(index<0 || index>=items.size()) return;
+    g_liebiao->setCurrentItem(items[index]);
+    g_liebiao->scrollToItem(items[index],QAbstractItemView::PositionAtCenter);
+}
+
+void moveCurrentVisibleItem(int direction){ //上下方向键：在同一列里上下移动。direction为-1是↑、1是↓
+    QVector<QListWidgetItem *> items=visiblePhraseItems();
+    if(items.isEmpty()) return;//空分组，不选中短语
+    int k=currentVisibleIndex(items);
+    if(k<0){ //当前没选中任何可见短语（比如刚从空分组切过来），那么按↓选第一项、按↑选最后一项
+        selectVisibleItemAt(   (direction>0)?0:items.size()-1   );
+        return;
+    }
+    int target=k+direction*currentTabColumns();//同一列上/下一行的那个短语，序号正好差一个“每行短语数”
+    if(target>=0 && target<items.size()){ //上/下一行的同列位置确实有短语，那就选它
+        selectVisibleItemAt(target);
+        return;
+    }
+    //上/下一行的同列位置没有短语（已经在第一行了，或者最后一行的这一列排不满）：按↑就跳到本分组第一项，按↓就跳到本分组最后一项
+    //顺带覆盖了“第一项按↑、最后一项按↓保持不动”——因为此时跳过去的就是它自己
+    selectVisibleItemAt(   (direction>0)?items.size()-1:0   );
+}
+
+void switchTabAndSelect(int direction){ //在行首按←/在行尾按→时切换分组。direction为-1是切到上一个分组、1是切到下一个分组
+    if(!g_tabBar) return;
+    int index=g_tabBar->currentIndex()+direction;
+    if(index<0 || index>=g_tabBar->count()) return;//已经是第一个/最后一个分组了，不再继续切换
+    g_tabBar->setCurrentIndex(index);//切换分组。分组切换的槽函数里会顺手把新分组的第一项选中，这正是往右切要的结果
+    if(direction<0){ //往左切过来的，改成选中新分组第一行最后一个实际存在的短语，这样光标看起来是从右边接着走的
+        QVector<QListWidgetItem *> items=visiblePhraseItems();
+        if(items.isEmpty()) return;//空分组，不选中短语
+        selectVisibleItemAt(   qMin(currentTabColumns(),items.size())-1   );
+    }
+}
+
+void moveCurrentVisibleItemHorizontal(int direction){ //左右方向键：在同一行里左右移动，不跨行；已经在行首/行尾了就切换分组。direction为-1是←、1是→
+    QVector<QListWidgetItem *> items=visiblePhraseItems();
+    int k=currentVisibleIndex(items);
+    if(k<0){ //空分组，或者当前没选中可见短语，那么直接切换分组。这样在空分组里连按左右键也能一直切下去
+        switchTabAndSelect(direction);
+        return;
+    }
+    int columns=currentTabColumns();
+    int col=k%columns;//当前短语在本行里排第几列（从0开始）
+    if(direction<0 && col>0){ //不在行首，选左边那个
+        selectVisibleItemAt(k-1);
+        return;
+    }
+    if(direction>0 && col<columns-1){ //不在行尾，右边那一格可能有短语
+        if(k+1<items.size()){ //右边那一格确实有短语，选右边那个
+            selectVisibleItemAt(k+1);
+            return;
+        }
+        if(k+1-columns>=0){ //右边那一格是空的（最后一行没排满，光标就在最后一个短语上）：跳到上一行同列的那个短语，也就是视觉上正右方向最近的短语。比如3列时“1 2 3 / 4 5”，在5上按→跳到3而不是切分组
+            selectVisibleItemAt(k+1-columns);
             return;
         }
     }
+    switchTabAndSelect(direction);//在行首按←、在行尾按→：切换分组
 }
 
 void selectVisibleItemAtEdge(int direction){
@@ -1083,10 +1180,10 @@ bool handleQuickSayBrowseKey(DWORD vkCode){
         }
         return false;
     case VK_LEFT:
-        if(g_tabBar) g_tabBar->setCurrentIndex(qMax(0,g_tabBar->currentIndex()-1));
+        moveCurrentVisibleItemHorizontal(-1);
         return true;
     case VK_RIGHT:
-        if(g_tabBar) g_tabBar->setCurrentIndex(qMin(g_tabBar->count()-1,g_tabBar->currentIndex()+1));
+        moveCurrentVisibleItemHorizontal(1);
         return true;
     case VK_UP:
         moveCurrentVisibleItem(-1);
@@ -1670,12 +1767,12 @@ protected:
             }
             if(   keyEvent->key()==Qt::Key_Left && chuangkou->isActiveWindow()   ){ //如果按下的是左方向键，并且焦点在主窗口
                 if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
-                tabBar->setCurrentIndex(   qMax(0,tabBar->currentIndex()-1)   );//设置选中分组为 当前选中分组左边的那个分组
+                moveCurrentVisibleItemHorizontal(-1);//设置列表选中短语项为 同一行左边的那个短语项；已经在行首就切换到上一个分组
                 return true;
             }
             if(   keyEvent->key()==Qt::Key_Right && chuangkou->isActiveWindow()   ){ //如果按下的是右方向键，并且焦点在主窗口
                 if(search->hasFocus()) liebiao->setFocus();//如果焦点在搜索框，那么给列表焦点
-                tabBar->setCurrentIndex(   qMin(tabBar->count()-1,tabBar->currentIndex()+1)   );//设置选中分组为 当前选中分组右边的那个分组
+                moveCurrentVisibleItemHorizontal(1);//设置列表选中短语项为 同一行右边的那个短语项；已经在行尾就切换到下一个分组
                 return true;
             }
             if(   keyEvent->key()==Qt::Key_Up && chuangkou->isActiveWindow()   ){ //如果按下的是上方向键，并且焦点在主窗口
@@ -1789,6 +1886,23 @@ private:
     }
 };
 
+//自定义一个事件过滤器类PhraseListResizeFilter，实现：列表可视区宽度一变（改窗口大小、滚动条冒出来或者收回去）就重算一次每个短语项的宽度，保证一行还是正好放得下设定的短语数
+//不用担心来回抖动：一行放几个是固定的，所以总行数、总高度都不会因为短语项宽度变化而变化，滚动条也就不会跟着反复出现和消失
+class PhraseListResizeFilter:public QObject{
+private:
+    QListWidget * liebiao;//指向主窗口里的列表
+    QTabBar * tabBar;//指向主窗口里的分组栏，用来取当前分组的每行短语数
+public:
+    PhraseListResizeFilter(QListWidget * l,QTabBar * t,QObject * parent=nullptr):QObject(parent),liebiao(l),tabBar(t){}
+protected:
+    bool eventFilter(QObject * obj,QEvent * event) override{
+        if(obj==liebiao->viewport() && event->type()==QEvent::Resize && tabBar->currentIndex()>=0){
+            updatePhraseListColumns(*liebiao,tabColumns(*tabBar,tabBar->currentIndex()));//只重算短语项宽度，不重设样式表，不然setStyleSheet又会引起一次重新布局
+        }
+        return QObject::eventFilter(obj,event);
+    }
+};
+
 //为快捷键输入框tianjia_kjjkuang、xiugai_kjjkuang自定义一个事件过滤器类，用于拦截它们的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
 class KjjHotkeyEditFilter:public QObject{
 private:
@@ -1870,9 +1984,9 @@ public:
     // 那么所有短语项都会恢复正常的宽度，都会在合适的时候自动换行。其中一个现象是水平滚动条消失。
     // 原因是 QListWidget/QListView 会根据 item delegate 的 sizeHint() 估算内容区域宽度。最后一个可见短语如果是很长的连续英文或中文，没有自然断点，它的宽度提示会变得很大，于是列表内容宽度被撑大，水平滚动条出现；item 绘制区域也随之变宽，所以其他短语看起来也不按窗口宽度换行。最后一项变短后，估算宽度恢复，现象消失。
     // 解决方法就是这个函数↓
-    QSize sizeHint(const QStyleOptionViewItem & option,const QModelIndex & index) const override{ //重写 sizeHint()，沿用 QStyledItemDelegate::sizeHint() 的高度，但把返回宽度压小，例如设为 0
+    QSize sizeHint(const QStyleOptionViewItem & option,const QModelIndex & index) const override{ //重写 sizeHint()，沿用 QStyledItemDelegate::sizeHint() 的高度，但自己决定返回宽度
         QSize size=QStyledItemDelegate::sizeHint(option,index);
-        size.setWidth(0);
+        size.setWidth(g_phraseCellWidth);//单列时g_phraseCellWidth是0，也就是把宽度压小，理由见上面那一大段注释；多列时是算好的每格宽度，这样一行正好排得下设定的短语数（见updatePhraseListColumns）
         return size;
     }
     void paint(QPainter * painter,const QStyleOptionViewItem & option, const QModelIndex & index) const override{ //重写绘制函数，用于自定义显示效果
@@ -2237,6 +2351,7 @@ int main(int argc, char *argv[]){
     tabBar.setUsesScrollButtons(false);//不显示左右按钮
     tabBar.setDrawBase(false);//不绘制基座
     tabBar.setMovable(true);//允许通过拖动改变分组顺序
+    liebiao.viewport()->installEventFilter(new PhraseListResizeFilter(&liebiao,&tabBar,&liebiao));//列表可视区宽度一变就重算网格每格宽度，保证一行正好放得下设定的短语数。装在这里是因为它要用到tabBar，得等tabBar建好
     //搜索框
     QLineEdit search(&chuangkou);
     g_search=&search;
@@ -2268,8 +2383,8 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-    liebiao.setStyleSheet(phraseItemStyle(   tabBar.tabData(tabBar.currentIndex()).toInt()   ));//程序启动时根据当前选中分组取出并应用短语项高度和内边距（注意程序启动时默认选中的是第一个分组。这是因为loadTabFromJson是在空分组栏里一个个新建分组的，所以Qt会选中第一个分组）
     filterListByTab(liebiao,tabBar.tabText(tabBar.currentIndex()),search.text());//程序启动时根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
+    applyPhraseListLayout(liebiao,tabItemHeight(tabBar,tabBar.currentIndex()),tabColumns(tabBar,tabBar.currentIndex()));//程序启动时根据当前选中分组取出并应用短语项高度、内边距和每行短语数（注意程序启动时默认选中的是第一个分组。这是因为loadTabFromJson是在空分组栏里一个个新建分组的，所以Qt会选中第一个分组）//要放在filterListByTab后面，这样量行高时量到的才是当前分组里看得见的短语项
     for(int i=0;i<liebiao.count();i++){ //然后选中没有隐藏的第一个短语项
         if(!liebiao.item(i)->isHidden()){ //如果该短语项没有隐藏
             liebiao.setCurrentItem(liebiao.item(i));//设置该短语项为当前选中的短语项
@@ -2280,8 +2395,9 @@ int main(int argc, char *argv[]){
     QObject::connect(&tabBar,&QTabBar::currentChanged,
                      [&](int index){ //index是新选中分组的索引
                          if( index>=0 && index<tabBar.count() ){ //如果索引有效
-                             liebiao.setStyleSheet(phraseItemStyle(   tabBar.tabData(index).toInt()   ));//根据当前选中分组取出并应用短语项高度和内边距
                              filterListByTab(liebiao,tabBar.tabText(index),search.text());//根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
+                             applyPhraseListLayout(liebiao,tabItemHeight(tabBar,index),tabColumns(tabBar,index));//根据当前选中分组取出并应用短语项高度、内边距和每行短语数。要放在filterListByTab后面，这样量行高时量到的才是新分组里看得见的短语项
+                             liebiao.setCurrentItem(nullptr);//先清掉选中项，这样切到空分组时就不会还选着上一个分组里那个已经隐藏了的短语
                              for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
                                  if(!liebiao.item(i)->isHidden()){ //如果该短语项没有隐藏
                                      liebiao.setCurrentItem(liebiao.item(i));//设置该短语项为当前选中的短语项
@@ -2304,11 +2420,12 @@ int main(int argc, char *argv[]){
                              if(selectedAction==&tianjia){ //如果用户选了“新建分组”
                                  QString tabName="";
                                  int itemHeight=config["default_item_height"].toInt();//取出config里的默认短语项高度，用作弹窗输入框里的默认值
-                                 bool ok=showTabDialog(chuangkou,"新建分组",tabName,itemHeight);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight里面存储的就是用户输入的数据
+                                 int columns=1;//新建分组默认每行1个短语，用作弹窗输入框里的默认值
+                                 bool ok=showTabDialog(chuangkou,"新建分组",tabName,itemHeight,columns);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight、columns里面存储的就是用户输入的数据
                                  if( ok && !tabName.isEmpty() ){ //如果用户选了“确认”并且输入的分组名称不为空
                                      if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户输入的分组名称不重复
                                          tabBar.addTab(tabName);//在分组栏末尾新建分组
-                                         tabBar.setTabData(tabBar.count()-1,itemHeight);//把用户输入的短语项高度存到该分组的tabData中
+                                         setTabData(tabBar,tabBar.count()-1,itemHeight,columns);//把用户输入的短语项高度和每行短语数存到该分组的tabData中。必须赶在setCurrentIndex前面，因为分组切换的槽函数要读它
                                          tabBar.setCurrentIndex(tabBar.count()-1);//设置选中分组为该分组
                                          saveTabToJson(tabBar,tabPath);
                                      }
@@ -2331,11 +2448,12 @@ int main(int argc, char *argv[]){
                              if(selectedAction==&tianjia){ //如果用户选了“在当前分组后新建分组”
                                  QString tabName="";
                                  int itemHeight=config["default_item_height"].toInt();//取出config里的默认短语项高度，用作弹窗输入框里的默认值
-                                 bool ok=showTabDialog(chuangkou,"新建分组",tabName,itemHeight);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight里面存储的就是用户输入的数据
+                                 int columns=1;//新建分组默认每行1个短语，用作弹窗输入框里的默认值
+                                 bool ok=showTabDialog(chuangkou,"新建分组",tabName,itemHeight,columns);//调用我们自定义的showTabDialog函数，于是tabName、itemHeight、columns里面存储的就是用户输入的数据
                                  if( ok && !tabName.isEmpty() ){ //如果用户选了“确认”并且输入的分组名称不为空
                                      if(!isTabNameDuplicate(tabBar,tabName)){ //如果用户输入的分组名称不重复
                                          tabBar.insertTab(index+1,tabName);//在当前分组后新建分组
-                                         tabBar.setTabData(index+1,itemHeight);//把用户输入的短语项高度存到该分组的tabData中
+                                         setTabData(tabBar,index+1,itemHeight,columns);//把用户输入的短语项高度和每行短语数存到该分组的tabData中。必须赶在setCurrentIndex前面，因为分组切换的槽函数要读它
                                          tabBar.setCurrentIndex(index+1);//设置选中分组为该分组
                                          saveTabToJson(tabBar,tabPath);
                                      }
@@ -2348,14 +2466,15 @@ int main(int argc, char *argv[]){
                              else if(selectedAction==&xiugai){ //如果用户选了“修改分组”
                                  QString oldName=tabBar.tabText(index);//记录修改前的分组名称
                                  QString newName=oldName;//这个newName将会用作弹窗输入框里的默认文本
-                                 int itemHeight=tabBar.tabData(index).toInt();//取出当前分组的短语项高度，用作弹窗输入框里的默认值
-                                 bool ok=showTabDialog(chuangkou,"修改分组",newName,itemHeight);//调用我们自定义的showTabDialog函数，于是newName、itemHeight里面存储的就是用户输入的数据
+                                 int itemHeight=tabItemHeight(tabBar,index);//取出当前分组的短语项高度，用作弹窗输入框里的默认值
+                                 int columns=tabColumns(tabBar,index);//取出当前分组的每行短语数，用作弹窗输入框里的默认值
+                                 bool ok=showTabDialog(chuangkou,"修改分组",newName,itemHeight,columns);//调用我们自定义的showTabDialog函数，于是newName、itemHeight、columns里面存储的就是用户输入的数据
                                  if( ok && !newName.isEmpty() ){ //如果用户选了“确认”并且输入的分组名称不为空
                                      if( !isTabNameDuplicate(tabBar,newName) || newName==oldName ){ //如果用户输入的分组名称不重复，或者和oldName一样
                                          tabBar.setTabText(index,newName);//设置索引为index处的分组名称
-                                         tabBar.setTabData(index,itemHeight);//把用户输入的短语项高度存到该分组的tabData中
+                                         setTabData(tabBar,index,itemHeight,columns);//把用户输入的短语项高度和每行短语数存到该分组的tabData中
                                          if(index==tabBar.currentIndex()){ //如果修改的分组是当前正在显示的分组
-                                             liebiao.setStyleSheet(phraseItemStyle(itemHeight));//那么立刻应用短语项高度和内边距
+                                             applyPhraseListLayout(liebiao,itemHeight,columns);//那么立刻应用短语项高度、内边距和每行短语数
                                          }
                                          for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
                                              if(   liebiao.item(i)->data(Qt::UserRole+2).toString()   ==oldName){ //如果该短语项的分组名称等于修改前的分组名称，那么把该短语项的分组名称改为修改后的分组名称
@@ -2519,7 +2638,7 @@ int main(int argc, char *argv[]){
                      [&](int value){
                          config["phrase_item_padding_horizontal"]=value;
                          saveConfig(configPath);
-                         liebiao.setStyleSheet(phraseItemStyle(   tabBar.tabData(tabBar.currentIndex()).toInt()   ));
+                         applyPhraseListLayout(liebiao,tabItemHeight(tabBar,tabBar.currentIndex()),tabColumns(tabBar,tabBar.currentIndex()));//内边距变了行高也会跟着变，所以要连网格一起重设
                      }
                     );
 
@@ -2534,7 +2653,7 @@ int main(int argc, char *argv[]){
                      [&](int value){
                          config["phrase_item_padding_vertical"]=value;
                          saveConfig(configPath);
-                         liebiao.setStyleSheet(phraseItemStyle(   tabBar.tabData(tabBar.currentIndex()).toInt()   ));
+                         applyPhraseListLayout(liebiao,tabItemHeight(tabBar,tabBar.currentIndex()),tabColumns(tabBar,tabBar.currentIndex()));//内边距变了行高也会跟着变，所以要连网格一起重设
                      }
                     );
 
@@ -2613,25 +2732,6 @@ int main(int argc, char *argv[]){
     QObject::connect(&enterKeyCheck,&QCheckBox::toggled,
                      [&](bool checked){
                          config["enter_key_input_phrase_when_pinned"]=checked;
-                         saveConfig(configPath);
-                     }
-                    );
-
-    //上下方向键可以首尾循环选择短语项设置
-    QWidget arrowKeyCycleWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    QHBoxLayout arrowKeyCycleLayout(&arrowKeyCycleWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    arrowKeyCycleLayout.setSpacing(4);//控件之间间距4像素
-    arrowKeyCycleLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
-    QCheckBox arrowKeyCycleCheck(&arrowKeyCycleWidget);//创建一个复选框
-    arrowKeyCycleCheck.setChecked(config["arrow_key_cycle_select_phrase_item"].toBool(true));//读取全局对象config里的arrow_key_cycle_select_phrase_item的值，然后显示在复选框里
-    arrowKeyCycleWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    arrowKeyCycleLayout.addWidget(&arrowKeyCycleCheck);//加入布局
-    arrowKeyCycleLayout.addStretch();//让水平布局右边控件整体靠左对齐
-    formLayout->addRow("上下方向键可以首尾循环选择短语项：",&arrowKeyCycleWidget);//在表单布局中添加一行，左边是标签“上下方向键可以首尾循环选择短语项：”，右边是复选框arrowKeyCycleCheck
-    //切换上下方向键可以首尾循环选择短语项复选框触发
-    QObject::connect(&arrowKeyCycleCheck,&QCheckBox::toggled,
-                     [&](bool checked){
-                         config["arrow_key_cycle_select_phrase_item"]=checked;
                          saveConfig(configPath);
                      }
                     );
@@ -2716,7 +2816,7 @@ int main(int argc, char *argv[]){
     QHBoxLayout versionLayout(&versionWidget);//创建一个水平布局，放置在刚才创建的容器中
     versionLayout.setSpacing(4);//控件之间间距4像素
     versionLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
-    QPushButton versionButton("1.7.0",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
+    QPushButton versionButton("1.8.0",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
     versionButton.setFixedWidth(100);//固定版本号按钮的宽度为100像素
     versionButton.setCursor(Qt::PointingHandCursor);//当鼠标悬停在该按钮上时，鼠标光标变成手形状
     versionWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
