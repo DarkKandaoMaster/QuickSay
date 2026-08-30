@@ -3738,31 +3738,6 @@ int main(int argc, char *argv[]){
                      }
                     );
 
-    // //输入时也将短语复制到剪贴板设置【【【【【现在这个设置是无效的，不管开不开对结果都没影响，因此之后我需要来实现一下
-    // QWidget clipboardWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
-    // QHBoxLayout clipboardLayout(&clipboardWidget);//创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    // clipboardLayout.setSpacing(4);//控件之间间距4像素
-    // clipboardLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
-    // QCheckBox clipboardCheck(&clipboardWidget);//创建一个复选框
-    // clipboardCheck.setChecked(config["clipboard"].toBool());//读取全局对象config里的clipboard的值，然后显示在复选框里
-    // clipboardWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    // clipboardLayout.addWidget(&clipboardCheck);//加入布局
-    // clipboardLayout.addStretch();//让水平布局右边控件整体靠左对齐
-    // formLayout->addRow("输入时也将短语复制到剪贴板：",&clipboardWidget);//在表单布局中添加一行，左边是标签“输入时也将短语复制到剪贴板：”，右边是复选框clipboardCheck
-    // //切换输入时也将短语复制到剪贴板复选框触发
-    // QObject::connect(&clipboardCheck,&QCheckBox::toggled,
-    //                  [&](bool checked){ //checked表示复选框的新状态，true表示勾选，false表示未勾选
-    //                      if(checked){ //如果复选框勾上了
-    //                          config["clipboard"]=true;
-    //                          saveConfig(configPath);
-    //                      }
-    //                      else{ //如果复选框取消勾选
-    //                          config["clipboard"]=false;
-    //                          saveConfig(configPath);
-    //                      }
-    //                  }
-    //                 );
-
     //高级输入间隔设置
     QSpinBox delaySpin(&shezhichuangkou);//创建一个数字输入框
     delaySpin.setRange(0,2000);//设置输入范围为0~2000
@@ -3883,7 +3858,6 @@ int main(int argc, char *argv[]){
     QObject::connect(&versionButton,&QPushButton::clicked,
                      [](){
                          QDesktopServices::openUrl(QUrl("https://github.com/DarkKandaoMaster/QuickSay"));//调用QDesktopServices类，使用系统默认浏览器打开指定网址
-                        //  QDesktopServices::openUrl(QUrl("https://www.52pojie.cn/thread-2061920-1-1.html"));
                      }
                     );
 
