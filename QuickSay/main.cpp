@@ -1,6 +1,7 @@
 ﻿//版本：1.8.0
 //更新内容：
 //1. 修改分组页面新增“每行短语数”选项。
+//2. 新增以“管理员权限启动”设置选项。勾选后就能允许QuickSay在任何地方输入。
 
 #include<QApplication>
 #include<QWidget>
@@ -17,6 +18,7 @@
 #include<QTextOption>
 #include<QJsonArray>
 #include<QJsonObject>
+#include<QXmlStreamReader>
 #include<QJsonDocument>
 #include<QFile>
 #include<QKeyEvent>
@@ -30,7 +32,7 @@
 #include<QSettings>
 #include<QFileInfo>
 #include<QDir>
-#include<SingleApplication.h>
+#include<QWinEventNotifier>
 #include<QTimer>
 #include<QVector>
 #include<QTabBar>
@@ -50,6 +52,9 @@
 #include<QFontDatabase>
 #include<climits>
 #include<windows.h>
+#include<sddl.h>
+#include<shellapi.h>
+#include<taskschd.h>
 #pragma comment(lib,"user32.lib")
 
 QJsonObject config;//全局对象，用于保存程序的设置
@@ -94,6 +99,8 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
             if(!config.contains("gundong")) config["gundong"]=10;//如果config里没有gundong，那么默认滚动条滚动速度10
             if(!config.contains("badge_key_input_phrase_when_pinned")) config["badge_key_input_phrase_when_pinned"]=false;//如果config里没有badge_key_input_phrase_when_pinned，那么默认钉住窗口时按下短语项对应角标不输入短语
             if(!config.contains("enter_key_input_phrase_when_pinned")) config["enter_key_input_phrase_when_pinned"]=false;//如果config里没有enter_key_input_phrase_when_pinned，那么默认钉住窗口时按下回车键不输入短语
+            if(!config.contains("guanliyuan")) config["guanliyuan"]=config["ziqidong_guanliyuan"].toBool(false);//如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（1.8.0以前这两件事是绑在一起的，现在拆成了独立选项）
+            config.remove("ziqidong_guanliyuan");//老键名读过一次就清掉，免得两个键一起留在config.json里让人分不清哪个在起作用
         }
     }
     else{ //如果config.json不存在
@@ -111,6 +118,7 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
         config["badge_key_input_phrase_when_pinned"]=false;//默认钉住窗口时按下短语项对应角标不输入短语
         config["enter_key_input_phrase_when_pinned"]=false;//默认钉住窗口时按下回车键不输入短语
         config["ziqidong"]=true;//默认开机自启动
+        config["guanliyuan"]=false;//默认不以管理员权限启动
         config["tudingflag"]=true;//默认钉住窗口
         config["chuangkou_x"]=( QGuiApplication::primaryScreen()->geometry().width()-500 )/2;//chuangkou默认显示位置 //获取屏幕的宽高，然后 (屏幕宽度-窗口宽度)/2 ，于是就获得了能让窗口在x轴上居中显示的位置
         config["chuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
@@ -122,6 +130,333 @@ void loadConfig(const QString & configPath){ //读取config.json到程序设置�
         config["xiugaichuangkou_y"]=( QGuiApplication::primaryScreen()->geometry().height()-500 )/2;
         saveConfig(configPath);//写入默认设置到config.json
     }
+}
+
+//====================开机自启动====================
+//普通权限自启走注册表Run项，管理员权限自启走计划任务。之所以用计划任务，是因为只有它能做到“登录Windows时直接以最高权限启动程序、而且不弹UAC”——UAC只在创建任务的那一次弹
+//注册表项和计划任务必须互斥：两个同时留着的话，开机会启动两个QuickSay实例
+//config里那两个开关是互相独立的：ziqidong管开机自不自启，guanliyuan管以不以管理员权限启动。两个都开着才走计划任务；只开guanliyuan的话开机不自启，手动启动时自己提权（见下面“以管理员权限启动”那一节）
+static const QString g_ziqidongRegPath="HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";//注册表Run项路径
+static const QString g_ziqidongRegName="QuickSay";//注册表Run项里用的键名
+static const wchar_t * g_ziqidongRenwuMing=L"QuickSay 管理员自启";//计划任务名，直接建在「任务计划程序库」的根目录下
+
+QString ziqidongExePath(){ //可执行文件的完整路径（Windows风格的反斜杠）
+    wchar_t buf[MAX_PATH]={0};
+    GetModuleFileNameW(nullptr,buf,MAX_PATH);//这里不用QCoreApplication::applicationFilePath()，因为专门去创建计划任务的那个提权实例还没有创建QApplication对象
+    return QString::fromWCharArray(buf);
+}
+
+QString ziqidongRegValue(){ //注册表Run项里要写的值：带引号的exe路径 + 后台启动标记
+    return QString("\"%1\" --autostart").arg(ziqidongExePath());
+}
+
+bool isProcessElevated(){ //当前进程是不是以管理员权限运行的
+    HANDLE token=nullptr;
+    if(!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token)) return false;
+    TOKEN_ELEVATION elevation={0};
+    DWORD len=0;
+    bool result=GetTokenInformation(token,TokenElevation,&elevation,sizeof(elevation),&len) && elevation.TokenIsElevated;
+    CloseHandle(token);
+    return result;
+}
+
+QString ziqidongYonghuMing(){ //取「域\用户名」。计划任务的登录触发器和运行身份都要用它，这样任务才只在这个用户登录时触发
+    wchar_t name[256]={0};
+    wchar_t domain[256]={0};
+    GetEnvironmentVariableW(L"USERNAME",name,256);
+    GetEnvironmentVariableW(L"USERDOMAIN",domain,256);
+    return QString::fromWCharArray(domain)+"\\"+QString::fromWCharArray(name);
+}
+
+QString ziqidongRenwuSddl(){ //计划任务的安全描述符：System和管理员组完全控制，当前用户也给完全控制
+    //给当前用户完全控制是关键：这样没提权的QuickSay自己就能删掉/改掉这个任务，关闭管理员自启时不用再弹一次UAC。抄自PowerToys的auto_start_helper.cpp
+    QString sddl="D:(A;;FA;;;SY)(A;;FA;;;BA)";
+    HANDLE token=nullptr;
+    if(OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token)){
+        BYTE info[sizeof(TOKEN_USER)+SECURITY_MAX_SID_SIZE]={0};
+        DWORD len=0;
+        if(GetTokenInformation(token,TokenUser,info,sizeof(info),&len)){
+            LPWSTR sid=nullptr;
+            if(ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER *>(info)->User.Sid,&sid)){
+                sddl+=QString("(A;;FA;;;%1)").arg(QString::fromWCharArray(sid));
+                LocalFree(sid);
+            }
+        }
+        CloseHandle(token);
+    }
+    return sddl;
+}
+
+static ITaskFolder * openRenwuGenmulu(ITaskService ** service){ //连上计划任务服务，拿到任务库根目录。失败返回nullptr；成功的话*service和返回值这两个指针用完都要Release
+    *service=nullptr;
+    ITaskService * svc=nullptr;
+    if(FAILED(   CoCreateInstance(CLSID_TaskScheduler,nullptr,CLSCTX_INPROC_SERVER,IID_ITaskService,reinterpret_cast<void **>(&svc))   )) return nullptr;
+    VARIANT empty;
+    VariantInit(&empty);//四个空VARIANT表示「连本机、用当前用户身份」
+    if(FAILED(   svc->Connect(empty,empty,empty,empty)   )){ svc->Release(); return nullptr; }
+    ITaskFolder * folder=nullptr;
+    BSTR root=SysAllocString(L"\\");
+    HRESULT hr=svc->GetFolder(root,&folder);
+    SysFreeString(root);
+    if(FAILED(hr)){ svc->Release(); return nullptr; }
+    *service=svc;
+    return folder;
+}
+
+bool queryAdminRenwu(QString * exePath){ //查询管理员自启计划任务。任务存在且处于启用状态就返回true，同时把任务里记着的exe路径写进exePath（用来发现程序被挪过位置）
+    if(exePath) exePath->clear();
+    HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);//Qt在主线程已经初始化过COM了，这里会返回S_FALSE或者RPC_E_CHANGED_MODE，都不影响用
+    if(FAILED(init)&&init!=RPC_E_CHANGED_MODE) return false;
+    ITaskService * svc=nullptr;
+    ITaskFolder * folder=openRenwuGenmulu(&svc);
+    bool qiyong=false;
+    if(folder){
+        IRegisteredTask * task=nullptr;
+        BSTR name=SysAllocString(g_ziqidongRenwuMing);
+        HRESULT hr=folder->GetTask(name,&task);
+        SysFreeString(name);
+        if(SUCCEEDED(hr)&&task){
+            VARIANT_BOOL enabled=VARIANT_FALSE;
+            if(SUCCEEDED(   task->get_Enabled(&enabled)   )&&enabled==VARIANT_TRUE) qiyong=true;
+            BSTR xml=nullptr;
+            if(exePath&&SUCCEEDED(   task->get_Xml(&xml)   )&&xml){ //从任务的XML里读出<Command>标签里的exe路径。用XML解析器是为了把路径里的&amp;之类实体还原成原字符
+                QXmlStreamReader reader(QString::fromWCharArray(xml,SysStringLen(xml)));
+                while(!reader.atEnd()){
+                    reader.readNext();
+                    if(reader.isStartElement()&&reader.name()==QStringLiteral("Command")){
+                        *exePath=reader.readElementText().trimmed();
+                        break;
+                    }
+                }
+                SysFreeString(xml);
+            }
+            task->Release();
+        }
+        folder->Release();
+    }
+    if(svc) svc->Release();
+    if(SUCCEEDED(init)) CoUninitialize();//只有真正初始化成功了才配对反初始化，RPC_E_CHANGED_MODE时不能调
+    return qiyong;
+}
+
+bool deleteAdminRenwu(){ //删掉管理员自启计划任务。任务本来就不存在也算成功。靠上面那份SDDL，这一步不需要管理员权限
+    HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    if(FAILED(init)&&init!=RPC_E_CHANGED_MODE) return false;
+    ITaskService * svc=nullptr;
+    ITaskFolder * folder=openRenwuGenmulu(&svc);
+    bool ok=false;
+    if(folder){
+        BSTR name=SysAllocString(g_ziqidongRenwuMing);
+        HRESULT hr=folder->DeleteTask(name,0);
+        SysFreeString(name);
+        ok=SUCCEEDED(hr)||hr==HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);//ERROR_FILE_NOT_FOUND就是任务不存在，那正合我意
+        folder->Release();
+    }
+    if(svc) svc->Release();
+    if(SUCCEEDED(init)) CoUninitialize();
+    return ok;
+}
+
+bool createAdminRenwu(){ //创建/更新管理员自启计划任务。必须在提权进程里调用，否则写不进任务库根目录，而且RunLevel会被降级
+    QString exe=ziqidongExePath();
+    QString yonghu=ziqidongYonghuMing();
+    QString exeXml=exe.toHtmlEscaped();//路径里万一有&就得转义，不然XML解析不了
+    QString gongzuomulu=QFileInfo(exe).absolutePath().replace('/','\\').toHtmlEscaped();
+    //直接喂一整份任务XML给ITaskFolder::RegisterTask，比一个个去接ITaskDefinition/ITrigger/IPrincipal/IExecAction简单太多（而且MinGW的taskschd.h里压根没有ILogonTrigger）
+    QString xml=QString(
+        "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
+        "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+        "<RegistrationInfo><Author>%1</Author><Description>QuickSay 以管理员权限开机自启</Description></RegistrationInfo>"
+        "<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>%1</UserId><Delay>PT3S</Delay></LogonTrigger></Triggers>"//延迟3秒再启动：登录那一瞬间explorer还没起来，托盘图标会加不上去
+        "<Principals><Principal id=\"Author\"><UserId>%1</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>"//HighestAvailable就是「以最高权限运行」，登录时不弹UAC
+        "<Settings>"
+        "<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"
+        "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"//笔记本用电池时也要启动。这一项的默认值是true，必须显式改掉
+        "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"//切到电池供电时不许把QuickSay掐了。默认值同样是true
+        "<AllowHardTerminate>false</AllowHardTerminate>"
+        "<StartWhenAvailable>false</StartWhenAvailable>"
+        "<AllowStartOnDemand>true</AllowStartOnDemand>"
+        "<Enabled>true</Enabled>"
+        "<Hidden>false</Hidden>"
+        "<RunOnlyIfIdle>false</RunOnlyIfIdle>"
+        "<WakeToRun>false</WakeToRun>"
+        "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"//PT0S表示不限制运行时长，不然开着够久就会被计划任务自动结束掉
+        "<Priority>4</Priority>"
+        "</Settings>"
+        "<Actions Context=\"Author\"><Exec><Command>%2</Command><Arguments>--autostart</Arguments><WorkingDirectory>%3</WorkingDirectory></Exec></Actions>"//带上--autostart，让开机启动的实例只待在托盘里、不弹主窗口
+        "</Task>"
+    ).arg(yonghu.toHtmlEscaped()).arg(exeXml).arg(gongzuomulu);
+
+    HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    if(FAILED(init)&&init!=RPC_E_CHANGED_MODE) return false;
+    ITaskService * svc=nullptr;
+    ITaskFolder * folder=openRenwuGenmulu(&svc);
+    bool ok=false;
+    if(folder){
+        BSTR name=SysAllocString(g_ziqidongRenwuMing);
+        BSTR xmlB=SysAllocString(reinterpret_cast<const wchar_t *>(xml.utf16()));
+        VARIANT vUser;
+        VariantInit(&vUser);
+        vUser.vt=VT_BSTR;
+        vUser.bstrVal=SysAllocString(reinterpret_cast<const wchar_t *>(yonghu.utf16()));
+        VARIANT vSddl;
+        VariantInit(&vSddl);
+        vSddl.vt=VT_BSTR;
+        vSddl.bstrVal=SysAllocString(reinterpret_cast<const wchar_t *>(ziqidongRenwuSddl().utf16()));
+        VARIANT vEmpty;
+        VariantInit(&vEmpty);//密码留空：InteractiveToken方式不需要存密码
+        IRegisteredTask * task=nullptr;
+        HRESULT hr=folder->RegisterTask(name,xmlB,TASK_CREATE_OR_UPDATE,vUser,vEmpty,TASK_LOGON_INTERACTIVE_TOKEN,vSddl,&task);
+        ok=SUCCEEDED(hr);
+        if(task) task->Release();
+        VariantClear(&vUser);
+        VariantClear(&vSddl);
+        SysFreeString(xmlB);
+        SysFreeString(name);
+        folder->Release();
+    }
+    if(svc) svc->Release();
+    if(SUCCEEDED(init)) CoUninitialize();
+    return ok;
+}
+
+bool createAdminRenwuWithUac(){ //弹一次UAC，用提权后的自身实例去建计划任务。任务建好之后每次开机都由计划任务以管理员权限启动QuickSay，不会再弹UAC
+    if(isProcessElevated()) return createAdminRenwu();//当前已经是管理员权限了，直接建，不用再弹
+    wchar_t exeW[MAX_PATH]={0};
+    ziqidongExePath().toWCharArray(exeW);//缓冲区是清零过的，所以字符串末尾自带结束符
+    SHELLEXECUTEINFOW info={0};
+    info.cbSize=sizeof(info);
+    info.fMask=SEE_MASK_NOCLOSEPROCESS;//要拿到进程句柄，好等它退出、读它的退出码
+    info.lpVerb=L"runas";//就是这个动词触发UAC提权
+    info.lpFile=exeW;
+    info.lpParameters=L"--create-admin-task";//提权实例看到这个参数就只去建计划任务，建完立刻退出，不会真的启动第二个QuickSay
+    info.nShow=SW_HIDE;
+    if(!ShellExecuteExW(&info)||!info.hProcess) return false;//用户在UAC弹窗上点了「否」也走这里
+    WaitForSingleObject(info.hProcess,INFINITE);//等提权实例把任务建完。它不开窗口，几十毫秒就退出了
+    DWORD code=1;
+    GetExitCodeProcess(info.hProcess,&code);
+    CloseHandle(info.hProcess);
+    return code==0;
+}
+
+bool applyZiqidong(bool bufanrao){ //按config里的“开机自启动”和“以管理员权限启动”两个开关，把系统里的开机自启状态调成一致。成功返回true，失败返回false
+    //bufanrao表示不打扰模式：绝不弹UAC。程序启动时调的那次用它——真要提权，手动启动的那份早在main()开头就提完了，轮不到这里再弹一次；开机自启起来的那份更不能弹
+    QSettings reg(g_ziqidongRegPath,QSettings::NativeFormat);//创建QSettings对象，用于访问注册表Run项
+    if(!config["ziqidong"].toBool()){ //不自启：先确认计划任务删掉，再清注册表项；删除失败就保留原状态，不能假装关闭成功
+        if(!deleteAdminRenwu()) return false;
+        reg.remove(g_ziqidongRegName);
+        return true;
+    }
+    if(!config["guanliyuan"].toBool()){ //普通权限自启：先删掉计划任务，再写注册表项；删除失败时绝不能让两条自启路径同时存在
+        if(!deleteAdminRenwu()) return false;
+        if(reg.value(g_ziqidongRegName).toString()!=ziqidongRegValue()) reg.setValue(g_ziqidongRegName,ziqidongRegValue());
+        return true;
+    }
+    //剩下的是两个开关都开着：走计划任务，这样开机就直接以管理员权限起来，而且不弹UAC
+    reg.remove(g_ziqidongRegName);//互斥：计划任务开着就绝不能同时留着注册表项，否则开机会启动两个实例
+    QString renwuExe;
+    if(   queryAdminRenwu(&renwuExe) && renwuExe.compare(ziqidongExePath(),Qt::CaseInsensitive)==0   ) return true;//任务在、启用着、记的路径也还是程序现在的位置，那什么都不用做
+    //到这里说明：任务不存在、或者被禁用了、或者程序挪过位置导致任务里记的路径过期了。这三种情况都得重建任务
+    if(   (!bufanrao||isProcessElevated()) && createAdminRenwuWithUac()   ) return true;//已经是管理员权限就直接建、不弹UAC；不打扰模式下又没提权，那就先不建
+    //任务没建成（不打扰模式下没提权，或者用户在UAC弹窗上点了“否”）：先退回普通权限开机自启，别让用户以为开了自启结果开机什么都没有
+    //“以管理员权限启动”那个开关不动它：下次手动启动照样会提权，那一份提权的实例跑到这里就能不弹UAC地把任务补上
+    reg.setValue(g_ziqidongRegName,ziqidongRegValue());
+    return false;
+}
+
+//====================以管理员权限启动====================
+//只有管理员权限的QuickSay才能往同样是管理员权限的窗口里输入（以管理员权限运行的记事本、任务管理器、注册表编辑器之类），这就是这个选项的意义
+//手动启动（双击exe）时靠这一节：开关开着而自己没有管理员权限，就用runas把自己重新启动一份提权的，然后这一份退出。代价是每次手动启动都要过一次UAC，这是用户勾这个选项时就认下的
+//开机自启不走这里：开机时由上面那个计划任务直接以管理员权限启动，一次UAC都不弹。万一任务没建成、退回了注册表Run项，那也宁可这次以普通权限跑，绝不在开机时弹UAC打扰用户
+bool duGuanliyuanKaiguan(){ //从config.json里单独读“以管理员权限启动”这一个开关
+    //提权重启得赶在单实例检测之后、QApplication创建之前，那时候还用不了loadConfig：config.json不存在时它要拿屏幕尺寸算默认窗口位置，而那时还没有QGuiApplication
+    QFile file(QFileInfo(ziqidongExePath()).absolutePath()+"/config.json");
+    if(!file.open(QIODevice::ReadOnly|QIODevice::Text)) return false;//配置文件还不存在，那就是第一次运行，默认不提权
+    QJsonObject o=QJsonDocument::fromJson(file.readAll()).object();
+    return o["guanliyuan"].toBool(   o["ziqidong_guanliyuan"].toBool(false)   );//老版本的config.json里这个开关还叫ziqidong_guanliyuan，兼容一下（loadConfig会把它改成新名字）
+}
+
+bool tiquanChongqiZishen(){ //用runas把自己重新启动一份带管理员权限的。成功返回true，调用方随即退出，把活交给新起来的那一份
+    wchar_t exeW[MAX_PATH]={0};
+    ziqidongExePath().toWCharArray(exeW);//缓冲区是清零过的，所以字符串末尾自带结束符
+    SHELLEXECUTEINFOW info={0};
+    info.cbSize=sizeof(info);
+    info.fMask=SEE_MASK_NOASYNC;//本进程紧接着就要退出了，得让ShellExecuteEx把该干的事全干完再返回
+    info.lpVerb=L"runas";//就是这个动词触发UAC提权
+    info.lpFile=exeW;
+    info.nShow=SW_SHOWNORMAL;
+    return ShellExecuteExW(&info);//用户在UAC弹窗上点了“否”的话返回false，那就以普通权限接着跑
+}
+
+//====================单实例检测====================
+//为什么不用SingleApplication自带的那套：它靠QSharedMemory和QLocalServer来判断「是不是已经有一个实例在跑了」，而这两样都是内核对象。
+//被计划任务以管理员权限拉起来的QuickSay建出来的是高完整性对象，后面手动双击exe启动的那个中完整性实例根本访问不了，检测就失效了，于是开出第二个QuickSay
+//这里自己拿命名互斥体做检测：安全描述符里把对象的完整性标签降到Low，中完整性进程也能访问管理员实例建的对象，提权/非提权谁先起谁后起都能互相发现
+static const wchar_t * g_danshiliMutexMing=L"Local\\QuickSay_SingleInstance";//命名互斥体：谁第一个建出来，谁就是唯一的那个实例
+static const wchar_t * g_danshiliEventMing=L"Local\\QuickSay_ShowWindow";//命名事件：后启动的实例用它通知先启动的那个实例把主窗口显示出来
+HANDLE g_danshiliMutex=nullptr;//上面那个命名互斥体的句柄。平时不用管它，只有提权重启自己之前要主动关掉，好让新起来的那份抢得到
+HANDLE g_danshiliEvent=nullptr;//上面那个命名事件的句柄。第一个实例要一直留着它给QWinEventNotifier监听。不用手动关，进程退出时系统自动回收
+
+bool tongzhiYiyouShili(){ //抢单实例互斥体。已经有一个QuickSay在跑就通知它把主窗口显示出来，并返回true（调用方直接退出）
+    //D:(A;;GA;;;WD)是「所有人完全放行」，S:(ML;;NW;;;LW)把对象的完整性标签降到Low。后半句才是关键：
+    //Windows的强制完整性控制默认不许低完整性进程写高完整性对象，不把标签降下来的话，中完整性实例连管理员实例建的互斥体都打不开，等于没做检测
+    PSECURITY_DESCRIPTOR sd=nullptr;
+    ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:(A;;GA;;;WD)S:(ML;;NW;;;LW)",SDDL_REVISION_1,&sd,nullptr);
+    SECURITY_ATTRIBUTES sa={sizeof(sa),sd,FALSE};
+    g_danshiliMutex=CreateMutexW(sd?&sa:nullptr,FALSE,g_danshiliMutexMing);//互斥体只是个占位的名字，谁先建出来谁就是唯一的那个实例
+    bool yiyou=(GetLastError()==ERROR_ALREADY_EXISTS);//这个名字的互斥体已经被别人建过了，说明QuickSay已经在跑了
+    g_danshiliEvent=CreateEventW(sd?&sa:nullptr,TRUE,FALSE,g_danshiliEventMing);//手动重置的事件。谁先建谁定这个属性，而先建的一定是第一个实例
+    if(sd) LocalFree(sd);
+    if(yiyou&&g_danshiliEvent) SetEvent(g_danshiliEvent);//通知第一个实例：有人又启动了一次QuickSay，把窗口显示出来
+    return yiyou;
+}
+
+void shifangDanshili(){ //把单实例检测占着的两个内核对象放掉。只有提权重启自己之前用得上：不先让出互斥体，新起来的那份会被单实例检测当成“已经有一个在跑了”而直接退出
+    if(g_danshiliMutex){ CloseHandle(g_danshiliMutex); g_danshiliMutex=nullptr; }
+    if(g_danshiliEvent){ CloseHandle(g_danshiliEvent); g_danshiliEvent=nullptr; }
+}
+
+bool yongRenwuChongqiGuanliyuan(){ //用已经授权过的管理员自启计划任务立刻启动一份QuickSay。任务创建时已经过了一次UAC，所以从这里启动不会再弹第二次UAC
+    //只有“开机自启动”和“以管理员权限启动”同时开着时才有这份任务；没有任务或者任务启动失败时，调用方仍会退回runas正常弹一次UAC
+    PSECURITY_DESCRIPTOR sd=nullptr;
+    ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:(A;;GA;;;WD)S:(ML;;NW;;;LW)",SDDL_REVISION_1,&sd,nullptr);
+    SECURITY_ATTRIBUTES sa={sizeof(sa),sd,FALSE};
+    HANDLE xianshiQingqiu=CreateEventW(sd?&sa:nullptr,TRUE,TRUE,g_danshiliEventMing);//任务里的启动参数是--autostart，本来只会进托盘；提前把“显示窗口”事件设为有信号，新实例进入事件循环后就会把主窗口显示出来
+    if(sd) LocalFree(sd);
+    if(!xianshiQingqiu) return false;
+
+    HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    if(FAILED(init)&&init!=RPC_E_CHANGED_MODE){ CloseHandle(xianshiQingqiu); return false; }
+    ITaskService * svc=nullptr;
+    ITaskFolder * folder=openRenwuGenmulu(&svc);
+    bool ok=false;
+    if(folder){
+        IRegisteredTask * task=nullptr;
+        BSTR name=SysAllocString(g_ziqidongRenwuMing);
+        HRESULT hr=folder->GetTask(name,&task);
+        SysFreeString(name);
+        if(SUCCEEDED(hr)&&task){
+            VARIANT empty;
+            VariantInit(&empty);//不另传参数，沿用任务定义里的--autostart；上面的显示窗口事件会把它从“只进托盘”改成“显示主窗口”
+            IRunningTask * running=nullptr;
+            ok=SUCCEEDED(   task->Run(empty,&running)   );//由任务计划程序启动它，直接继承任务的HighestAvailable权限，不会再经过UAC
+            if(running) running->Release();
+            task->Release();
+        }
+        folder->Release();
+    }
+    if(svc) svc->Release();
+    if(SUCCEEDED(init)) CoUninitialize();
+
+    if(ok){ //等新实例抢到单实例互斥体，再放掉上面的显示事件句柄；否则旧进程退得太快，事件对象可能在新实例打开它之前就消失
+        for(int i=0;i<3000;++i){ //最多等30秒。正常只要几十毫秒；任务计划程序偶尔忙时也给它足够时间
+            HANDLE newMutex=OpenMutexW(SYNCHRONIZE,FALSE,g_danshiliMutexMing);
+            if(newMutex){ CloseHandle(newMutex); Sleep(50); break; }//新实例先建互斥体、紧接着就会打开显示事件，多等50毫秒把这两步之间的小缝补上
+            Sleep(10);
+        }
+    }
+    CloseHandle(xianshiQingqiu);
+    return ok;
 }
 
 QString phraseItemStyle(int itemHeight){ //根据短语项高度和内边距生成列表项样式
@@ -2053,11 +2388,29 @@ protected:
 };
 
 int main(int argc, char *argv[]){
-    SingleApplication a(argc, argv);//将QApplication替换为SingleApplication。写了这句代码，就可以确保程序只有一个实例正在运行了。如果尝试启动第二个实例，那么会终止并通知第一个实例
+    //提权实例的入口：“开机自启动”和“以管理员权限启动”同时勾上时，QuickSay会用runas把自己再启动一份，那一份就带着这个参数
+    //必须抢在下面的单实例检测之前处理完就退出：它只负责建计划任务，不是真的要再开一个QuickSay，不能被单实例检测拦下来，也不用创建任何窗口
+    bool houtaiQidong=false;//是不是开机自启起来的（注册表Run项和计划任务都会给启动参数带上--autostart）
+    for(int i=1;i<argc;++i){
+        if(   QString(argv[i])=="--create-admin-task"   ) return createAdminRenwu()?0:1;//退出码0表示任务建好了，非0表示没建成。等着它退出的那个非提权实例靠这个退出码判断成没成
+        if(   QString(argv[i])=="--autostart"   ) houtaiQidong=true;
+    }
+    //跨完整性级别的单实例检测。必须抢在QApplication之前：后启动的那个实例要在什么Qt对象都还没创建的时候就退出
+    if(tongzhiYiyouShili()) return 0;
+    //“以管理员权限启动”：手动启动、开关开着、而自己又没有管理员权限，就弹UAC把自己重新启动一份提权的
+    //必须放在单实例检测之后：QuickSay已经在跑的时候双击exe只是想把窗口叫出来，不该再弹一次UAC。也必须放在QApplication之前，别白白建一堆马上就要丢掉的Qt对象
+    if(   duGuanliyuanKaiguan() && !isProcessElevated() && !houtaiQidong   ){
+        shifangDanshili();//先让出互斥体，否则提权起来的那份会被单实例检测拦下，结果谁也没起来
+        if(tiquanChongqiZishen()) return 0;//提权的那份已经起来了，这一份的活干完了
+        tongzhiYiyouShili();//用户在UAC弹窗上点了“否”：把互斥体重新抢回来，以普通权限接着跑
+    }
+    QApplication a(argc, argv);
     // QFontDatabase::addApplicationFont(QCoreApplication::applicationDirPath()+"/fonts/SourceHanSansSC-Regular-2.otf");//程序启动后注册 /fonts/SourceHanSansSC-Regular-2.otf
-    //当用户启动程序时，如果程序已经有实例正在运行，那么触发
-    QObject::connect(&a,&SingleApplication::instanceStarted,
+    //当用户又启动了一次程序时，把已经在跑的这个实例的主窗口显示出来
+    QWinEventNotifier danshiliTongzhi(g_danshiliEvent);//监听那个命名事件：又有人启动了一次QuickSay时，后启动的那个实例会SetEvent然后自己退出，这边负责把主窗口显示出来
+    QObject::connect(&danshiliTongzhi,&QWinEventNotifier::activated,
                      [](){
+                         ResetEvent(g_danshiliEvent);//事件是手动重置的，不重置就会一直触发
                          if(pchuangkou){
                              pchuangkou->move(config["chuangkou_x"].toInt(),config["chuangkou_y"].toInt());//把chuangkou移动到记录的位置
                              xianshi(*pchuangkou);
@@ -2303,6 +2656,8 @@ int main(int argc, char *argv[]){
     QString configPath=QCoreApplication::applicationDirPath()+"/config.json";//定义config.json文件路径 //QCoreApplication::applicationDirPath()返回的是可执行文件的目录路径（不包含文件名本身）
     loadConfig(configPath);//程序启动时调用loadConfig函数
     saveConfig(configPath);//然后调用saveConfig函数，兼容旧版本
+    //启动时把系统里的自启状态调成和config一致：纠正程序挪过位置后过期的路径，并保证注册表Run项和计划任务互斥（两个同时留着会开机启动两个实例）
+    applyZiqidong(true);//不打扰模式：这里绝不弹UAC。要提权的话，手动启动的那份早在main()开头就提过了；开机自启起来的那份更不能弹
 
     QWidget chuangkou;
     pchuangkou=&chuangkou;//创建主窗口时把地址赋值给全局指针，用于当用户启动程序时，如果已经有实例正在运行，那么显示正在运行的那个实例的主窗口
@@ -2747,28 +3102,93 @@ int main(int argc, char *argv[]){
     autostartupLayout->addWidget(autostartupCheck);//加入布局
     autostartupLayout->addStretch();//让水平布局右边控件整体靠左对齐
     formLayout->addRow("开机自启动：",autostartupWidget);//在表单布局中添加一行，左边是标签“开机自启动：”，右边是复选框autostartupCheck
-    QString autostartupRegPath="HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";//注册表Run项路径
-    QString autostartupRegName="QuickSay";//取“QuickSay”作为注册表键名
-    if(config["ziqidong"].toBool()==true){
-        QSettings reg(autostartupRegPath,QSettings::NativeFormat);//创建QSettings对象，用于访问注册表Run项
-        if(   reg.value(autostartupRegName).toString()   !=   QString("\"%1\" %2").arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath())).arg("--autostart")   ){ //获取注册表Run项里的这个键名对应的值（放心，考虑了键不存在的情况），如果值不等于可执行文件的完整路径（调整后） //QCoreApplication::applicationFilePath()返回的是可执行文件的完整路径（包含文件名和扩展名）
-            reg.setValue(autostartupRegName,   QString("\"%1\" %2").arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath())).arg("--autostart")   );//那么在注册表Run项里写入这个键，并将可执行文件的完整路径（调整后）设置为这个键对应的值。于是实现开机自启动
+
+    //以管理员权限启动设置。它和“开机自启动”互相独立：只开它的话开机不自启、手动启动时自己弹UAC提权；两个都开的话开机由计划任务直接以管理员权限起来
+    QWidget * guanliyuanWidget=new QWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
+    QHBoxLayout * guanliyuanLayout=new QHBoxLayout(guanliyuanWidget);//创建一个水平布局，放置在刚才创建的容器中
+    guanliyuanLayout->setSpacing(8);//控件之间间距8像素。比别处宽一点，让复选框和右边那行说明文字不至于挤在一起
+    guanliyuanLayout->setContentsMargins(0,0,0,0);//去掉布局的默认边距
+    QCheckBox * guanliyuanCheck=new QCheckBox(guanliyuanWidget);//创建一个复选框
+    guanliyuanCheck->setChecked(config["guanliyuan"].toBool());//读取全局对象config里的guanliyuan的值，然后显示在复选框里
+    QLabel * guanliyuanBeizhu=new QLabel("允许QuickSay在任何地方输入，比如以管理员权限运行的记事本",guanliyuanWidget);//在选项旁边备注这个选项有什么用：只有管理员权限的QuickSay才能往同样是管理员权限的窗口里输入
+    guanliyuanBeizhu->setStyleSheet("color: #605E5C;");//灰色字，和左边黑色的设置项标签区分开，一看就知道是说明文字【【【注：想修改这行说明文字的颜色在这里修改】】】
+    guanliyuanWidget->setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
+    guanliyuanLayout->addWidget(guanliyuanCheck);//加入布局
+    guanliyuanLayout->addWidget(guanliyuanBeizhu);//加入布局
+    guanliyuanLayout->addStretch();//让水平布局右边控件整体靠左对齐
+    formLayout->addRow("以管理员权限启动：",guanliyuanWidget);//在表单布局中添加一行，左边是标签“以管理员权限启动：”，右边是复选框guanliyuanCheck和说明文字
+
+    //改完开关就把系统里的自启状态调成一致，顺便落盘。失败时恢复两个开关原来的状态，不能让界面和系统里的真实状态对不上
+    auto yingyongZiqidong=[&](bool oldZiqidong,bool oldGuanliyuan)->bool{
+        if(!applyZiqidong(false)){ //可能是计划任务没建成，也可能是旧计划任务删不掉
+            config["ziqidong"]=oldZiqidong;
+            config["guanliyuan"]=oldGuanliyuan;
+            QSignalBlocker b1(autostartupCheck),b2(guanliyuanCheck);//程序自己恢复勾选时不能再次触发toggled，否则会递归调用这一段
+            autostartupCheck->setChecked(oldZiqidong);
+            guanliyuanCheck->setChecked(oldGuanliyuan);
+            applyZiqidong(true);//按原来的设置恢复系统状态；不打扰模式保证这里绝不再弹UAC
+            saveConfig(configPath);//把恢复后的设置写回config.json
+            QMessageBox::information(&shezhichuangkou,"提示","应用开机自启动设置失败");
+            return false;
         }
-    }
+        saveConfig(configPath);//系统设置应用成功后写入config.json
+        return true;
+    };
+
+    //打开设置窗口前，按系统里真实的开机自启状态刷新复选框。因为用户完全可能绕过QuickSay，自己跑去“任务计划程序”里删了任务、或者去注册表里删了Run项
+    auto shuaxinZiqidongCheck=[&](){
+        QSettings reg(g_ziqidongRegPath,QSettings::NativeFormat);//创建QSettings对象，用于访问注册表Run项
+        QString renwuExe;
+        bool renwuOn=queryAdminRenwu(&renwuExe)&&renwuExe.compare(ziqidongExePath(),Qt::CaseInsensitive)==0;//任务在、启用着、记的路径也还是程序现在的位置，才算管理员权限开机自启真的生效了
+        bool on=renwuOn||reg.contains(g_ziqidongRegName);//两条路只要有一条通着，就是开着自启
+        if(config["ziqidong"].toBool()!=on){ //真实状态和config对不上，以真实状态为准
+            config["ziqidong"]=on;
+            saveConfig(configPath);//写入程序设置到config.json
+        }
+        QSignalBlocker b1(autostartupCheck),b2(guanliyuanCheck);//程序自己改复选框不该触发toggled，否则又要跑一遍开关自启的逻辑
+        autostartupCheck->setChecked(on);
+        guanliyuanCheck->setChecked(config["guanliyuan"].toBool());//“以管理员权限启动”在系统里没有对应的痕迹（它是每次启动时自己提权），只能以config为准
+    };
+
     //切换开机自启动复选框触发
     QObject::connect(autostartupCheck,&QCheckBox::toggled,
-                     [&](bool checked){
-                         QSettings reg(autostartupRegPath,QSettings::NativeFormat);//创建QSettings对象，用于访问注册表Run项
-                         if(checked){ //如果复选框勾上了
-                             reg.setValue(autostartupRegName,   QString("\"%1\" %2").arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath())).arg("--autostart")   );//那么在注册表Run项里写入这个键，并将可执行文件的完整路径（调整后）设置为这个键对应的值。于是实现开机自启动
-                             config["ziqidong"]=true;
-                             saveConfig(configPath);//写入程序设置到config.json
-                         }
-                         else{ //如果复选框取消勾选
-                             reg.remove(autostartupRegName);//那么在注册表Run项里移除这个键。于是取消开机自启动
-                             config["ziqidong"]=false;
-                             saveConfig(configPath);//写入程序设置到config.json
-                         }
+                     [&](bool checked){ //checked表示复选框的新状态，true表示勾选，false表示未勾选
+                         bool oldZiqidong=config["ziqidong"].toBool(),oldGuanliyuan=config["guanliyuan"].toBool();//记住修改前的状态，系统设置应用失败时要原样恢复
+                         config["ziqidong"]=checked;
+                         yingyongZiqidong(oldZiqidong,oldGuanliyuan);
+                     }
+                    );
+    //切换以管理员权限启动复选框触发
+    QObject::connect(guanliyuanCheck,&QCheckBox::toggled,
+                     [&](bool checked){ //checked表示复选框的新状态，true表示勾选，false表示未勾选
+                         bool oldZiqidong=config["ziqidong"].toBool(),oldGuanliyuan=config["guanliyuan"].toBool();//记住修改前的状态，系统设置应用失败时要原样恢复
+                         config["guanliyuan"]=checked;
+                         if(!   yingyongZiqidong(oldZiqidong,oldGuanliyuan)   ) return;//计划任务创建或删除失败时，那边已经恢复原设置并提示用户了
+                         if(   !checked || isProcessElevated()   ) return;//取消勾选、或者当前这个进程本来就是管理员权限，那都没别的事要做
+                         //勾上的时候当前这个进程还是普通权限，得重启一次才能真的以管理员权限跑。问一句要不要现在就重启，而不是自作主张把用户正用着的QuickSay掐掉
+                         QString chongqiTishi="重启QuickSay生效";//当前普通权限进程无法原地变成管理员权限，只能重启为管理员权限进程
+                         QMessageBox box(QMessageBox::Question,"QuickSay",chongqiTishi,QMessageBox::NoButton,&shezhichuangkou);
+                         QPushButton * lijiButton=box.addButton("立即重启",QMessageBox::RejectRole);//放在“暂不重启”右边；虽然交换了按钮角色，但下面仍按按钮指针判断用户点了哪个
+                         QPushButton * zanbuButton=box.addButton("暂不重启",QMessageBox::AcceptRole);//不重启也没关系，开关已经存进config.json了，下次启动照样生效
+                         box.setDefaultButton(lijiButton);//回车仍然表示立即重启，不受为了交换位置而调整按钮角色的影响
+                         box.setEscapeButton(zanbuButton);//Esc仍然表示暂不重启
+                         box.exec();
+                         if(box.clickedButton()!=lijiButton) return;
+                         //下面这段和main()开头提权重启那段是一回事，只是多了「先把快捷键让出来」这一步
+                         for(auto & hk:itemHotkeys){ if(hk) hk->setRegistered(false); }//先注销短语项快捷键：提权那份起来得比这份退得快的话，会撞上还没释放的快捷键，注册不上
+                         if(hotkey) hotkey->setRegistered(false);//全局快捷键同理
+                         danshiliTongzhi.setEnabled(false);//下面会关闭它正在监听的事件句柄，先停掉监听，避免QWinEventNotifier继续盯着一个已经失效的句柄
+                         shifangDanshili();//再让出互斥体，否则提权起来的那份会被单实例检测拦下，结果谁也没起来
+                         //如果刚才为了管理员开机自启已经弹UAC建好了计划任务，就直接用那份已授权的任务重启；这样点“立即重启”时不会再次弹UAC
+                         if(   config["ziqidong"].toBool() && yongRenwuChongqiGuanliyuan()   ){ a.quit(); return; }
+                         if(tiquanChongqiZishen()){ a.quit(); return; }//没有管理员任务时（例如没开开机自启），正常用runas弹一次UAC启动提权实例
+                         //用户在UAC弹窗上点了「否」：把让出去的东西一样样抢回来，以普通权限接着跑
+                         tongzhiYiyouShili();
+                         danshiliTongzhi.setHandle(g_danshiliEvent);//重新抢到的是一个新事件句柄，必须交给通知器；它原来记着的旧句柄已经在shifangDanshili()里关掉了
+                         danshiliTongzhi.setEnabled(true);
+                         if(hotkey) hotkey->setRegistered(true);
+                         for(auto & hk:itemHotkeys){ if(hk) hk->setRegistered(true); }
+                         QMessageBox::information(&shezhichuangkou,"提示","重启失败，请手动重启");//用户拒绝UAC后明确提示重启没有成功；管理员开关仍会在下次手动重启时生效
                      }
                     );
 
@@ -2841,6 +3261,7 @@ int main(int argc, char *argv[]){
     //当按下“设置”按钮时，弹出shezhichuangkou窗口
     QObject::connect(&shezhi,&QPushButton::clicked,
                      [&](){
+                         shuaxinZiqidongCheck();//按系统里真实的自启状态刷新自启动的两个复选框
                          shezhichuangkou.move(config["shezhichuangkou_x"].toInt(),config["shezhichuangkou_y"].toInt());//把shezhichuangkou移动到记录的位置
                          xianshi(shezhichuangkou);
                      }
@@ -3100,6 +3521,7 @@ int main(int argc, char *argv[]){
     menu->addAction(shezhiAction);//shezhiAction的内存不用释放，因为此时menu会接管shezhiAction的所有权，自动管理其内存
     QObject::connect(shezhiAction,&QAction::triggered,
                      [&](){ //当按下“设置”菜单项时，弹出shezhichuangkou窗口
+                         shuaxinZiqidongCheck();//按系统里真实的自启状态刷新自启动的两个复选框
                          shezhichuangkou.move(config["shezhichuangkou_x"].toInt(),config["shezhichuangkou_y"].toInt());//把shezhichuangkou移动到记录的位置
                          xianshi(shezhichuangkou);
                      }
