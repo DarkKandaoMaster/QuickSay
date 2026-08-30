@@ -6,6 +6,8 @@
 // 4. 新增高级输入停止机制：锁屏、注销、会话断开、睡眠或休眠立即停止；某个输入动作失败也会停止。
 // 5. 新增导入导出备份功能。
 // 6. “窗口大小”更名为“主窗口大小”，该设置不再影响其他窗口。
+// 7. 重新设计设置窗口，新增分页布局以及“确定”“取消”“应用”操作。
+// 8. 重新设计托盘右键菜单。
 
 #include <QApplication>
 #include <QWidget>
@@ -52,9 +54,20 @@
 #include <QInputDialog>
 #include <QStyledItemDelegate>
 #include <QPainter>
+#include <QStylePainter>
+#include <QStyleOptionTab>
 #include <QScrollBar>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <QWindow>
+#include <QTabWidget>
+#include <QGroupBox>
+#include <QGridLayout>
+#include <QComboBox>
+#include <QAbstractItemView>
+#include <QImage>
+#include <QPixmap>
+#include <functional>
 #include <QDialog>
 #include <QDesktopServices>
 #include <QUrl>
@@ -74,6 +87,8 @@ QJsonObject config; // 全局对象，用于保存程序的设置
 static const QString g_quickSayVersion = "1.8.0"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
 static const QString g_backupFormatVersion = "1.0.0"; // 备份格式版本只在文件结构发生不兼容变化时才修改，不能跟着QuickSay版本一起改
 bool g_zhengzaiDaoruChongqi = false; // 导入成功后直到旧进程退出都保持true，挡住旧设置窗口、焦点事件和窗口移动事件再次覆盖刚写入的备份
+
+bool g_yuanshengCaidanZhankai = false; // 托盘的Windows原生右键菜单弹出期间为true。原生菜单不是Qt的弹出控件，QApplication::activePopupWidget()看不见它，所以要靠这个标志让键盘钩子放行按键
 
 QWidget *pchuangkou = nullptr;
 QWidget *g_shezhichuangkou = nullptr;
@@ -119,6 +134,8 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
             if (!config.contains("badge_key_input_phrase_when_pinned")) config["badge_key_input_phrase_when_pinned"] = false; // 如果config里没有badge_key_input_phrase_when_pinned，那么默认钉住窗口时按下短语项对应角标不输入短语
             if (!config.contains("enter_key_input_phrase_when_pinned")) config["enter_key_input_phrase_when_pinned"] = false; // 如果config里没有enter_key_input_phrase_when_pinned，那么默认钉住窗口时按下回车键不输入短语
             if (!config.contains("guanliyuan")) config["guanliyuan"] = config["ziqidong_guanliyuan"].toBool(false); // 如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（1.8.0以前这两件事是绑在一起的，现在拆成了独立选项）
+            if (!config.contains("shezhichuangkou_w")) config["shezhichuangkou_w"] = 620; // 如果config里没有shezhichuangkou_w，那么默认设置窗口外框宽度620（和TrafficMonitor中文设置窗口一致）
+            if (!config.contains("shezhichuangkou_h")) config["shezhichuangkou_h"] = 576; // 如果config里没有shezhichuangkou_h，那么默认设置窗口外框高度576
             config.remove("ziqidong_guanliyuan"); // 老键名读过一次就清掉，免得两个键一起留在config.json里让人分不清哪个在起作用
         }
     } else { // 如果config.json不存在
@@ -142,6 +159,8 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["chuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
         config["shezhichuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2 + 501; // shezhichuangkou默认显示位置。加上501是为了不让它和主窗口重叠
         config["shezhichuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
+        config["shezhichuangkou_w"] = 620; // 设置窗口默认外框宽度，和TrafficMonitor中文设置窗口一致
+        config["shezhichuangkou_h"] = 576; // 设置窗口默认外框高度
         config["tianjiachuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2 + 501; // tianjiachuangkou默认显示位置
         config["tianjiachuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
         config["xiugaichuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2 + 501; // xiugaichuangkou默认显示位置
@@ -2028,6 +2047,7 @@ void selectVisibleItemAtEdge(int direction) {
 
 bool hasQuickSayBlockingWindow() {
     if (g_quickSayPressBlockCount > 0) return true;
+    if (g_yuanshengCaidanZhankai) return true; // 托盘的原生右键菜单开着的时候也要放行按键
     if (QApplication::activeModalWidget() || QApplication::activePopupWidget()) return true;
     return (g_shezhichuangkou && g_shezhichuangkou->isVisible()) ||
         (g_tianjiachuangkou && g_tianjiachuangkou->isVisible()) ||
@@ -2229,8 +2249,244 @@ class NoEscCloseWidget : public QWidget {
     }
 };
 
+// QuickSay的样式表，实现类似于Windows 11的现代UI风格。
+// 注意它不是挂在QApplication上的：那样会连设置窗口一起染上，而设置窗口要的是Windows原生控件外观。
+// 所以改成谁需要就挂给谁——主窗口、添加窗口、修改窗口、高级输入帮助窗口，以及那几个没有父对象的右键菜单
+static const char *g_quanjuQss = R"(
+    /*====================全局基础样式====================*/
+    QWidget{
+        background-color: #f3f3f3;                                                      /*主背景色：浅灰色*/
+        font-family: "Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif,"Segoe UI Symbol","Euphemia","Gadugi"; /*字体优先级*/
+        font-size: 9pt;                                                                 /*全局字体大小：9磅*/
+        font-weight: 400;                                                               /*全局字体粗细*/
+        color: #323130;                                                                 /*全局字体颜色：深灰色*/
+        selection-background-color: #0078d4;                                            /*文本选中背景色：蓝色*/
+        selection-color: #ffffff;                                                       /*文本选中字体色：白色*/
+    }
+    /*====================图标按钮样式（专门为设置、添加按钮写的样式）====================*/
+    QPushButton#iconButton{
+        background-color: transparent;              /*按钮背景：透明*/
+        border: none;                               /*按钮边框：无边框，完全隐藏边框*/
+        border-radius: 4px;                         /*按钮圆角*/
+        padding: 0px;                               /*按钮内边距*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    QPushButton#iconButton:hover{                   /*鼠标悬停时的按钮样式*/
+        background-color: #f9f9f9;                  /*悬停背景：白色*/
+        border: none;                               /*无边框*/
+    }
+    QPushButton#iconButton:pressed{                 /*按钮被按下时的样式*/
+        background-color: #f7f7f7;                  /*按下背景：深一点的白色*/
+        border: none;                               /*无边框*/
+    }
+    QPushButton#iconButton:focus{                   /*按钮获得焦点时的样式*/
+        border: none;                               /*无边框*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    /*====================按钮样式====================*/
+    QPushButton{
+        background-color: #ffffff;                  /*按钮背景：纯白色*/
+        border: 1px solid #d1d1d1;                  /*按钮边框：1像素浅灰色*/
+        border-radius: 4px;                         /*按钮圆角*/
+        padding: 6px 12px;                          /*按钮内边距：上下6像素，左右12像素*/
+        color: #323130;                             /*按钮字体颜色：深灰色*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    QPushButton:hover{
+        background-color: #f9f9f9;                  /*鼠标悬停背景：白色*/
+        border-color: #c8c8c8;                      /*悬停边框：浅灰色*/
+    }
+    QPushButton:pressed{
+        background-color: #e5f3ff;                  /*鼠标按下背景：白色*/
+        border-color: #0078d4;                      /*按下边框：蓝色*/
+        color: #005a9e;                             /*按下文字：深蓝色*/
+    }
+    QPushButton:focus{
+        border-color: #0078d4;                      /*焦点边框：蓝色*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    /*====================列表控件样式====================*/
+    QListWidget{
+        background-color: #fcfcfc;                  /*列表背景：微灰白色，与短语项的#ffffff形成微妙对比，让界面更有深度感和专业感*/
+        border: 1px solid #e5e5e5;                  /*列表边框：1像素浅灰色，营造阴影效果*/
+        border-radius: 6px;                         /*列表圆角*/
+        padding: 4px;                               /*列表内边距：上下左右4像素*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+        selection-background-color: transparent;    /*禁用默认选中样式*/
+        alternate-background-color: transparent;    /*禁用交替行背景色*/
+    }
+    QListWidget::item{                              /*因为短语字体颜色和备注字体颜色不同，所以不能在这里设置字体颜色，不然在这里设置的字体颜色会覆盖在其他地方设置的字体颜色*/
+        background-color: #ffffff;                  /*短语项背景：纯白色*/
+        border: 1px solid #e5e5e5;                  /*短语项边框：1像素浅灰色*/
+        border-radius: 4px;                         /*短语项圆角，与列表圆角一致*/
+        margin: 2px 2px;                            /*短语项外边距：上下2像素，左右2像素*//*【【【注：想让短语项更紧凑一点在这里修改】】】*/
+    }
+    QListWidget::item:hover{
+        background-color: #f9f9f9;                  /*鼠标悬停短语项背景：白色*/
+        border-color: #d1d1d1;                      /*鼠标悬停短语项边框：浅灰色*/
+    }
+    QListWidget::item:selected{
+        background-color: #e5f3ff;                  /*鼠标选中短语项背景：偏蓝一点的白色*/
+        border-color: #0078d4;                      /*鼠标选中短语项边框：蓝色*/
+    }
+    QListWidget::item:selected:hover{
+        background-color: #cce7ff;                  /*鼠标选中且悬停，短语项背景：浅蓝色*/
+        border-color: #106ebe;                      /*鼠标选中且悬停，短语项边框：更深的蓝色*/
+    }
+    /*====================分组栏样式====================*/
+    QTabBar{
+        background-color: transparent;              /*分组栏背景：透明*/
+        border: none;                               /*无边框*/
+    }
+    QTabBar::tab{
+        background-color: #ffffff;                  /*分组背景：纯白色*/
+        color: #323130;                             /*分组字体颜色：深灰色*/
+        border: 1px solid #e5e5e5;                  /*分组边框：1像素浅灰色*/
+        border-radius: 4px;                         /*分组圆角*/
+        padding: 8px 16px;                          /*分组内边距：上下8像素，左右16像素*/
+        margin: 2px 2px;                            /*分组外边距：上下2像素，左右2像素*/
+        min-width: 30px;                            /*分组最小宽度*//*【【【注：想修改分组最小宽度在这里修改】】】*/
+    }
+    QTabBar::tab:hover{
+        background-color: #f9f9f9;                  /*鼠标悬停分组背景：白色*/
+        border-color: #d1d1d1;                      /*鼠标悬停分组边框：浅灰色*/
+    }
+    QTabBar::tab:selected{
+        background-color: #e5f3ff;                  /*鼠标选中分组背景：偏蓝一点的白色*/
+        border-color: #0078d4;                      /*鼠标选中分组边框：蓝色*/
+        color: #005a9e;                             /*鼠标选中分组字体颜色：深蓝色*/
+    }
+    QTabBar::tab:selected:hover{
+        background-color: #cce7ff;                  /*鼠标选中且悬停，分组背景：浅蓝色*/
+        border-color: #106ebe;                      /*鼠标选中且悬停，分组边框：更深的蓝色*/
+    }
+    /*====================输入框样式====================*/
+    QLineEdit,QPlainTextEdit,QTextEdit{
+        background-color: #ffffff;                  /*输入框背景：纯白色*/
+        border: 2px solid #e5e5e5;                  /*输入框边框：2像素浅灰色*/
+        border-radius: 4px;                         /*输入框圆角：4像素*/
+        padding: 8px 12px;                          /*输入框内边距：上下8像素，左右12像素*/
+        color: #323130;                             /*输入框字体颜色：深灰色*/
+        selection-background-color: #0078d4;        /*选中背景：蓝色*/
+        selection-color: #ffffff;                   /*选中文字：白色*/
+    }
+    QLineEdit:focus,QPlainTextEdit:focus,QTextEdit:focus{
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    /*====================数字输入框样式====================*/
+    QSpinBox{
+        background-color: #ffffff;                  /*数字框背景：纯白色*/
+        border: 2px solid #e5e5e5;                  /*数字框边框：2像素浅灰色*/
+        border-radius: 4px;                         /*数字框圆角：4像素*/
+        padding: 6px 8px;                           /*数字框内边距：上下6像素，左右8像素*//*【【【注：想修改数字输入框大小在这里修改】】】*/
+        color: #323130;                             /*数字框字体颜色*/
+    }
+    QSpinBox:focus{
+        border-color: #0078d4;                      /*焦点边框：蓝色*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    QSpinBox::up-button,QSpinBox::down-button{      /*完全隐藏数字输入框的上下箭头*/
+        width: 0px;
+        height: 0px;
+        border: none;
+        background: none;
+    }
+    /*====================快捷键输入框样式====================*/
+    QKeySequenceEdit QLineEdit{                     /*对快捷键输入框QKeySequenceEdit内部的QLineEdit设置样式*/
+        background-color: #ffffff;                  /*快捷键框背景：纯白色*/
+        border: 2px solid #e5e5e5;                  /*快捷键框边框：2像素浅灰色*/
+        border-radius: 4px;                         /*快捷键框圆角：4像素*/
+        padding: 8px 12px;                          /*快捷键框内边距：上下8像素，左右12像素*//*【【【注：想修改快捷键输入框大小在这里修改】】】*/
+        color: #323130;                             /*快捷键框字体颜色*/
+    }
+    QKeySequenceEdit QLineEdit:focus{
+        border-color: #0078d4;                      /*焦点边框：蓝色*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    /*====================右键菜单样式====================*/
+    QMenu {
+        background-color: #fefefe;                  /*菜单背景：白色*/
+        border: 1px solid #e5e5e5;                  /*菜单边框：1像素浅灰色*/
+        padding: 3px 3px;                           /*菜单内边距：上下4像素，左右0像素*/
+    }
+    QMenu::item {
+        padding: 8px 16px;                          /*菜单项内边距：上下8像素，左右16像素*/
+        color: #222222;                             /*字体颜色*/
+        min-width: 60px;                            /*菜单项最小宽度*/
+    }
+    QMenu::item:selected {
+        background-color: #e5f3ff;                  /*菜单项选中背景：浅蓝色*/
+    }
+    QMenu::item:pressed {
+        background-color: #cce7ff;                  /*菜单项按下背景：深蓝色*/
+    }
+    /*====================标签样式====================*/
+    QLabel{
+        color: #605e5c;                             /*标签字体颜色：深灰色*/
+        padding: 2px 0px;                           /*标签内边距：上下2像素，左右0像素*/
+    }
+    /*====================滚动条样式====================*/
+    QScrollBar:vertical{                            /*垂直滚动条*/
+        background-color: #f3f3f3;                  /*背景颜色：浅灰色*/
+        width: 8px;                                 /*滚动条宽度：8像素*/
+        border-radius: 4px;                         /*滚动条圆角：4像素*/
+        margin: 0px;                                /*滚动条外边距：0像素，也就是无*/
+        border: none;                               /*去掉边框*/
+    }
+    QScrollBar::handle:vertical{
+        background-color: #c7c7c7;                  /*滑块颜色：浅灰色*/
+        border-radius: 4px;                         /*滑块圆角：4像素*/
+        min-height: 20px;                           /*滑块最小高度：20像素，确保可拖拽*/
+        margin: 2px 1px;                            /*滑块外边距：上下2像素，左右1像素*/
+    }
+    QScrollBar::handle:vertical:hover{
+        background-color: #a6a6a6;                  /*鼠标悬停滑块颜色：灰色*/
+    }
+    QScrollBar::handle:vertical:pressed{
+        background-color: #8a8a8a;                  /*鼠标按下滑块颜色：更深的灰色*/
+    }
+    QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{
+        height: 0px;                                /*隐藏滚动条自带的那个箭头*/
+    }
+    QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{
+        background-color: transparent;              /*滚动条轨道颜色：透明*/
+    }
+    QScrollBar:horizontal{                          /*平行滚动条*/
+        background-color: #f3f3f3;                  /*背景颜色：浅灰色*/
+        height: 8px;                                /*滚动条高度：8像素*/
+        border-radius: 4px;                         /*滚动条圆角：4像素*/
+        margin: 0px;                                /*滚动条外边距：0像素，也就是无*/
+        border: none;                               /*去掉边框*/
+    }
+    QScrollBar::handle:horizontal{
+        background-color: #c7c7c7;                  /*滑块颜色：浅灰色*/
+        border-radius: 4px;                         /*滑块圆角：4像素*/
+        min-width: 20px;                            /*滑块最小宽度：20像素，确保可拖拽*/
+        margin: 1px 2px;                            /*滑块边距：上下1像素，左右2像素*/
+    }
+    QScrollBar::handle:horizontal:hover{
+        background-color: #a6a6a6;                  /*鼠标悬停滑块颜色：灰色*/
+    }
+    QScrollBar::handle:horizontal:pressed{
+        background-color: #8a8a8a;                  /*鼠标按下滑块颜色：更深的灰色*/
+    }
+    QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{
+        width: 0px;                                 /*隐藏滚动条自带的那个箭头*/
+    }
+    QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{
+        background-color: transparent;              /*滚动条轨道颜色：透明*/
+    }
+    /*====================悬停提示样式====================*/
+    QToolTip{
+        background-color: #ffffff;                  /*提示背景颜色：纯白色*/
+        color: #222222;                             /*提示字体颜色：深灰色*/
+        padding: 2px 1px;                           /*提示内边距：上下2像素，左右1像素*/
+    }
+)";
+
 void showAdvancedInputHelp(QWidget &parent) {
     NoEscCloseWidget *helpWindow = new NoEscCloseWidget();
+    helpWindow->setStyleSheet(g_quanjuQss);
     helpWindow->setAttribute(Qt::WA_DeleteOnClose);
     helpWindow->setWindowTitle("如何更高级地输入？");
     helpWindow->setWindowIcon(parent.windowIcon());
@@ -2465,7 +2721,6 @@ void showAdvancedInputHelp(QWidget &parent) {
 
 void adjustAllWindows(int w, int h, // 根据设置里的宽高调整主窗口；其他窗口始终使用默认的500*500
     QWidget &chuangkou, QListWidget &liebiao, QTabBar &tabBar, QLineEdit &search, QPushButton &shezhi, QPushButton &tianjia, QPushButton &tuding, // 主窗口
-    QWidget &shezhichuangkou, // 设置窗口
     QWidget &tianjiachuangkou, QPlainTextEdit &tianjiakuang, QPushButton &tianjia_gaojishuru, QLabel &tianjia_beizhuwenben, QPlainTextEdit &tianjia_beizhukuang, QLabel &tianjia_kjjwenben, QKeySequenceEdit &tianjia_kjjkuang, QPushButton &tianjia_kjjqingkong, QPushButton &tianjiaquxiao, QPushButton &tianjiaqueding, // 添加窗口
     QWidget &xiugaichuangkou, QPlainTextEdit &xiugaikuang, QPushButton &xiugai_gaojishuru, QLabel &xiugai_beizhuwenben, QPlainTextEdit &xiugai_beizhukuang, QLabel &xiugai_kjjwenben, QKeySequenceEdit &xiugai_kjjkuang, QPushButton &xiugai_kjjqingkong, QPushButton &xiugaiquxiao, QPushButton &xiugaiqueding // 修改窗口
 ) {
@@ -2486,9 +2741,6 @@ void adjustAllWindows(int w, int h, // 根据设置里的宽高调整主窗口�
 
     w = 500; // 其他窗口暂时不跟随“主窗口大小”设置，一直使用默认宽度
     h = 500; // 其他窗口暂时不跟随“主窗口大小”设置，一直使用默认高度
-
-    // 设置窗口
-    shezhichuangkou.setFixedSize(w, h);
 
     // 添加窗口
     tianjiachuangkou.setFixedSize(w, h);
@@ -2827,10 +3079,9 @@ class HotkeyEditFilter : public QObject {
   private:
     QKeySequenceEdit *edit_; // 指向快捷键输入框hotkeyEdit
     QHotkey *hotkey_; // 指向hotkey，就是那个QHotkey *对象
-    QString configPath_; // 指向config.json文件路径
     QVector<QHotkey *> &itemHotkeys_; // 引用动态数组itemHotkeys
   public:
-    HotkeyEditFilter(QKeySequenceEdit *e, QHotkey *h, const QString &path, QVector<QHotkey *> &itemHotkeys, QObject *parent = nullptr) : edit_(e), hotkey_(h), configPath_(path), itemHotkeys_(itemHotkeys), QObject(parent) {}
+    HotkeyEditFilter(QKeySequenceEdit *e, QHotkey *h, QVector<QHotkey *> &itemHotkeys, QObject *parent = nullptr) : edit_(e), hotkey_(h), itemHotkeys_(itemHotkeys), QObject(parent) {}
 
   protected:
     bool eventFilter(QObject *obj, QEvent *event) override { // 重写eventFilter()以拦截事件
@@ -2846,18 +3097,11 @@ class HotkeyEditFilter : public QObject {
                 if (hk) hk->setRegistered(true); // 如果hk不为空指针，那么恢复当前已注册的快捷键hk
             }
             QKeySequence seq = edit_->keySequence(); // 取出用户在输入框里输入的快捷键
-            if (!seq.isEmpty()) { // 如果输入不为空
-                if (!isValidHotkey(seq, itemHotkeys_, edit_)) { // 如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规）
-                    edit_->setKeySequence(QKeySequence(config["hotkey"].toString())); // 恢复输入框为原始快捷键
-                } else { // 如果快捷键合规
-                    hotkey_->setShortcut(seq, true); // 立即应用新快捷键
-                    config["hotkey"] = seq.toString(); // 更新全局对象config
-                    saveConfig(configPath_); // 写入程序设置到config.json
-                }
-            } else { // 如果输入为空
+            if (seq.isEmpty() || !isValidHotkey(seq, itemHotkeys_, edit_)) { // 输入为空、或者快捷键不合规（调用isValidHotkey函数检查快捷键是否合规）
                 edit_->setKeySequence(QKeySequence(config["hotkey"].toString())); // 恢复输入框为原始快捷键
             }
-            if (hotkey_) hotkey_->setRegistered(true); // 如果hotkey_不为空指针，那么重新启用全局快捷键
+            // 注意：合规的新快捷键在这里只是留在输入框里，不注册也不落盘。它要等用户点了设置窗口的“应用”或“确定”才会真的生效
+            if (hotkey_) hotkey_->setRegistered(true); // 把原来那个全局快捷键重新注册回去，编辑期间的临时注销到此结束
             return false; // 返回false，不拦截事件，让快捷键输入框继续正常处理焦点
         }
         return QObject::eventFilter(obj, event); // 其他事件走默认处理
@@ -2929,19 +3173,267 @@ class MyTabBar : public QTabBar {
     }
 };
 
-// 为shezhichuangkou单独自定义一个继承自QWidget的子类，同时重写showEvent()实现每次窗口show()的时候清除子控件的焦点，再把焦点交给窗口本身。这样窗口show()的时候就不会自动聚焦子控件了
-class bujihuoChuangkou : public QWidget {
+//====================设置窗口====================
+// 设置窗口的外观照着TrafficMonitor的设置对话框做：顶部四个页签、每页一块独立的滚动区域、底部固定“确定/取消/应用”。
+// 这份样式表只挂在设置窗口自己身上，而且每条选择器都以 #shezhiChuangkou 开头——ID选择器的优先级比main()里那份全局QSS高，
+// 所以设置窗口的外观和QuickSay其他窗口完全隔离，改哪边都不会影响另一边
+static const char *g_shezhiQss = R"(
+/*这里只写窗口和页签的底色，别的什么都不写：数字框、复选框、按钮、快捷键框这些一律不加规则，
+  Qt就会用Windows原生样式去画它们——外观和TrafficMonitor一致，数字框的上下箭头也是系统自己画的*/
+QWidget#shezhiChuangkou{
+    background-color:#f0f0f0;                       /*窗口本体：未选中页签右边那片空白、底部按钮那一条都是这个颜色*//*【【【注：想改设置窗口外围底色在这里改】】】*/
+}
+/*====================页签====================*/
+QWidget#shezhiChuangkou QTabWidget::pane{
+    background-color:#f9f9f9;                       /*页签下方的配置区域底色*/
+    border:1px solid #e5e5e5;                       /*边框颜色是照着TrafficMonitor量出来的：一条很浅的灰线*//*【【【注：想改设置窗口里页签边框的深浅在这里和下面一起改】】】*/
+    top:-1px;                                       /*往上挪1像素，和页签底边压在一起，选中页签就和配置区域连成一体了*/
+}
+QWidget#shezhiChuangkou QTabWidget::tab-bar{
+    left:0px;                                       /*页签从左边开始排*/
+}
+QWidget#shezhiChuangkou QTabBar{
+    background-color:transparent;                   /*页签栏本身透明，露出窗口的#f0f0f0*/
+    border:none;
+}
+QWidget#shezhiChuangkou QTabBar::tab{
+    background-color:#f0f0f0;                       /*未选中页签：和外围背景同色*/
+    border:1px solid #e5e5e5;
+    color:#000000;
+    height:24px;                                    /*未选中页签高度24像素，和TrafficMonitor一致*//*【【【注：想改页签高度在这里改】】】*/
+    padding:0px 8px;                                /*页签左右内边距，宽度随图标和文字自适应*/
+    margin-top:2px;                                 /*未选中页签顶部让出2像素；选中后会向上长高，复现TrafficMonitor原生页签的凸起效果*/
+    margin-right:-1px;                              /*相邻页签共用一条竖边框，不会出现两条并排的线*/
+}
+QWidget#shezhiChuangkou QTabBar::tab:hover{
+    background-color:#f5f5f5;
+}
+QWidget#shezhiChuangkou QTabBar::tab:selected{
+    background-color:#f9f9f9;                       /*选中页签：和下方配置区域同色*/
+    border-bottom-color:#f9f9f9;                    /*底边染成配置区域的颜色，等于把两者之间那条线抹掉*/
+    height:26px;                                    /*选中页签比未选中页签高2像素，并占掉上面的留白；页签和里面的图文都会自然往上抬一点*/
+    margin-top:0px;
+}
+/*====================滚动页====================*/
+/*只点名滚动内容和视口这两个控件。绝不能写成“QScrollArea下面的所有控件”，那样连滚动条都会被套上规则，
+  滚动条一旦匹配到规则就得由样式表自己画，原生外观就没了*/
+QWidget#shezhiChuangkou QWidget#shezhiYemian,QWidget#shezhiChuangkou QWidget#shezhiShikou{
+    background-color:#f9f9f9;                       /*滚动内容和它的视口都用配置区域的底色；分组框不加规则，露出的就是这个颜色*/
+}
+/*====================说明文字====================*/
+QWidget#shezhiChuangkou QLabel#shezhiShuoming{
+    color:#606060;                                  /*说明文字：灰色，和黑色的选项文字区分开*//*【【【注：想改说明文字颜色在这里改】】】*/
+}
+)";
+
+// 设置窗口页签栏单独接管图标和文字的绘制。Qt默认在两者中间留得比Windows原生页签宽，TrafficMonitor用的是原生CTabCtrl，所以这里把距离固定成5像素
+class ShezhiYeqianLan : public QTabBar {
   public:
-    using QWidget::QWidget; // 直接继承QWidget构造函数
+    using QTabBar::QTabBar;
+
   protected:
-    void showEvent(QShowEvent *e) override {
-        QWidget::showEvent(e); // 调用父类的showEvent，保持默认行为
-        if (this->focusWidget()) { // 如果在show()的时候，当前窗口内有子控件持有焦点 //this->focusWidget()表示获取当前窗口内的焦点控件
-            this->focusWidget()->clearFocus(); // 清除该子控件的焦点
+    void paintEvent(QPaintEvent *event) override {
+        Q_UNUSED(event);
+        QStylePainter huabi(this);
+        for (int i = 0; i < count(); ++i) { // 先画未选中的页签，最后再画选中页签，避免相邻页签盖住选中页签凸出来的边框
+            if (i != currentIndex()) huaYeqian(huabi, i);
         }
-        this->setFocus(Qt::OtherFocusReason); // 把焦点设置到窗口本身，而不是子控件
+        if (currentIndex() >= 0) huaYeqian(huabi, currentIndex());
+    }
+
+  private:
+    void huaYeqian(QStylePainter &huabi, int index) {
+        QStyleOptionTab xuanxiang;
+        initStyleOption(&xuanxiang, index);
+        huabi.drawControl(QStyle::CE_TabBarTabShape, xuanxiang); // 页签底色和边框仍然交给上面的样式表画，只接管里面的图标和文字
+
+        const bool xuanzhong = xuanxiang.state.testFlag(QStyle::State_Selected);
+        QRect neirong = xuanxiang.rect;
+        if (xuanzhong) neirong.translate(0, -1); // 高度增加2像素只会让居中的图文自然抬高1像素，所以选中时再额外上移1像素，合起来正好抬高2像素
+        else neirong.adjust(0, 2, 0, 0); // 未选中页签本身矮2像素，图文中心会比选中页签低2像素
+        QIcon::Mode moshi = xuanxiang.state.testFlag(QStyle::State_Enabled) ? QIcon::Normal : QIcon::Disabled;
+        QIcon::State zhuangtai = xuanzhong ? QIcon::On : QIcon::Off;
+        QSize tubiaoChicun = xuanxiang.icon.actualSize(iconSize(), moshi, zhuangtai);
+        int wenziKuandu = xuanxiang.fontMetrics.horizontalAdvance(xuanxiang.text);
+        int juli = !xuanxiang.icon.isNull() && !xuanxiang.text.isEmpty() ? 5 : 0; // 图标和文字只隔5像素，接近TrafficMonitor原生页签的距离
+        int zongKuandu = tubiaoChicun.width() + juli + wenziKuandu;
+        int zuo = neirong.center().x() - zongKuandu / 2;
+
+        if (!xuanxiang.icon.isNull()) {
+            QRect tubiaoKuang(zuo, neirong.center().y() - tubiaoChicun.height() / 2 + 1, tubiaoChicun.width(), tubiaoChicun.height()); // 图标比文字的视觉重心偏高，单独下移1像素，和TrafficMonitor原生页签对齐
+            xuanxiang.icon.paint(&huabi, tubiaoKuang, Qt::AlignCenter, moshi, zhuangtai);
+            zuo = tubiaoKuang.right() + 1 + juli;
+        }
+        QRect wenziKuang(zuo, neirong.top(), wenziKuandu, neirong.height());
+        style()->drawItemText(&huabi, wenziKuang, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextShowMnemonic, xuanxiang.palette,
+            xuanxiang.state.testFlag(QStyle::State_Enabled), xuanxiang.text, QPalette::WindowText);
     }
 };
+
+// 只有QTabWidget的子类才能替换内部页签栏；设置窗口用上面的紧凑页签栏，QuickSay主窗口的分组栏不受影响
+class ShezhiYeqian : public QTabWidget {
+  public:
+    explicit ShezhiYeqian(QWidget *parent = nullptr) : QTabWidget(parent) {
+        setTabBar(new ShezhiYeqianLan(this));
+    }
+};
+
+// 设置窗口本体。它不是QDialog，而是普通的QWidget：QDialog自带回车=确定、Esc=取消，而这个窗口要求任何快捷键都不能触发确定/取消/应用
+class ShezhiChuangkou : public QWidget {
+  public:
+    explicit ShezhiChuangkou(const QString &configPath) : configPath_(configPath) {}
+    std::function<void()> guanbiHuidiao; // 窗口被关掉时的回调：用来丢弃还没应用的修改
+
+  protected:
+    void showEvent(QShowEvent *e) override {
+        QWidget::showEvent(e);
+        if (chicunYiChushihua_) return;
+        chicunYiChushihua_ = true; // 下面这套换算只在第一次显示时做一次
+        muBiaoWaikuang_ = QSize(config["shezhichuangkou_w"].toInt(), config["shezhichuangkou_h"].toInt()); // 目标外框尺寸只在这里取一次。要是校正时再去读config，就会读到上一次四舍五入后存回去的值，尺寸会一次比一次大
+        dingChicun(); // 先按现在能问到的边框尺寸摆一次，窗口一出来就是接近正确的大小，不至于跳一下
+        QTimer::singleShot(0, this, [this]() { dingChicun(); }); // 窗口真正贴到屏幕上之后frameGeometry()才准，回到事件循环再校正一次
+    }
+    QSize waikuangChicun() { // 窗口连标题栏带边框的外框尺寸（逻辑像素）。不用frameGeometry()：它算的是DWM那圈看得见的边，不含Windows 10/11外面那圈透明的拖拽边，会比GetWindowRect小十几个像素
+        RECT wai;
+        if (!GetWindowRect((HWND)winId(), &wai)) return frameGeometry().size();
+        qreal bi = devicePixelRatioF(); // GetWindowRect给的是物理像素，Qt这边一律用逻辑像素
+        return QSize(qRound((wai.right - wai.left) / bi), qRound((wai.bottom - wai.top) / bi));
+    }
+    void dingChicun() { // 把“外框620*576”换算成客户区尺寸：设成最小尺寸，再恢复上次记下的普通状态尺寸
+        QSize bianKuang = waikuangChicun() - size(); // 外框比客户区大出来的那一圈
+        if (bianKuang.isEmpty()) return; // 窗口还没真正建好，这时问不出边框尺寸，交给下面那次延迟校正
+        setMinimumSize(QSize(620, 576) - bianKuang); // 最小外框尺寸620*576，和TrafficMonitor中文设置窗口完全一致
+        resize(muBiaoWaikuang_ - bianKuang); // 默认外框尺寸也是620*576
+    }
+    void resizeEvent(QResizeEvent *e) override {
+        QWidget::resizeEvent(e);
+        if (g_zhengzaiDaoruChongqi || !chicunYiChushihua_) return; // 导入重启期间不准再往config.json里写东西
+        if (isMaximized() || isMinimized() || !isVisible()) return; // 只记忆普通状态尺寸：最大化、最小化时的尺寸不算数
+        QSize waikuang = waikuangChicun(); // 记的是外框尺寸，和最小尺寸、默认尺寸用的是同一套口径
+        config["shezhichuangkou_w"] = waikuang.width();
+        config["shezhichuangkou_h"] = waikuang.height();
+        saveConfig(configPath_);
+    }
+    void closeEvent(QCloseEvent *e) override {
+        if (guanbiHuidiao) guanbiHuidiao(); // 标题栏的关闭按钮和“取消”一样：丢弃还没应用的修改
+        QWidget::closeEvent(e);
+    }
+
+  private:
+    QString configPath_;
+    bool chicunYiChushihua_ = false;
+    QSize muBiaoWaikuang_; // 这次要摆出来的外框尺寸
+};
+
+// 鼠标滚轮落在数字框、或者还没展开的下拉框上时，不要改控件的值，改成滚动它所在的那一页
+class GunlunLvqi : public QObject {
+  public:
+    using QObject::QObject;
+
+  protected:
+    bool eventFilter(QObject *obj, QEvent *event) override {
+        if (event->type() != QEvent::Wheel) return QObject::eventFilter(obj, event);
+        QWidget *kongjian = qobject_cast<QWidget *>(obj);
+        if (!kongjian) return QObject::eventFilter(obj, event);
+        if (QComboBox *xiala = qobject_cast<QComboBox *>(kongjian)) {
+            if (xiala->view() && xiala->view()->isVisible()) return QObject::eventFilter(obj, event); // 下拉框已经展开了，滚轮照常用来选项目
+        }
+        QWidget *zu = kongjian->parentWidget();
+        while (zu && !qobject_cast<QScrollArea *>(zu)) zu = zu->parentWidget(); // 一路往上找它所在的滚动页
+        if (QScrollArea *quyu = qobject_cast<QScrollArea *>(zu)) QApplication::sendEvent(quyu->viewport(), event); // 把这次滚轮转交给滚动页
+        return true; // 不管找没找到滚动页都把事件吃掉，绝不能让滚轮改掉控件的值
+    }
+};
+
+//====================托盘右键菜单====================
+// 托盘右键菜单不用QMenu，改用Win32的TrackPopupMenu：这样菜单是Windows自己画的，外观和TrafficMonitor完全一致，也就天然和QuickSay的全局QSS隔离
+HBITMAP caidanTubiaoWeitu(const QString &icoPath, int bian) { // 把.ico读成菜单项能用的32位带alpha位图，MENUITEMINFO::hbmpItem要的就是这个
+    QImage tu = QIcon(icoPath).pixmap(QSize(bian, bian), 1.0).toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied); // 菜单位图要的是预乘alpha；这里固定按1倍缩放取图，因为bian已经是系统按DPI算好的物理像素了
+    if (tu.isNull()) return nullptr;
+    BITMAPINFO xinxi = {};
+    xinxi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    xinxi.bmiHeader.biWidth = tu.width();
+    xinxi.bmiHeader.biHeight = -tu.height(); // 负数表示自上而下排列，和QImage的行序一致，可以整块拷过去
+    xinxi.bmiHeader.biPlanes = 1;
+    xinxi.bmiHeader.biBitCount = 32;
+    xinxi.bmiHeader.biCompression = BI_RGB;
+    void *xiangsu = nullptr;
+    HBITMAP weitu = CreateDIBSection(nullptr, &xinxi, DIB_RGB_COLORS, &xiangsu, nullptr, 0);
+    if (!weitu) return nullptr;
+    memcpy(xiangsu, tu.constBits(), static_cast<size_t>(tu.sizeInBytes())); // ARGB32每行字节数正好是宽度*4，和DIB的4字节对齐一致
+    return weitu;
+}
+
+HWND tuopanCaidanZhuChuangkou() { // 原生菜单需要一个宿主窗口：TrackPopupMenu靠它收消息，弹出前还要把它设成前台窗口，菜单才会在点别处时自动消失
+    static HWND chuang = nullptr;
+    if (chuang) return chuang;
+    static const wchar_t *leiming = L"QuickSayTrayMenuHost";
+    WNDCLASSW lei = {};
+    lei.lpfnWndProc = DefWindowProcW;
+    lei.hInstance = GetModuleHandleW(nullptr);
+    lei.lpszClassName = leiming;
+    RegisterClassW(&lei);
+    chuang = CreateWindowExW(WS_EX_TOOLWINDOW, leiming, L"", WS_POPUP, -32000, -32000, 1, 1, nullptr, nullptr, lei.hInstance, nullptr); // 1*1、扔在屏幕外的工具窗口：用户看不见，也不会出现在任务栏和Alt+Tab里
+    ShowWindow(chuang, SW_SHOWNA); // 必须真的显示出来，否则SetForegroundWindow对它无效，菜单就会点了别处也不消失
+    return chuang;
+}
+
+int tanchuTuopanCaidan(const QString &tubiaoMulu) { // 弹出托盘右键菜单，返回用户点了哪一项：1=设置，2=退出，0=什么都没点
+    HWND zhuChuang = tuopanCaidanZhuChuangkou();
+    HMENU caidan = CreatePopupMenu();
+    int bian = GetSystemMetrics(SM_CXSMICON); // 菜单图标尺寸跟着系统DPI走，100%缩放下就是16*16，和TrafficMonitor一致
+    HBITMAP tuSheZhi = caidanTubiaoWeitu(tubiaoMulu + "/setting.ico", bian);
+    HBITMAP tuTuiChu = caidanTubiaoWeitu(tubiaoMulu + "/exit.ico", bian);
+    QString shezhiWen = "设置", tuichuWen = "退出";
+    AppendMenuW(caidan, MF_STRING, 1, reinterpret_cast<const wchar_t *>(shezhiWen.utf16()));
+    AppendMenuW(caidan, MF_STRING, 2, reinterpret_cast<const wchar_t *>(tuichuWen.utf16()));
+    MENUITEMINFOW xiang = {};
+    xiang.cbSize = sizeof(xiang);
+    xiang.fMask = MIIM_BITMAP;
+    xiang.hbmpItem = tuSheZhi;
+    SetMenuItemInfoW(caidan, 1, FALSE, &xiang);
+    xiang.hbmpItem = tuTuiChu;
+    SetMenuItemInfoW(caidan, 2, FALSE, &xiang);
+    POINT weizhi;
+    GetCursorPos(&weizhi);
+    SetForegroundWindow(zhuChuang); // MSDN明确要求：弹菜单前把宿主窗口设成前台窗口，否则点到菜单外面菜单不会消失
+    g_yuanshengCaidanZhankai = true;
+    int xuanle = TrackPopupMenu(caidan, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, weizhi.x, weizhi.y, 0, zhuChuang, nullptr);
+    g_yuanshengCaidanZhankai = false;
+    PostMessageW(zhuChuang, WM_NULL, 0, 0); // MSDN明确要求：弹完补一条空消息，否则下次点托盘时菜单可能弹不出来
+    DestroyMenu(caidan);
+    if (tuSheZhi) DeleteObject(tuSheZhi);
+    if (tuTuiChu) DeleteObject(tuTuiChu);
+    return xuanle;
+}
+
+// 新建一个设置页：外层是独立的滚动区域（每一页各自记住自己的滚动位置），里面是一个竖着排分组框的内容控件
+QScrollArea *jianShezhiYemian(QVBoxLayout *&neirongLayout) {
+    QScrollArea *quyu = new QScrollArea;
+    quyu->setWidgetResizable(true); // 让内容控件随滚动区域宽度自适应
+    quyu->setFrameShape(QFrame::NoFrame);
+    quyu->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // 只要竖直滚动条
+    quyu->viewport()->setObjectName("shezhiShikou"); // 给视口起个名字，样式表才点得到它，好把它染成配置区域的底色
+    QWidget *neirong = new QWidget;
+    neirong->setObjectName("shezhiYemian"); // 样式表靠这个ID给滚动内容上#f9f9f9的底色
+    neirongLayout = new QVBoxLayout(neirong);
+    neirongLayout->setContentsMargins(10, 10, 10, 10);
+    neirongLayout->setSpacing(10);
+    quyu->setWidget(neirong);
+    return quyu;
+}
+
+// 往设置页里加一个分组框，里面用网格布局排选项：第0列放说明文字，第1列放控件，第2列吸收多余宽度好让控件都靠左
+QGridLayout *jianFenzukuang(const QString &biaoti, QVBoxLayout *yemianLayout) {
+    QGroupBox *kuang = new QGroupBox(biaoti);
+    QGridLayout *gezi = new QGridLayout(kuang);
+    gezi->setContentsMargins(10, 10, 10, 10);
+    gezi->setHorizontalSpacing(8);
+    gezi->setVerticalSpacing(8);
+    gezi->setColumnStretch(2, 1);
+    yemianLayout->addWidget(kuang);
+    return gezi;
+}
 
 int main(int argc, char *argv[]) {
     // 提权实例的入口：“开机自启动”和“以管理员权限启动”同时勾上时，QuickSay会用runas把自己再启动一份，那一份就带着这个参数
@@ -2972,238 +3464,6 @@ int main(int argc, char *argv[]) {
                 xianshi(*pchuangkou);
             }
         });
-    // 设置全局样式表，实现类似于Windows 11的现代UI风格
-    a.setStyleSheet(R"(
-    /*====================全局基础样式====================*/
-    QWidget{
-        background-color: #f3f3f3;                                                      /*主背景色：浅灰色*/
-        font-family: "Inter","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","Source Han Sans SC","PingFang SC","Helvetica Neue",Arial,sans-serif,"Segoe UI Symbol","Euphemia","Gadugi"; /*字体优先级*/
-        font-size: 9pt;                                                                 /*全局字体大小：9磅*/
-        font-weight: 400;                                                               /*全局字体粗细*/
-        color: #323130;                                                                 /*全局字体颜色：深灰色*/
-        selection-background-color: #0078d4;                                            /*文本选中背景色：蓝色*/
-        selection-color: #ffffff;                                                       /*文本选中字体色：白色*/
-    }
-    /*====================图标按钮样式（专门为设置、添加按钮写的样式）====================*/
-    QPushButton#iconButton{
-        background-color: transparent;              /*按钮背景：透明*/
-        border: none;                               /*按钮边框：无边框，完全隐藏边框*/
-        border-radius: 4px;                         /*按钮圆角*/
-        padding: 0px;                               /*按钮内边距*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    QPushButton#iconButton:hover{                   /*鼠标悬停时的按钮样式*/
-        background-color: #f9f9f9;                  /*悬停背景：白色*/
-        border: none;                               /*无边框*/
-    }
-    QPushButton#iconButton:pressed{                 /*按钮被按下时的样式*/
-        background-color: #f7f7f7;                  /*按下背景：深一点的白色*/
-        border: none;                               /*无边框*/
-    }
-    QPushButton#iconButton:focus{                   /*按钮获得焦点时的样式*/
-        border: none;                               /*无边框*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    /*====================按钮样式====================*/
-    QPushButton{
-        background-color: #ffffff;                  /*按钮背景：纯白色*/
-        border: 1px solid #d1d1d1;                  /*按钮边框：1像素浅灰色*/
-        border-radius: 4px;                         /*按钮圆角*/
-        padding: 6px 12px;                          /*按钮内边距：上下6像素，左右12像素*/
-        color: #323130;                             /*按钮字体颜色：深灰色*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    QPushButton:hover{
-        background-color: #f9f9f9;                  /*鼠标悬停背景：白色*/
-        border-color: #c8c8c8;                      /*悬停边框：浅灰色*/
-    }
-    QPushButton:pressed{
-        background-color: #e5f3ff;                  /*鼠标按下背景：白色*/
-        border-color: #0078d4;                      /*按下边框：蓝色*/
-        color: #005a9e;                             /*按下文字：深蓝色*/
-    }
-    QPushButton:focus{
-        border-color: #0078d4;                      /*焦点边框：蓝色*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    /*====================列表控件样式====================*/
-    QListWidget{
-        background-color: #fcfcfc;                  /*列表背景：微灰白色，与短语项的#ffffff形成微妙对比，让界面更有深度感和专业感*/
-        border: 1px solid #e5e5e5;                  /*列表边框：1像素浅灰色，营造阴影效果*/
-        border-radius: 6px;                         /*列表圆角*/
-        padding: 4px;                               /*列表内边距：上下左右4像素*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-        selection-background-color: transparent;    /*禁用默认选中样式*/
-        alternate-background-color: transparent;    /*禁用交替行背景色*/
-    }
-    QListWidget::item{                              /*因为短语字体颜色和备注字体颜色不同，所以不能在这里设置字体颜色，不然在这里设置的字体颜色会覆盖在其他地方设置的字体颜色*/
-        background-color: #ffffff;                  /*短语项背景：纯白色*/
-        border: 1px solid #e5e5e5;                  /*短语项边框：1像素浅灰色*/
-        border-radius: 4px;                         /*短语项圆角，与列表圆角一致*/
-        margin: 2px 2px;                            /*短语项外边距：上下2像素，左右2像素*//*【【【注：想让短语项更紧凑一点在这里修改】】】*/
-    }
-    QListWidget::item:hover{
-        background-color: #f9f9f9;                  /*鼠标悬停短语项背景：白色*/
-        border-color: #d1d1d1;                      /*鼠标悬停短语项边框：浅灰色*/
-    }
-    QListWidget::item:selected{
-        background-color: #e5f3ff;                  /*鼠标选中短语项背景：偏蓝一点的白色*/
-        border-color: #0078d4;                      /*鼠标选中短语项边框：蓝色*/
-    }
-    QListWidget::item:selected:hover{
-        background-color: #cce7ff;                  /*鼠标选中且悬停，短语项背景：浅蓝色*/
-        border-color: #106ebe;                      /*鼠标选中且悬停，短语项边框：更深的蓝色*/
-    }
-    /*====================分组栏样式====================*/
-    QTabBar{
-        background-color: transparent;              /*分组栏背景：透明*/
-        border: none;                               /*无边框*/
-    }
-    QTabBar::tab{
-        background-color: #ffffff;                  /*分组背景：纯白色*/
-        color: #323130;                             /*分组字体颜色：深灰色*/
-        border: 1px solid #e5e5e5;                  /*分组边框：1像素浅灰色*/
-        border-radius: 4px;                         /*分组圆角*/
-        padding: 8px 16px;                          /*分组内边距：上下8像素，左右16像素*/
-        margin: 2px 2px;                            /*分组外边距：上下2像素，左右2像素*/
-        min-width: 30px;                            /*分组最小宽度*//*【【【注：想修改分组最小宽度在这里修改】】】*/
-    }
-    QTabBar::tab:hover{
-        background-color: #f9f9f9;                  /*鼠标悬停分组背景：白色*/
-        border-color: #d1d1d1;                      /*鼠标悬停分组边框：浅灰色*/
-    }
-    QTabBar::tab:selected{
-        background-color: #e5f3ff;                  /*鼠标选中分组背景：偏蓝一点的白色*/
-        border-color: #0078d4;                      /*鼠标选中分组边框：蓝色*/
-        color: #005a9e;                             /*鼠标选中分组字体颜色：深蓝色*/
-    }
-    QTabBar::tab:selected:hover{
-        background-color: #cce7ff;                  /*鼠标选中且悬停，分组背景：浅蓝色*/
-        border-color: #106ebe;                      /*鼠标选中且悬停，分组边框：更深的蓝色*/
-    }
-    /*====================输入框样式====================*/
-    QLineEdit,QPlainTextEdit,QTextEdit{
-        background-color: #ffffff;                  /*输入框背景：纯白色*/
-        border: 2px solid #e5e5e5;                  /*输入框边框：2像素浅灰色*/
-        border-radius: 4px;                         /*输入框圆角：4像素*/
-        padding: 8px 12px;                          /*输入框内边距：上下8像素，左右12像素*/
-        color: #323130;                             /*输入框字体颜色：深灰色*/
-        selection-background-color: #0078d4;        /*选中背景：蓝色*/
-        selection-color: #ffffff;                   /*选中文字：白色*/
-    }
-    QLineEdit:focus,QPlainTextEdit:focus,QTextEdit:focus{
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    /*====================数字输入框样式====================*/
-    QSpinBox{
-        background-color: #ffffff;                  /*数字框背景：纯白色*/
-        border: 2px solid #e5e5e5;                  /*数字框边框：2像素浅灰色*/
-        border-radius: 4px;                         /*数字框圆角：4像素*/
-        padding: 6px 8px;                           /*数字框内边距：上下6像素，左右8像素*//*【【【注：想修改数字输入框大小在这里修改】】】*/
-        color: #323130;                             /*数字框字体颜色*/
-    }
-    QSpinBox:focus{
-        border-color: #0078d4;                      /*焦点边框：蓝色*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    QSpinBox::up-button,QSpinBox::down-button{      /*完全隐藏数字输入框的上下箭头*/
-        width: 0px;
-        height: 0px;
-        border: none;
-        background: none;
-    }
-    /*====================快捷键输入框样式====================*/
-    QKeySequenceEdit QLineEdit{                     /*对快捷键输入框QKeySequenceEdit内部的QLineEdit设置样式*/
-        background-color: #ffffff;                  /*快捷键框背景：纯白色*/
-        border: 2px solid #e5e5e5;                  /*快捷键框边框：2像素浅灰色*/
-        border-radius: 4px;                         /*快捷键框圆角：4像素*/
-        padding: 8px 12px;                          /*快捷键框内边距：上下8像素，左右12像素*//*【【【注：想修改快捷键输入框大小在这里修改】】】*/
-        color: #323130;                             /*快捷键框字体颜色*/
-    }
-    QKeySequenceEdit QLineEdit:focus{
-        border-color: #0078d4;                      /*焦点边框：蓝色*/
-        outline: none;                              /*用于去掉焦点时的虚线边框*/
-    }
-    /*====================右键菜单样式====================*/
-    QMenu {
-        background-color: #fefefe;                  /*菜单背景：白色*/
-        border: 1px solid #e5e5e5;                  /*菜单边框：1像素浅灰色*/
-        padding: 3px 3px;                           /*菜单内边距：上下4像素，左右0像素*/
-    }
-    QMenu::item {
-        padding: 8px 16px;                          /*菜单项内边距：上下8像素，左右16像素*/
-        color: #222222;                             /*字体颜色*/
-        min-width: 60px;                            /*菜单项最小宽度*/
-    }
-    QMenu::item:selected {
-        background-color: #e5f3ff;                  /*菜单项选中背景：浅蓝色*/
-    }
-    QMenu::item:pressed {
-        background-color: #cce7ff;                  /*菜单项按下背景：深蓝色*/
-    }
-    /*====================标签样式====================*/
-    QLabel{
-        color: #605e5c;                             /*标签字体颜色：深灰色*/
-        padding: 2px 0px;                           /*标签内边距：上下2像素，左右0像素*/
-    }
-    /*====================滚动条样式====================*/
-    QScrollBar:vertical{                            /*垂直滚动条*/
-        background-color: #f3f3f3;                  /*背景颜色：浅灰色*/
-        width: 8px;                                 /*滚动条宽度：8像素*/
-        border-radius: 4px;                         /*滚动条圆角：4像素*/
-        margin: 0px;                                /*滚动条外边距：0像素，也就是无*/
-        border: none;                               /*去掉边框*/
-    }
-    QScrollBar::handle:vertical{
-        background-color: #c7c7c7;                  /*滑块颜色：浅灰色*/
-        border-radius: 4px;                         /*滑块圆角：4像素*/
-        min-height: 20px;                           /*滑块最小高度：20像素，确保可拖拽*/
-        margin: 2px 1px;                            /*滑块外边距：上下2像素，左右1像素*/
-    }
-    QScrollBar::handle:vertical:hover{
-        background-color: #a6a6a6;                  /*鼠标悬停滑块颜色：灰色*/
-    }
-    QScrollBar::handle:vertical:pressed{
-        background-color: #8a8a8a;                  /*鼠标按下滑块颜色：更深的灰色*/
-    }
-    QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{
-        height: 0px;                                /*隐藏滚动条自带的那个箭头*/
-    }
-    QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{
-        background-color: transparent;              /*滚动条轨道颜色：透明*/
-    }
-    QScrollBar:horizontal{                          /*平行滚动条*/
-        background-color: #f3f3f3;                  /*背景颜色：浅灰色*/
-        height: 8px;                                /*滚动条高度：8像素*/
-        border-radius: 4px;                         /*滚动条圆角：4像素*/
-        margin: 0px;                                /*滚动条外边距：0像素，也就是无*/
-        border: none;                               /*去掉边框*/
-    }
-    QScrollBar::handle:horizontal{
-        background-color: #c7c7c7;                  /*滑块颜色：浅灰色*/
-        border-radius: 4px;                         /*滑块圆角：4像素*/
-        min-width: 20px;                            /*滑块最小宽度：20像素，确保可拖拽*/
-        margin: 1px 2px;                            /*滑块边距：上下1像素，左右2像素*/
-    }
-    QScrollBar::handle:horizontal:hover{
-        background-color: #a6a6a6;                  /*鼠标悬停滑块颜色：灰色*/
-    }
-    QScrollBar::handle:horizontal:pressed{
-        background-color: #8a8a8a;                  /*鼠标按下滑块颜色：更深的灰色*/
-    }
-    QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal{
-        width: 0px;                                 /*隐藏滚动条自带的那个箭头*/
-    }
-    QScrollBar::add-page:horizontal,QScrollBar::sub-page:horizontal{
-        background-color: transparent;              /*滚动条轨道颜色：透明*/
-    }
-    /*====================悬停提示样式====================*/
-    QToolTip{
-        background-color: #ffffff;                  /*提示背景颜色：纯白色*/
-        color: #222222;                             /*提示字体颜色：深灰色*/
-        padding: 2px 1px;                           /*提示内边距：上下2像素，左右1像素*/
-    }
-    )");
 
     a.setQuitOnLastWindowClosed(false); // 这里填false的话就是关闭窗口后让程序隐藏到托盘，继续在后台运行。此时如果不在托盘的右键菜单添加一个退出键，你就只能在任务管理器里关闭该程序了
     QString configPath = QCoreApplication::applicationDirPath() + "/config.json"; // 定义config.json文件路径 //QCoreApplication::applicationDirPath()返回的是可执行文件的目录路径（不包含文件名本身）
@@ -3221,6 +3481,7 @@ int main(int argc, char *argv[]) {
         stopQuickSayOutput(); // 退出事件循环前也先停掉成员计时器并恢复输出状态，避免QApplication销毁子对象时仍有等待步骤
         if (wtsSessionRegistered) WTSUnRegisterSessionNotification(quickSayMainHwnd);
     });
+    chuangkou.setStyleSheet(g_quanjuQss); // QuickSay自己那套样式表现在是一个窗口一个窗口挂上去的，见g_quanjuQss上面的注释
     chuangkou.setWindowTitle("QuickSay");
     chuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg"));
 
@@ -3323,6 +3584,7 @@ int main(int argc, char *argv[]) {
             int index = tabBar.tabAt(pos); // 根据点击位置，返回该位置处分组的索引（如果点到空白区域则返回-1）
             if (index < 0) { // 如果点到空白区域，那么弹出菜单，上面有新建分组一个选项 //虽然它返回的是-1，但因为C++标准库很多函数“未找到”时返回的都是负数，而不仅仅是-1，所以这里还是填<0更让我放心一点
                 QMenu menu2;
+                menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
                 QAction tianjia("新建分组", &menu2);
                 menu2.addAction(&tianjia);
                 QAction *selectedAction = menu2.exec(tabBar.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
@@ -3345,6 +3607,7 @@ int main(int argc, char *argv[]) {
                 }
             } else { // 如果点到某个分组，那么弹出菜单，上面有在当前分组后新建分组、修改分组、删除分组三个选项
                 QMenu menu2;
+                menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
                 QAction tianjia("在当前分组后新建分组", &menu2);
                 menu2.addAction(&tianjia);
                 QAction xiugai("修改分组", &menu2);
@@ -3417,27 +3680,112 @@ int main(int argc, char *argv[]) {
             }
         });
 
-    // 创建shezhichuangkou窗口
-    bujihuoChuangkou shezhichuangkou; // 使用我们自定义的那个子类bujihuoChuangkou创建
+    // 创建设置窗口。它是非模态的普通窗口：打开着也能接着用主窗口和其他窗口；重复打开只是把它拉到前台，不会重置还没应用的修改
+    ShezhiChuangkou shezhichuangkou(configPath);
     g_shezhichuangkou = &shezhichuangkou;
+    shezhichuangkou.setObjectName("shezhiChuangkou"); // 设置窗口专用样式表全靠这个ID选择器压过全局QSS
+    shezhichuangkou.setStyleSheet(g_shezhiQss);
     shezhichuangkou.setWindowTitle("QuickSay-设置");
     shezhichuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg"));
-    // 滚动区域：铺满整个设置窗口，当选项行数超出窗口高度时自动出现竖直滚动条
-    QScrollArea *scrollArea = new QScrollArea(&shezhichuangkou); // 创建滚动区域，父对象为设置窗口，由设置窗口级联管理其内存
-    scrollArea->setWidgetResizable(true); // 让内容控件随滚动区域宽度自适应
-    scrollArea->setFrameShape(QFrame::NoFrame); // 去掉默认边框，外观更干净
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // 只保留竖直滚动条，不要水平滚动条
-    QWidget *scrollContent = new QWidget; // 先不给父对象，下面的setWidget会接管它的所有权
-    QFormLayout *formLayout = new QFormLayout(scrollContent); // 创建一个表单布局，作用于滚动内容控件（不再直接作用于设置窗口）
-    scrollArea->setWidget(scrollContent); // 把内容控件放进滚动区域
-    // 让滚动区域填满整个设置窗口
-    QVBoxLayout *outerLayout = new QVBoxLayout(&shezhichuangkou); // 创建外层布局，直接作用于设置窗口
-    outerLayout->setContentsMargins(0, 0, 0, 0); // 去掉外层布局的默认边距，让滚动区域真正铺满窗口
-    outerLayout->addWidget(scrollArea); // 把滚动区域加入外层布局
 
-    // 全局快捷键设置
-    QKeySequenceEdit hotkeyEdit(QKeySequence(config["hotkey"].toString()), &shezhichuangkou); // 创建一个快捷键输入框，用于输入快捷键。里面一开始就存放着config里的快捷键
-    formLayout->addRow("全局快捷键：", &hotkeyEdit); // 在表单布局中添加一行，左边是标签“全局快捷键：”，右边是快捷键输入框hotkeyEdit
+    std::function<void()> yingyongZhuchuangkouDaxiao; // 把主窗口大小设置真正落到窗口上的函数。实现放在main()最后面：adjustAllWindows需要的那一堆控件到那时候才全都创建好
+
+    QVBoxLayout *shezhiWaiceng = new QVBoxLayout(&shezhichuangkou); // 外层布局：上面是页签，下面是固定的三个按钮
+    shezhiWaiceng->setContentsMargins(13, 14, 13, 14); // 四周留白：量TrafficMonitor量出来的，左右13、上下14
+    shezhiWaiceng->setSpacing(7); // 页签和底部按钮之间的间距
+    QTabWidget *shezhiYeqian = new ShezhiYeqian(&shezhichuangkou); // 顶部页签用设置窗口专属的页签栏，图标和文字会像TrafficMonitor一样靠近
+    shezhiYeqian->setIconSize(QSize(16, 16)); // 页签图标16*16，和TrafficMonitor一致
+    shezhiWaiceng->addWidget(shezhiYeqian, 1);
+
+    GunlunLvqi *gunlunLvqi = new GunlunLvqi(&shezhichuangkou); // 滚轮落在数字框、下拉框上时改成滚动整页，装在下面每一个数字框上
+    QString tubiaoMulu = QCoreApplication::applicationDirPath() + "/icons"; // 页签图标和托盘菜单图标都放在这里
+
+    // 新建一个数字输入框：按位数固定宽度，和TrafficMonitor里那些窄输入框一样紧凑
+    auto jianShuziKuang = [&](int zuixiao, int zuida, int kuandu) {
+        QSpinBox *shuzi = new QSpinBox;
+        shuzi->setRange(zuixiao, zuida);
+        shuzi->setFixedSize(kuandu, 24); // 高度24像素：Qt默认的数字框比TrafficMonitor的矮4像素，这里按量出来的值补齐
+        shuzi->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        shuzi->installEventFilter(gunlunLvqi);
+        return shuzi;
+    };
+    // 往分组框里加一行“说明文字 + 控件”
+    auto jiaHang = [](QGridLayout *gezi, const QString &wenzi, QWidget *kongjian) {
+        int hang = gezi->rowCount();
+        gezi->addWidget(new QLabel(wenzi), hang, 0);
+        gezi->addWidget(kongjian, hang, 1);
+    };
+    // 往分组框里加一行复选框。复选框自带文字，横跨整行
+    auto jiaGouxuan = [](QGridLayout *gezi, QCheckBox *gouxuan) {
+        gezi->addWidget(gouxuan, gezi->rowCount(), 0, 1, 3);
+    };
+    // 往分组框里加一行灰色说明文字，横跨整行
+    auto jiaShuoming = [](QGridLayout *gezi, const QString &wenzi) {
+        QLabel *biaoqian = new QLabel(wenzi);
+        biaoqian->setObjectName("shezhiShuoming"); // 样式表靠这个ID把它染成灰色
+        biaoqian->setWordWrap(true);
+        gezi->addWidget(biaoqian, gezi->rowCount(), 0, 1, 3);
+    };
+
+    //--------------------页签1：主窗口设置--------------------
+    QVBoxLayout *yemian1Layout = nullptr;
+    QScrollArea *yemian1 = jianShezhiYemian(yemian1Layout);
+    shezhiYeqian->addTab(yemian1, QIcon(tubiaoMulu + "/item.ico"), "主窗口设置");
+
+    QGridLayout *zu_chuangkou = jianFenzukuang("窗口", yemian1Layout);
+    QSpinBox *widthSpin = jianShuziKuang(250, 2000, 70); // 主窗口宽度
+    jiaHang(zu_chuangkou, "主窗口宽度（像素）", widthSpin);
+    QSpinBox *heightSpin = jianShuziKuang(250, 2000, 70); // 主窗口高度
+    jiaHang(zu_chuangkou, "主窗口高度（像素）", heightSpin);
+    QCheckBox *zhidingCheck = new QCheckBox("主窗口始终置顶");
+    jiaGouxuan(zu_chuangkou, zhidingCheck);
+    if (config["zhiding"].toBool() == true) {
+        chuangkou.setWindowFlags(chuangkou.windowFlags() | Qt::WindowStaysOnTopHint); // 在不改变其他窗口属性的前提下，给主窗口添加始终置顶属性
+    }
+
+    QGridLayout *zu_duanyuxiang = jianFenzukuang("短语项", yemian1Layout);
+    QSpinBox *itemHeightSpin = jianShuziKuang(10, 100, 59); // 默认短语项高度【【【【【
+    jiaHang(zu_duanyuxiang, "默认短语项高度（像素）", itemHeightSpin);
+    jiaShuoming(zu_duanyuxiang, "只影响新建分组时的短语项高度。要改某个分组的短语项高度，请在主窗口右键修改该分组。");
+    QSpinBox *itemPaddingHorizontalSpin = jianShuziKuang(0, 100, 59); // 短语项左右内边距
+    jiaHang(zu_duanyuxiang, "短语项左右内边距（像素）", itemPaddingHorizontalSpin);
+    QSpinBox *itemPaddingVerticalSpin = jianShuziKuang(0, 100, 59); // 短语项上下内边距
+    jiaHang(zu_duanyuxiang, "短语项上下内边距（像素）", itemPaddingVerticalSpin);
+    QCheckBox *jiaobiaoCheck = new QCheckBox("角标显示在短语项左上角（不勾选则显示在右上角）");
+    jiaGouxuan(zu_duanyuxiang, jiaobiaoCheck);
+    jiaShuoming(zu_duanyuxiang, "角标位置改完后，鼠标移到主窗口上才会生效。");
+
+    QGridLayout *zu_gundong = jianFenzukuang("滚动", yemian1Layout);
+    QSpinBox *gundongSpin = jianShuziKuang(1, 100, 59); // 滚动条滚动速度
+    jiaHang(zu_gundong, "滚动条滚动速度", gundongSpin);
+    yemian1Layout->addStretch(); // 让分组框都往上挤，别被拉长
+
+    //--------------------页签2：输入设置--------------------
+    QVBoxLayout *yemian2Layout = nullptr;
+    QScrollArea *yemian2 = jianShezhiYemian(yemian2Layout);
+    shezhiYeqian->addTab(yemian2, QIcon(tubiaoMulu + "/taskbar_window.ico"), "输入设置");
+
+    QGridLayout *zu_gaojishuru = jianFenzukuang("高级输入", yemian2Layout);
+    QSpinBox *delaySpin = jianShuziKuang(0, 2000, 70); // 高级输入间隔
+    jiaHang(zu_gaojishuru, "高级输入间隔（毫秒）", delaySpin);
+    jiaShuoming(zu_gaojishuru, "高级输入里每两个动作之间等待的时间。目标程序反应慢时可以调大一些。");
+
+    QGridLayout *zu_jianpan = jianFenzukuang("键盘操作", yemian2Layout);
+    QCheckBox *badgeKeyCheck = new QCheckBox("钉住窗口时，按下短语项对应角标输入短语");
+    jiaGouxuan(zu_jianpan, badgeKeyCheck);
+    QCheckBox *enterKeyCheck = new QCheckBox("钉住窗口时，按下回车键输入短语");
+    jiaGouxuan(zu_jianpan, enterKeyCheck);
+    yemian2Layout->addStretch();
+
+    //--------------------页签3：常规设置--------------------
+    QVBoxLayout *yemian3Layout = nullptr;
+    QScrollArea *yemian3 = jianShezhiYemian(yemian3Layout);
+    shezhiYeqian->addTab(yemian3, QIcon(tubiaoMulu + "/setting.ico"), "常规设置");
+
+    QGridLayout *zu_kuaijiejian = jianFenzukuang("快捷键", yemian3Layout);
+    QKeySequenceEdit *hotkeyEdit = new QKeySequenceEdit(QKeySequence(config["hotkey"].toString())); // 快捷键输入框，里面一开始就存放着config里的快捷键
+    hotkeyEdit->setFixedSize(170, 24); // 和数字框一样高
+    jiaHang(zu_kuaijiejian, "全局快捷键（呼出主窗口）", hotkeyEdit);
     QHotkey *hotkey = new QHotkey(QKeySequence(config["hotkey"].toString()), true, &a); // 定义一个QHotkey *对象，设置快捷键为config里的快捷键，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号 //这句代码里已经把a作为父对象传给了hotkey，a会自动管理其内存，不需要手动释放内存
     // 设置按下全局快捷键后会怎样
     QObject::connect(hotkey, &QHotkey::activated,
@@ -3454,225 +3802,115 @@ int main(int argc, char *argv[]) {
                 xianshi(chuangkou); // 显示窗口并拉到屏幕最前
             }
         });
-    // 使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复；2.当hotkeyEdit获得焦点时立即禁用当前已注册的全局快捷键；3.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
-    hotkeyEdit.installEventFilter(new HotkeyEditFilter(&hotkeyEdit, hotkey, configPath, itemHotkeys, &a)); // 创建事件过滤器对象，并把它安装到hotkeyEdit上
+    // 使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象和当前已注册的全局快捷键，让用户能自由地敲任何组合键；2.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，不合规就恢复成原来的快捷键，并把旧的全局快捷键重新注册回去。新快捷键只有点了“应用”或“确定”才会真的注册
+    hotkeyEdit->installEventFilter(new HotkeyEditFilter(hotkeyEdit, hotkey, itemHotkeys, &a)); // 创建事件过滤器对象，并把它安装到hotkeyEdit上
 
-    // 主窗口始终置顶设置
-    QWidget zhidingWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout zhidingLayout(&zhidingWidget); // 创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    zhidingLayout.setSpacing(4); // 控件之间间距4像素
-    zhidingLayout.setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QCheckBox zhidingCheck(&zhidingWidget); // 创建一个复选框
-    zhidingCheck.setChecked(config["zhiding"].toBool()); // 读取全局对象config里的zhiding的值，然后显示在复选框里
-    zhidingWidget.setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    zhidingLayout.addWidget(&zhidingCheck); // 加入布局
-    zhidingLayout.addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("主窗口始终置顶：", &zhidingWidget); // 在表单布局中添加一行，左边是标签“主窗口始终置顶：”，右边是复选框zhidingCheck
-    if (config["zhiding"].toBool() == true) {
-        chuangkou.setWindowFlags(chuangkou.windowFlags() | Qt::WindowStaysOnTopHint); // 在不改变其他窗口属性的前提下，给主窗口添加始终置顶属性
+    QGridLayout *zu_qidong = jianFenzukuang("启动", yemian3Layout);
+    QCheckBox *autostartupCheck = new QCheckBox("开机自启动");
+    jiaGouxuan(zu_qidong, autostartupCheck);
+    // “以管理员权限启动”和“开机自启动”互相独立：只开它的话开机不自启、手动启动时自己弹UAC提权；两个都开的话开机由计划任务直接以管理员权限起来
+    QCheckBox *guanliyuanCheck = new QCheckBox("以管理员权限启动");
+    jiaGouxuan(zu_qidong, guanliyuanCheck);
+    jiaShuoming(zu_qidong, "勾选后就能允许QuickSay在任何地方输入，比如以管理员权限运行的记事本。");
+
+    QGridLayout *zu_beifen = jianFenzukuang("备份与恢复", yemian3Layout);
+    QWidget *beifenWidget = new QWidget; // 把导出和导入两个按钮并排放在一行里
+    QHBoxLayout *beifenLayout = new QHBoxLayout(beifenWidget);
+    beifenLayout->setSpacing(8);
+    beifenLayout->setContentsMargins(0, 0, 0, 0);
+    QPushButton *exportBackupButton = new QPushButton("导出备份");
+    QPushButton *importBackupButton = new QPushButton("导入备份");
+    exportBackupButton->setFixedSize(92, 28);
+    importBackupButton->setFixedSize(92, 28);
+    beifenLayout->addWidget(exportBackupButton);
+    beifenLayout->addWidget(importBackupButton);
+    beifenLayout->addStretch();
+    zu_beifen->addWidget(beifenWidget, zu_beifen->rowCount(), 0, 1, 3);
+    jiaShuoming(zu_beifen, "备份包含全部设置、分组和短语。导入会完全覆盖现有内容，并立即重启QuickSay。这两个按钮点了就直接执行，不受“应用”“取消”影响。");
+    yemian3Layout->addStretch();
+
+    //--------------------页签4：关于--------------------
+    QVBoxLayout *yemian4Layout = nullptr;
+    QScrollArea *yemian4 = jianShezhiYemian(yemian4Layout);
+    shezhiYeqian->addTab(yemian4, QIcon(tubiaoMulu + "/info.ico"), "关于");
+
+    QGridLayout *zu_guanyu = jianFenzukuang("关于 QuickSay", yemian4Layout);
+    jiaHang(zu_guanyu, "版本", new QLabel(g_quickSayVersion)); //【【【更新版本后记得改一下文件开头的g_quickSayVersion】】】
+    QLabel *xiangmuLianjie = new QLabel("<a href=\"https://github.com/DarkKandaoMaster/QuickSay\">https://github.com/DarkKandaoMaster/QuickSay</a>");
+    xiangmuLianjie->setOpenExternalLinks(true); // 点一下用系统默认浏览器打开
+    xiangmuLianjie->setCursor(Qt::PointingHandCursor);
+    jiaHang(zu_guanyu, "项目地址", xiangmuLianjie);
+    jiaShuoming(zu_guanyu, "QuickSay 是一个 Windows 上的快捷短语工具：把常用的话存起来，用快捷键或角标一键输入到当前窗口。");
+    yemian4Layout->addStretch();
+
+    //--------------------底部固定的三个按钮--------------------
+    QHBoxLayout *shezhiAnniuHang = new QHBoxLayout;
+    shezhiAnniuHang->setSpacing(12); // 按钮之间空12像素，和TrafficMonitor一样
+    shezhiAnniuHang->addStretch();
+    QPushButton *quedingButton = new QPushButton("确定", &shezhichuangkou);
+    QPushButton *quxiaoButton = new QPushButton("取消", &shezhichuangkou);
+    QPushButton *yingyongButton = new QPushButton("应用", &shezhichuangkou);
+    for (QPushButton *anniu : {quedingButton, quxiaoButton, yingyongButton}) {
+        anniu->setFixedSize(92, 28); // 按钮尺寸也是照着TrafficMonitor量的
+        shezhiAnniuHang->addWidget(anniu);
     }
-    // 切换主窗口始终置顶复选框触发
-    QObject::connect(&zhidingCheck, &QCheckBox::toggled,
-        [&](bool checked) { // checked表示复选框的新状态，true表示勾选，false表示未勾选
-            if (checked) { // 如果复选框勾上了
-                config["zhiding"] = true;
-                chuangkou.setWindowFlags(chuangkou.windowFlags() | Qt::WindowStaysOnTopHint); // 在不改变其他窗口属性的前提下，给主窗口添加始终置顶属性
-                chuangkou.move(config["chuangkou_x"].toInt(), config["chuangkou_y"].toInt()); // 因为修改窗口属性后窗口会自动关闭，所以我们这里要手动显示主窗口
-                xianshi(chuangkou);
-                saveConfig(configPath);
-            } else { // 如果复选框取消勾选
-                config["zhiding"] = false;
-                chuangkou.setWindowFlags(chuangkou.windowFlags() & ~Qt::WindowStaysOnTopHint); // 在不改变其他窗口属性的前提下，给主窗口删除始终置顶属性
-                chuangkou.move(config["chuangkou_x"].toInt(), config["chuangkou_y"].toInt());
-                xianshi(chuangkou);
-                saveConfig(configPath);
-            }
-        });
+    shezhiWaiceng->addLayout(shezhiAnniuHang);
 
-    // 主窗口大小设置
-    QWidget *sizeWidget = new QWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout *sizeLayout = new QHBoxLayout(sizeWidget); // 创建一个水平布局，放置在刚才创建的容器中
-    sizeLayout->setSpacing(4); // 控件之间间距4像素
-    sizeLayout->setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    sizeLayout->addWidget(new QLabel("宽度", sizeWidget)); // 加入布局
-    QSpinBox *widthSpin = new QSpinBox(sizeWidget); // 创建宽度输入框
-    widthSpin->setRange(250, 2000); // 限制宽度输入范围250~2000
-    widthSpin->setValue(config["width"].toInt()); // 读取全局对象config里的宽度，然后显示在输入框里
-    widthSpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    sizeLayout->addWidget(widthSpin); // 加入布局
-    sizeLayout->addWidget(new QLabel("高度", sizeWidget)); // 加入布局
-    QSpinBox *heightSpin = new QSpinBox(sizeWidget); // 创建高度输入框
-    heightSpin->setRange(250, 2000); // 限制高度输入范围250~2000
-    heightSpin->setValue(config["height"].toInt()); // 读取全局对象config里的高度，然后显示在输入框里
-    heightSpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    sizeLayout->addWidget(heightSpin); // 加入布局
-    sizeLayout->addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("主窗口大小：", sizeWidget); // 在表单布局中添加一行，左边是标签“主窗口大小：”，右边是“宽度”“高度”和两个输入框
-    // 如果用户在设置-主窗口大小里修改了宽度/高度，那么写入程序设置到config.json，同时调整主窗口大小，这个功能的实现代码我放最后面了
-
-    // 默认短语项高度设置
-    QSpinBox itemHeightSpin(&shezhichuangkou); // 创建一个数字输入框
-    itemHeightSpin.setRange(10, 100); // 设置输入范围为10~100像素【【【【【
-    itemHeightSpin.setValue(config["default_item_height"].toInt()); // 读取全局对象config里的default_item_height的值，然后显示在输入框里
-    itemHeightSpin.setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    formLayout->addRow("默认短语项高度：", &itemHeightSpin); // 在表单布局中添加一行，左边是标签“默认短语项高度：”，右边是数字输入框itemHeightSpin
-    // 如果用户修改了默认短语项高度
-    QObject::connect(&itemHeightSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int value) {
-            config["default_item_height"] = value;
-            saveConfig(configPath);
-            QMessageBox::information(&shezhichuangkou, "提示", "该设置名称为“默认短语项高度”，因此只影响新建分组时的短语项高度的值。  \n如果要修改某个分组的短语项高度，请右键修改该分组。  ");
-        });
-
-    // 短语项左右内边距设置
-    QSpinBox itemPaddingHorizontalSpin(&shezhichuangkou); // 创建一个数字输入框
-    itemPaddingHorizontalSpin.setRange(0, 100); // 设置输入范围为0~100像素
-    itemPaddingHorizontalSpin.setValue(config["phrase_item_padding_horizontal"].toInt()); // 读取全局对象config里的phrase_item_padding_horizontal的值，然后显示在输入框里
-    itemPaddingHorizontalSpin.setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    formLayout->addRow("短语项左右内边距：", &itemPaddingHorizontalSpin); // 在表单布局中添加一行，左边是标签“短语项左右内边距：”，右边是数字输入框itemPaddingHorizontalSpin
-    // 如果用户修改了短语项左右内边距
-    QObject::connect(&itemPaddingHorizontalSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int value) {
-            config["phrase_item_padding_horizontal"] = value;
-            saveConfig(configPath);
-            applyPhraseListLayout(liebiao, tabItemHeight(tabBar, tabBar.currentIndex()), tabColumns(tabBar, tabBar.currentIndex())); // 内边距变了行高也会跟着变，所以要连网格一起重设
-        });
-
-    // 短语项上下内边距设置
-    QSpinBox itemPaddingVerticalSpin(&shezhichuangkou); // 创建一个数字输入框
-    itemPaddingVerticalSpin.setRange(0, 100); // 设置输入范围为0~100像素
-    itemPaddingVerticalSpin.setValue(config["phrase_item_padding_vertical"].toInt()); // 读取全局对象config里的phrase_item_padding_vertical的值，然后显示在输入框里
-    itemPaddingVerticalSpin.setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    formLayout->addRow("短语项上下内边距：", &itemPaddingVerticalSpin); // 在表单布局中添加一行，左边是标签“短语项上下内边距：”，右边是数字输入框itemPaddingVerticalSpin
-    // 如果用户修改了短语项上下内边距
-    QObject::connect(&itemPaddingVerticalSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int value) {
-            config["phrase_item_padding_vertical"] = value;
-            saveConfig(configPath);
-            applyPhraseListLayout(liebiao, tabItemHeight(tabBar, tabBar.currentIndex()), tabColumns(tabBar, tabBar.currentIndex())); // 内边距变了行高也会跟着变，所以要连网格一起重设
-        });
-
-    // 滚动条滚动速度设置
-    QSpinBox gundongSpin(&shezhichuangkou); // 创建一个数字输入框
-    gundongSpin.setRange(1, 100); // 设置输入范围为1~100
-    gundongSpin.setValue(config["gundong"].toInt()); // 读取全局对象config里的gundong的值，然后显示在输入框里
-    gundongSpin.setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    formLayout->addRow("滚动条滚动速度：", &gundongSpin); // 在表单布局中添加一行，左边是标签“滚动条滚动速度：”，右边是数字输入框gundongSpin
-    // 如果用户修改了滚动条滚动速度
-    QObject::connect(&gundongSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int value) {
-            config["gundong"] = value;
-            liebiao.verticalScrollBar()->setSingleStep(value); // 设置改完后立刻同步到正在使用的滚动条，不用重启软件才能生效
-            saveConfig(configPath);
-        });
-
-    // 角标放左上角还是右上角？设置
-    QWidget jiaobiaoWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout jiaobiaoLayout(&jiaobiaoWidget); // 创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    jiaobiaoLayout.setSpacing(4); // 控件之间间距4像素
-    jiaobiaoLayout.setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QCheckBox jiaobiaoCheck(&jiaobiaoWidget); // 创建一个复选框
-    jiaobiaoCheck.setChecked(config["jiaobiao"].toBool()); // 读取全局对象config里的jiaobiao的值，然后显示在复选框里
-    jiaobiaoWidget.setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    jiaobiaoLayout.addWidget(&jiaobiaoCheck); // 加入布局
-    jiaobiaoLayout.addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("角标放左上角还是右上角？", &jiaobiaoWidget); // 在表单布局中添加一行，左边是标签“角标放左上角还是右上角？”，右边是复选框jiaobiaoCheck
-    // 切换角标放左上角还是右上角？复选框触发
-    QObject::connect(&jiaobiaoCheck, &QCheckBox::toggled,
-        [&](bool checked) { // checked表示复选框的新状态，true表示勾选，false表示未勾选
-            if (checked) { // 如果复选框勾上了
-                config["jiaobiao"] = true;
-                saveConfig(configPath);
-                QMessageBox::information(&shezhichuangkou, "提示", "鼠标移到主窗口后生效  ");
-            } else { // 如果复选框取消勾选
-                config["jiaobiao"] = false;
-                saveConfig(configPath);
-                QMessageBox::information(&shezhichuangkou, "提示", "鼠标移到主窗口后生效  ");
-            }
-        });
-
-    // 钉住窗口时按下短语项对应角标输入短语设置
-    QWidget badgeKeyWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout badgeKeyLayout(&badgeKeyWidget); // 创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    badgeKeyLayout.setSpacing(4); // 控件之间间距4像素
-    badgeKeyLayout.setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QCheckBox badgeKeyCheck(&badgeKeyWidget); // 创建一个复选框
-    badgeKeyCheck.setChecked(config["badge_key_input_phrase_when_pinned"].toBool(true)); // 读取全局对象config里的badge_key_input_phrase_when_pinned的值，然后显示在复选框里
-    badgeKeyWidget.setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    badgeKeyLayout.addWidget(&badgeKeyCheck); // 加入布局
-    badgeKeyLayout.addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("钉住窗口时按下短语项对应角标输入短语？", &badgeKeyWidget); // 在表单布局中添加一行，左边是标签“钉住窗口时按下短语项对应角标输入短语？”，右边是复选框badgeKeyCheck
-    // 切换钉住窗口时按下短语项对应角标输入短语复选框触发
-    QObject::connect(&badgeKeyCheck, &QCheckBox::toggled,
-        [&](bool checked) {
-            config["badge_key_input_phrase_when_pinned"] = checked;
-            saveConfig(configPath);
-        });
-
-    // 钉住窗口时按下回车键输入短语设置
-    QWidget enterKeyWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout enterKeyLayout(&enterKeyWidget); // 创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    enterKeyLayout.setSpacing(4); // 控件之间间距4像素
-    enterKeyLayout.setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QCheckBox enterKeyCheck(&enterKeyWidget); // 创建一个复选框
-    enterKeyCheck.setChecked(config["enter_key_input_phrase_when_pinned"].toBool(true)); // 读取全局对象config里的enter_key_input_phrase_when_pinned的值，然后显示在复选框里
-    enterKeyWidget.setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    enterKeyLayout.addWidget(&enterKeyCheck); // 加入布局
-    enterKeyLayout.addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("钉住窗口时按下回车键输入短语？", &enterKeyWidget); // 在表单布局中添加一行，左边是标签“钉住窗口时按下回车键输入短语？”，右边是复选框enterKeyCheck
-    // 切换钉住窗口时按下回车键输入短语复选框触发
-    QObject::connect(&enterKeyCheck, &QCheckBox::toggled,
-        [&](bool checked) {
-            config["enter_key_input_phrase_when_pinned"] = checked;
-            saveConfig(configPath);
-        });
-
-    // 开机自启动设置
-    QWidget *autostartupWidget = new QWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout *autostartupLayout = new QHBoxLayout(autostartupWidget); // 创建一个水平布局，放置在刚才创建的容器中。整这么麻烦是因为不这么做标签和复选框就上对齐，看起来不平行了
-    autostartupLayout->setSpacing(4); // 控件之间间距4像素
-    autostartupLayout->setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QCheckBox *autostartupCheck = new QCheckBox(autostartupWidget); // 创建一个复选框
-    autostartupCheck->setChecked(config["ziqidong"].toBool()); // 读取全局对象config里的自启动的值，然后显示在复选框里
-    autostartupWidget->setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    autostartupLayout->addWidget(autostartupCheck); // 加入布局
-    autostartupLayout->addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("开机自启动：", autostartupWidget); // 在表单布局中添加一行，左边是标签“开机自启动：”，右边是复选框autostartupCheck
-
-    // 以管理员权限启动设置。它和“开机自启动”互相独立：只开它的话开机不自启、手动启动时自己弹UAC提权；两个都开的话开机由计划任务直接以管理员权限起来
-    QWidget *guanliyuanWidget = new QWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout *guanliyuanLayout = new QHBoxLayout(guanliyuanWidget); // 创建一个水平布局，放置在刚才创建的容器中
-    guanliyuanLayout->setSpacing(8); // 控件之间间距8像素。比别处宽一点，让复选框和右边那行说明文字不至于挤在一起
-    guanliyuanLayout->setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QCheckBox *guanliyuanCheck = new QCheckBox(guanliyuanWidget); // 创建一个复选框
-    guanliyuanCheck->setChecked(config["guanliyuan"].toBool()); // 读取全局对象config里的guanliyuan的值，然后显示在复选框里
-    QLabel *guanliyuanBeizhu = new QLabel("允许QuickSay在任何地方输入，比如以管理员权限运行的记事本", guanliyuanWidget); // 在选项旁边备注这个选项有什么用：只有管理员权限的QuickSay才能往同样是管理员权限的窗口里输入
-    guanliyuanBeizhu->setStyleSheet("color: #605E5C;"); // 灰色字，和左边黑色的设置项标签区分开，一看就知道是说明文字【【【注：想修改这行说明文字的颜色在这里修改】】】
-    guanliyuanWidget->setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    guanliyuanLayout->addWidget(guanliyuanCheck); // 加入布局
-    guanliyuanLayout->addWidget(guanliyuanBeizhu); // 加入布局
-    guanliyuanLayout->addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("以管理员权限启动：", guanliyuanWidget); // 在表单布局中添加一行，左边是标签“以管理员权限启动：”，右边是复选框guanliyuanCheck和说明文字
-
-    // 改完开关就把系统里的自启状态调成一致，顺便落盘。失败时恢复两个开关原来的状态，不能让界面和系统里的真实状态对不上
-    auto yingyongZiqidong = [&](bool oldZiqidong, bool oldGuanliyuan) -> bool {
-        if (!applyZiqidong(false)) { // 可能是计划任务没建成，也可能是旧计划任务删不掉
-            config["ziqidong"] = oldZiqidong;
-            config["guanliyuan"] = oldGuanliyuan;
-            QSignalBlocker b1(autostartupCheck), b2(guanliyuanCheck); // 程序自己恢复勾选时不能再次触发toggled，否则会递归调用这一段
-            autostartupCheck->setChecked(oldZiqidong);
-            guanliyuanCheck->setChecked(oldGuanliyuan);
-            applyZiqidong(true); // 按原来的设置恢复系统状态；不打扰模式保证这里绝不再弹UAC
-            saveConfig(configPath); // 把恢复后的设置写回config.json
-            QMessageBox::information(&shezhichuangkou, "提示", "应用开机自启动设置失败");
-            return false;
-        }
-        saveConfig(configPath); // 系统设置应用成功后写入config.json
-        return true;
+    //--------------------设置事务：应用 / 确定 / 取消--------------------
+    // 界面上的值和config里的值有一处对不上，就说明有还没应用的修改
+    auto youWeiYingyongXiugai = [&]() -> bool {
+        if (hotkeyEdit->keySequence().toString() != config["hotkey"].toString()) return true;
+        if (zhidingCheck->isChecked() != config["zhiding"].toBool()) return true;
+        if (widthSpin->value() != config["width"].toInt()) return true;
+        if (heightSpin->value() != config["height"].toInt()) return true;
+        if (itemHeightSpin->value() != config["default_item_height"].toInt()) return true;
+        if (itemPaddingHorizontalSpin->value() != config["phrase_item_padding_horizontal"].toInt()) return true;
+        if (itemPaddingVerticalSpin->value() != config["phrase_item_padding_vertical"].toInt()) return true;
+        if (gundongSpin->value() != config["gundong"].toInt()) return true;
+        if (jiaobiaoCheck->isChecked() != config["jiaobiao"].toBool()) return true;
+        if (delaySpin->value() != config["delay"].toInt()) return true;
+        if (badgeKeyCheck->isChecked() != config["badge_key_input_phrase_when_pinned"].toBool()) return true;
+        if (enterKeyCheck->isChecked() != config["enter_key_input_phrase_when_pinned"].toBool()) return true;
+        if (autostartupCheck->isChecked() != config["ziqidong"].toBool()) return true;
+        if (guanliyuanCheck->isChecked() != config["guanliyuan"].toBool()) return true;
+        return false;
     };
+    auto gengxinYingyongButton = [&]() { yingyongButton->setEnabled(youWeiYingyongXiugai()); }; // 没有修改时“应用”是灰的
 
-    // 打开设置窗口前，按系统里真实的开机自启状态刷新复选框。因为用户完全可能绕过QuickSay，自己跑去“任务计划程序”里删了任务、或者去注册表里删了Run项
-    auto shuaxinZiqidongCheck = [&]() {
+    // 把config里的设置填回所有控件。打开窗口、点“取消”、关掉窗口时都调它，效果就是丢弃还没应用的修改
+    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, jiaobiaoCheck, delaySpin, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck};
+    auto zairuShezhi = [&]() {
+        for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(true); // 程序自己填值时不能触发下面那些信号，否则又要跑一遍“有没有修改”的判断
+        hotkeyEdit->setKeySequence(QKeySequence(config["hotkey"].toString()));
+        zhidingCheck->setChecked(config["zhiding"].toBool());
+        widthSpin->setValue(config["width"].toInt());
+        heightSpin->setValue(config["height"].toInt());
+        itemHeightSpin->setValue(config["default_item_height"].toInt());
+        itemPaddingHorizontalSpin->setValue(config["phrase_item_padding_horizontal"].toInt());
+        itemPaddingVerticalSpin->setValue(config["phrase_item_padding_vertical"].toInt());
+        gundongSpin->setValue(config["gundong"].toInt());
+        jiaobiaoCheck->setChecked(config["jiaobiao"].toBool());
+        delaySpin->setValue(config["delay"].toInt());
+        badgeKeyCheck->setChecked(config["badge_key_input_phrase_when_pinned"].toBool());
+        enterKeyCheck->setChecked(config["enter_key_input_phrase_when_pinned"].toBool());
+        autostartupCheck->setChecked(config["ziqidong"].toBool());
+        guanliyuanCheck->setChecked(config["guanliyuan"].toBool());
+        for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(false);
+        gengxinYingyongButton();
+    };
+    zairuShezhi(); // 建完控件先填一遍值
+
+    // 任何一个控件被改动都要重算“应用”按钮的可用状态
+    QObject::connect(hotkeyEdit, &QKeySequenceEdit::keySequenceChanged, [&]() { gengxinYingyongButton(); });
+    for (QCheckBox *gouxuan : {zhidingCheck, jiaobiaoCheck, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck}) {
+        QObject::connect(gouxuan, &QCheckBox::toggled, [&]() { gengxinYingyongButton(); });
+    }
+    for (QSpinBox *shuzi : {widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, delaySpin}) {
+        QObject::connect(shuzi, QOverload<int>::of(&QSpinBox::valueChanged), [&]() { gengxinYingyongButton(); });
+    }
+
+    // 打开设置窗口前，按系统里真实的开机自启状态刷新config。因为用户完全可能绕过QuickSay，自己跑去“任务计划程序”里删了任务、或者去注册表里删了Run项
+    auto shuaxinZiqidongZhuangtai = [&]() {
         QSettings reg(g_ziqidongRegPath, QSettings::NativeFormat); // 创建QSettings对象，用于访问注册表Run项
         QString renwuExe;
         bool renwuOn = queryAdminRenwu(&renwuExe) && renwuExe.compare(ziqidongExePath(), Qt::CaseInsensitive) == 0; // 任务在、启用着、记的路径也还是程序现在的位置，才算管理员权限开机自启真的生效了
@@ -3681,26 +3919,76 @@ int main(int argc, char *argv[]) {
             config["ziqidong"] = on;
             saveConfig(configPath); // 写入程序设置到config.json
         }
-        QSignalBlocker b1(autostartupCheck), b2(guanliyuanCheck); // 程序自己改复选框不该触发toggled，否则又要跑一遍开关自启的逻辑
-        autostartupCheck->setChecked(on);
-        guanliyuanCheck->setChecked(config["guanliyuan"].toBool()); // “以管理员权限启动”在系统里没有对应的痕迹（它是每次启动时自己提权），只能以config为准
     };
 
-    // 切换开机自启动复选框触发
-    QObject::connect(autostartupCheck, &QCheckBox::toggled,
-        [&](bool checked) { // checked表示复选框的新状态，true表示勾选，false表示未勾选
-            bool oldZiqidong = config["ziqidong"].toBool(), oldGuanliyuan = config["guanliyuan"].toBool(); // 记住修改前的状态，系统设置应用失败时要原样恢复
-            config["ziqidong"] = checked;
-            yingyongZiqidong(oldZiqidong, oldGuanliyuan);
-        });
-    // 切换以管理员权限启动复选框触发
-    QObject::connect(guanliyuanCheck, &QCheckBox::toggled,
-        [&](bool checked) { // checked表示复选框的新状态，true表示勾选，false表示未勾选
-            bool oldZiqidong = config["ziqidong"].toBool(), oldGuanliyuan = config["guanliyuan"].toBool(); // 记住修改前的状态，系统设置应用失败时要原样恢复
-            config["guanliyuan"] = checked;
-            if (!yingyongZiqidong(oldZiqidong, oldGuanliyuan)) return; // 计划任务创建或删除失败时，那边已经恢复原设置并提示用户了
-            if (!checked || isProcessElevated()) return; // 取消勾选、或者当前这个进程本来就是管理员权限，那都没别的事要做
-            // 勾上的时候当前这个进程还是普通权限，得重启一次才能真的以管理员权限跑。问一句要不要现在就重启，而不是自作主张把用户正用着的QuickSay掐掉
+    // “应用”和“确定”都走这里：先校验，再把界面上的值一项项落到config和正在运行的程序上。返回false表示这次没应用成功
+    auto yingyongShezhi = [&]() -> bool {
+        // 全局快捷键：只有真的改了才校验、才注册。焦点离开输入框时旧快捷键已经恢复注册了，这里才是新快捷键真正生效的时刻
+        QKeySequence xinKuaijiejian = hotkeyEdit->keySequence();
+        if (xinKuaijiejian.toString() != config["hotkey"].toString()) {
+            if (xinKuaijiejian.isEmpty() || !isValidHotkey(xinKuaijiejian, itemHotkeys, hotkeyEdit)) { // 不合规时isValidHotkey自己会弹警告
+                hotkeyEdit->setKeySequence(QKeySequence(config["hotkey"].toString())); // 恢复成原来的快捷键，本次应用失败
+                gengxinYingyongButton();
+                return false;
+            }
+            hotkey->setShortcut(xinKuaijiejian, true); // 立即应用新快捷键
+            config["hotkey"] = xinKuaijiejian.toString();
+        }
+
+        bool gaoduBianle = itemHeightSpin->value() != config["default_item_height"].toInt(); // 这两项应用完要提示用户，先记下来，等落盘之后再弹窗
+        bool jiaobiaoBianle = jiaobiaoCheck->isChecked() != config["jiaobiao"].toBool();
+        bool daxiaoBianle = widthSpin->value() != config["width"].toInt() || heightSpin->value() != config["height"].toInt();
+        bool neibianjuBianle = itemPaddingHorizontalSpin->value() != config["phrase_item_padding_horizontal"].toInt() || itemPaddingVerticalSpin->value() != config["phrase_item_padding_vertical"].toInt();
+        bool zhidingBianle = zhidingCheck->isChecked() != config["zhiding"].toBool();
+
+        config["width"] = widthSpin->value();
+        config["height"] = heightSpin->value();
+        config["zhiding"] = zhidingCheck->isChecked();
+        config["default_item_height"] = itemHeightSpin->value();
+        config["phrase_item_padding_horizontal"] = itemPaddingHorizontalSpin->value();
+        config["phrase_item_padding_vertical"] = itemPaddingVerticalSpin->value();
+        config["gundong"] = gundongSpin->value();
+        config["jiaobiao"] = jiaobiaoCheck->isChecked();
+        config["delay"] = delaySpin->value();
+        config["badge_key_input_phrase_when_pinned"] = badgeKeyCheck->isChecked();
+        config["enter_key_input_phrase_when_pinned"] = enterKeyCheck->isChecked();
+        saveConfig(configPath); // 写入程序设置到config.json
+
+        liebiao.verticalScrollBar()->setSingleStep(config["gundong"].toInt()); // 滚动速度立刻同步到正在使用的滚动条，不用重启软件才能生效
+        if (neibianjuBianle) applyPhraseListLayout(liebiao, tabItemHeight(tabBar, tabBar.currentIndex()), tabColumns(tabBar, tabBar.currentIndex())); // 内边距变了行高也会跟着变，所以要连网格一起重设
+        if (daxiaoBianle && yingyongZhuchuangkouDaxiao) yingyongZhuchuangkouDaxiao(); // 调整主窗口大小和主窗口控件
+        if (zhidingBianle) { // 在不改变其他窗口属性的前提下，给主窗口添加/删除始终置顶属性
+            if (config["zhiding"].toBool()) chuangkou.setWindowFlags(chuangkou.windowFlags() | Qt::WindowStaysOnTopHint);
+            else chuangkou.setWindowFlags(chuangkou.windowFlags() & ~Qt::WindowStaysOnTopHint);
+            chuangkou.move(config["chuangkou_x"].toInt(), config["chuangkou_y"].toInt()); // 因为修改窗口属性后窗口会自动关闭，所以我们这里要手动显示主窗口
+            xianshi(chuangkou);
+        }
+
+        // 开机自启动和以管理员权限启动这两个开关要一起交给applyZiqidong处理。放在最后应用，是因为它可能弹UAC、可能失败，失败时要把这两项恢复原样
+        bool jiuZiqidong = config["ziqidong"].toBool(), jiuGuanliyuan = config["guanliyuan"].toBool();
+        bool xinGuanliyuan = guanliyuanCheck->isChecked();
+        bool ziqidongBianle = autostartupCheck->isChecked() != jiuZiqidong || xinGuanliyuan != jiuGuanliyuan;
+        if (ziqidongBianle) {
+            config["ziqidong"] = autostartupCheck->isChecked();
+            config["guanliyuan"] = xinGuanliyuan;
+            if (!applyZiqidong(false)) { // 可能是计划任务没建成，也可能是旧计划任务删不掉
+                config["ziqidong"] = jiuZiqidong;
+                config["guanliyuan"] = jiuGuanliyuan;
+                applyZiqidong(true); // 按原来的设置恢复系统状态；不打扰模式保证这里绝不再弹UAC
+                saveConfig(configPath); // 把恢复后的设置写回config.json
+                zairuShezhi(); // 界面上那两个勾也恢复成config里的真实状态，不能让界面和系统里的真实状态对不上
+                QMessageBox::information(&shezhichuangkou, "提示", "应用开机自启动设置失败");
+                return false;
+            }
+            saveConfig(configPath); // 系统设置应用成功后写入config.json
+        }
+
+        gengxinYingyongButton(); // 全应用完了，“应用”按钮该变灰了
+        if (gaoduBianle) QMessageBox::information(&shezhichuangkou, "提示", "该设置名称为“默认短语项高度”，因此只影响新建分组时的短语项高度的值。  \n如果要修改某个分组的短语项高度，请右键修改该分组。  ");
+        if (jiaobiaoBianle) QMessageBox::information(&shezhichuangkou, "提示", "鼠标移到主窗口后生效  ");
+
+        // 刚勾上“以管理员权限启动”、而当前这个进程还是普通权限时，得重启一次才能真的以管理员权限跑。问一句要不要现在就重启，而不是自作主张把用户正用着的QuickSay掐掉
+        if (ziqidongBianle && xinGuanliyuan && !jiuGuanliyuan && !isProcessElevated()) {
             QString chongqiTishi = "重启QuickSay生效"; // 当前普通权限进程无法原地变成管理员权限，只能重启为管理员权限进程
             QMessageBox box(QMessageBox::Question, "QuickSay", chongqiTishi, QMessageBox::NoButton, &shezhichuangkou);
             QPushButton *lijiButton = box.addButton("立即重启", QMessageBox::RejectRole); // 放在“暂不重启”右边；虽然交换了按钮角色，但下面仍按按钮指针判断用户点了哪个
@@ -3708,7 +3996,7 @@ int main(int argc, char *argv[]) {
             box.setDefaultButton(lijiButton); // 回车仍然表示立即重启，不受为了交换位置而调整按钮角色的影响
             box.setEscapeButton(zanbuButton); // Esc仍然表示暂不重启
             box.exec();
-            if (box.clickedButton() != lijiButton) return;
+            if (box.clickedButton() != lijiButton) return true;
             // 下面这段和main()开头提权重启那段是一回事，只是多了「先把快捷键让出来」这一步
             for (auto &hk : itemHotkeys) {
                 if (hk) hk->setRegistered(false);
@@ -3719,11 +4007,11 @@ int main(int argc, char *argv[]) {
             // 如果刚才为了管理员开机自启已经弹UAC建好了计划任务，就直接用那份已授权的任务重启；这样点“立即重启”时不会再次弹UAC
             if (config["ziqidong"].toBool() && yongRenwuChongqiGuanliyuan()) {
                 a.quit();
-                return;
+                return true;
             }
             if (tiquanChongqiZishen()) {
                 a.quit();
-                return;
+                return true;
             } // 没有管理员任务时（例如没开开机自启），正常用runas弹一次UAC启动提权实例
             // 用户在UAC弹窗上点了「否」：把让出去的东西一样样抢回来，以普通权限接着跑
             tongzhiYiyouShili();
@@ -3734,36 +4022,30 @@ int main(int argc, char *argv[]) {
                 if (hk) hk->setRegistered(true);
             }
             QMessageBox::information(&shezhichuangkou, "提示", "重启失败，请手动重启"); // 用户拒绝UAC后明确提示重启没有成功；管理员开关仍会在下次手动重启时生效
-        });
+        }
+        return true;
+    };
 
-    // 高级输入间隔设置
-    QSpinBox delaySpin(&shezhichuangkou); // 创建一个数字输入框
-    delaySpin.setRange(0, 2000); // 设置输入范围为0~2000
-    delaySpin.setValue(config["delay"].toInt()); // 读取全局对象config里的delay的值，然后显示在输入框里
-    delaySpin.setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
-    formLayout->addRow("高级输入间隔（毫秒）", &delaySpin); // 在表单布局中添加一行，左边是标签“高级输入间隔（毫秒）”，右边是数字输入框delaySpin
-    // 如果用户修改了高级输入间隔
-    QObject::connect(&delaySpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int value) {
-            config["delay"] = value;
-            saveConfig(configPath);
-        });
+    QObject::connect(yingyongButton, &QPushButton::clicked, [&]() { yingyongShezhi(); }); // 应用：校验并应用，不关窗口
+    QObject::connect(quedingButton, &QPushButton::clicked, [&]() { if (yingyongShezhi()) shezhichuangkou.close(); }); // 确定：应用成功了才关窗口
+    QObject::connect(quxiaoButton, &QPushButton::clicked, [&]() { shezhichuangkou.close(); }); // 取消：关窗口，下面那个回调会把界面恢复成上次应用后的状态
+    shezhichuangkou.guanbiHuidiao = [&]() { zairuShezhi(); }; // 标题栏的关闭按钮和“取消”一样：丢弃还没应用的修改
 
-    // 备份与恢复：导出一个无扩展名单文件；导入先完整验证、确认覆盖，再一次性替换设置/分组/短语并强制重启
-    QWidget backupWidget(&shezhichuangkou); // 创建一个容器，把导出和导入两个按钮并排放置
-    QHBoxLayout backupLayout(&backupWidget);
-    backupLayout.setSpacing(8);
-    backupLayout.setContentsMargins(0, 0, 0, 0);
-    QPushButton exportBackupButton("导出备份", &backupWidget);
-    QPushButton importBackupButton("导入备份", &backupWidget);
-    backupWidget.setFixedHeight(37);
-    backupLayout.addWidget(&exportBackupButton);
-    backupLayout.addWidget(&importBackupButton);
-    backupLayout.addStretch();
-    formLayout->addRow("备份与恢复：", &backupWidget);
+    // 打开设置窗口。重复打开只把窗口拉到前台，绝不重新填一遍值，否则用户还没应用的修改就没了
+    std::function<void()> dakaiShezhiChuangkou = [&]() {
+        if (!shezhichuangkou.isVisible()) {
+            shuaxinZiqidongZhuangtai(); // 按系统里真实的自启状态刷新config
+            zairuShezhi(); // 再把config里的值填进界面
+            shezhichuangkou.move(config["shezhichuangkou_x"].toInt(), config["shezhichuangkou_y"].toInt()); // 把设置窗口移动到记录的位置
+            shezhichuangkou.show();
+        }
+        if (shezhichuangkou.isMinimized()) shezhichuangkou.showNormal();
+        shezhichuangkou.raise();
+        shezhichuangkou.activateWindow();
+    };
 
     // 导出时直接从当前内存里的设置、分组和短语生成备份；正文中的<img>/<file>路径保持原文，不读取路径指向的文件
-    QObject::connect(&exportBackupButton, &QPushButton::clicked,
+    QObject::connect(exportBackupButton, &QPushButton::clicked,
         [&]() {
             QString defaultName = QString("QuickSay备份_%1").arg(QDate::currentDate().toString(Qt::ISODate));
             QString selectedPath = QFileDialog::getSaveFileName(&shezhichuangkou, "导出QuickSay备份", QDir::home().filePath(defaultName), "QuickSay备份文件 (*)");
@@ -3783,7 +4065,7 @@ int main(int argc, char *argv[]) {
         });
 
     // 导入失败时parseQuickSayBackupFile只读取不写入；用户确认后才进入三文件事务，因此取消、校验失败或替换失败都不会改变现有数据
-    QObject::connect(&importBackupButton, &QPushButton::clicked,
+    QObject::connect(importBackupButton, &QPushButton::clicked,
         [&]() {
             QString filePath = QFileDialog::getOpenFileName(&shezhichuangkou, "导入QuickSay备份", QDir::homePath(), "QuickSay备份文件 (*)");
             if (filePath.isEmpty()) return;
@@ -3837,24 +4119,6 @@ int main(int argc, char *argv[]) {
             a.quit(); // 无论Explorer返回结果如何，旧实例都必须立即退出，不能带着导入前的全局状态继续运行
         });
 
-    // 版本号显示
-    QWidget versionWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
-    QHBoxLayout versionLayout(&versionWidget); // 创建一个水平布局，放置在刚才创建的容器中
-    versionLayout.setSpacing(4); // 控件之间间距4像素
-    versionLayout.setContentsMargins(0, 0, 0, 0); // 去掉布局的默认边距
-    QPushButton versionButton(g_quickSayVersion, &versionWidget); // 创建版本号按钮 //【【【更新版本后记得改一下文件开头的g_quickSayVersion】】】
-    versionButton.setFixedWidth(100); // 固定版本号按钮的宽度为100像素
-    versionButton.setCursor(Qt::PointingHandCursor); // 当鼠标悬停在该按钮上时，鼠标光标变成手形状
-    versionWidget.setFixedHeight(37); // 通过给容器设置固定填充高度的方式，实现标签和复选框对齐
-    versionLayout.addWidget(&versionButton); // 加入布局
-    versionLayout.addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("版本：", &versionWidget); // 在表单布局中添加一行，左边是标签“版本：”，右边是版本号按钮versionButton
-    // 当用户点击版本号按钮时触发
-    QObject::connect(&versionButton, &QPushButton::clicked,
-        []() {
-            QDesktopServices::openUrl(QUrl("https://github.com/DarkKandaoMaster/QuickSay")); // 调用QDesktopServices类，使用系统默认浏览器打开指定网址
-        });
-
     // 在chuangkou右上角放一个“设置”按钮
     QPushButton shezhi("", &chuangkou); // 创建设置按钮，文本为空字符串。不然文本也会显示在按钮上
     shezhi.setObjectName("iconButton"); // 应用图标按钮样式
@@ -3862,18 +4126,14 @@ int main(int argc, char *argv[]) {
     shezhi.setIconSize(QSize(20, 20)); // 调整图标大小为20*20像素
     shezhi.setToolTip("设置"); // 设置鼠标悬停提示文字为“设置”
     QApplication::setEffectEnabled(Qt::UI_AnimateTooltip, false); // 禁用Qt自带的QToolTip悬停提示动画
-    // 当按下“设置”按钮时，弹出shezhichuangkou窗口
-    QObject::connect(&shezhi, &QPushButton::clicked,
-        [&]() {
-            shuaxinZiqidongCheck(); // 按系统里真实的自启状态刷新自启动的两个复选框
-            shezhichuangkou.move(config["shezhichuangkou_x"].toInt(), config["shezhichuangkou_y"].toInt()); // 把shezhichuangkou移动到记录的位置
-            xianshi(shezhichuangkou);
-        });
+    // 当按下“设置”按钮时，打开设置窗口
+    QObject::connect(&shezhi, &QPushButton::clicked, [&]() { dakaiShezhiChuangkou(); });
 
     // 创建tianjiachuangkou窗口
     QString currentTabName = ""; // 记录用户添加短语时使用的分组名称
     int insertAfterRow = -1; // 记录新增短语要插入到哪一行后面；-1表示追加到列表末尾
     QWidget tianjiachuangkou;
+    tianjiachuangkou.setStyleSheet(g_quanjuQss);
     g_tianjiachuangkou = &tianjiachuangkou;
     tianjiachuangkou.setWindowTitle("QuickSay-添加");
     tianjiachuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg"));
@@ -3984,6 +4244,7 @@ int main(int argc, char *argv[]) {
     // 创建xiugaichuangkou窗口
     QListWidgetItem *currentEditingItem = nullptr; // 记录用户点到的是liebiao中的哪个选项
     QWidget xiugaichuangkou;
+    xiugaichuangkou.setStyleSheet(g_quanjuQss);
     g_xiugaichuangkou = &xiugaichuangkou;
     xiugaichuangkou.setWindowTitle("QuickSay-修改");
     xiugaichuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg"));
@@ -4046,6 +4307,7 @@ int main(int argc, char *argv[]) {
 
     // 右键liebiao中的某个选项时，弹出一个菜单，上面有修改、删除两个选项
     QMenu menu1;
+    menu1.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
     QAction xiugai("修改", &menu1);
     menu1.addAction(&xiugai);
     QAction tianjia_after("在当前短语后添加短语", &menu1);
@@ -4091,30 +4353,19 @@ int main(int argc, char *argv[]) {
     // 创建托盘
     QSystemTrayIcon *trayIcon = new QSystemTrayIcon(&a);
     trayIcon->setIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg")); // 设置托盘图标
-    // 左键托盘会怎样
-    // 托盘被激活时触发（比如左键右键点击托盘）
+    // 点托盘会怎样
+    // 左键单击：把主窗口叫出来。右键单击：弹出Windows原生右键菜单——不用QMenu，所以菜单是系统自己画的，外观和TrafficMonitor一致，也完全不受QuickSay全局QSS影响
     QObject::connect(trayIcon, &QSystemTrayIcon::activated,
         [&](QSystemTrayIcon::ActivationReason reason) { // reason变量可以用来接收托盘被激活的具体原因
             if (reason == QSystemTrayIcon::Trigger) { // 如果具体原因是鼠标左键单击
                 chuangkou.move(config["chuangkou_x"].toInt(), config["chuangkou_y"].toInt());
                 xianshi(chuangkou);
+            } else if (reason == QSystemTrayIcon::Context) { // 如果具体原因是鼠标右键单击
+                int xuanle = tanchuTuopanCaidan(tubiaoMulu); // 弹出原生菜单，等用户选完再返回
+                if (xuanle == 1) dakaiShezhiChuangkou(); // “设置”
+                else if (xuanle == 2) a.quit(); // “退出”
             }
         });
-    // 右键托盘会怎样
-    // 给托盘创建一个右键菜单
-    QMenu *menu = new QMenu();
-    QAction *shezhiAction = new QAction("设置", menu); // 添加“设置”菜单项
-    menu->addAction(shezhiAction); // shezhiAction的内存不用释放，因为此时menu会接管shezhiAction的所有权，自动管理其内存
-    QObject::connect(shezhiAction, &QAction::triggered,
-        [&]() { // 当按下“设置”菜单项时，弹出shezhichuangkou窗口
-            shuaxinZiqidongCheck(); // 按系统里真实的自启状态刷新自启动的两个复选框
-            shezhichuangkou.move(config["shezhichuangkou_x"].toInt(), config["shezhichuangkou_y"].toInt()); // 把shezhichuangkou移动到记录的位置
-            xianshi(shezhichuangkou);
-        });
-    QAction *quitAction = new QAction("退出", menu); // 添加“退出”菜单项
-    menu->addAction(quitAction); // quitAction的内存也不用释放，因为此时menu会接管quitAction的所有权，自动管理其内存
-    QObject::connect(quitAction, &QAction::triggered, &a, &QApplication::quit);
-    trayIcon->setContextMenu(menu); // menu的内存也不用释放，因为此时trayIcon会接管menu的所有权，自动管理其内存
     trayIcon->show();
     trayIcon->setToolTip("QuickSay"); // 设置鼠标悬停在托盘上时显示的提示文字。这句代码必须写在show()之后
 
@@ -4126,35 +4377,15 @@ int main(int argc, char *argv[]) {
     // 从全局对象config读取主窗口大小；其他窗口及其控件始终使用默认的500*500
     adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
         chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
-        shezhichuangkou,
         tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
         xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
-    // 如果用户在设置-主窗口大小里修改了宽度，那么写入程序设置到config.json，同时调整主窗口大小和主窗口控件
-    QObject::connect(widthSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int w) {
-            config["width"] = w; // 更新config里的宽度
-            config["height"] = heightSpin->value(); // 读取当前高度，然后更新config里的高度
-            saveConfig(configPath); // 写入程序设置到config.json
-            // 调用adjustAllWindows函数，调整主窗口大小；其他窗口保持默认大小
-            adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
-                chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
-                shezhichuangkou,
-                tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
-                xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
-        });
-    // 如果用户在设置-主窗口大小里修改了高度，那么写入程序设置到config.json，同时调整主窗口大小和主窗口控件
-    QObject::connect(heightSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-        [&](int h) {
-            config["height"] = h; // 更新config里的高度
-            config["width"] = widthSpin->value(); // 读取当前宽度，然后更新config里的宽度
-            saveConfig(configPath); // 写入程序设置到config.json
-            // 调用adjustAllWindows函数，调整主窗口大小；其他窗口保持默认大小
-            adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
-                chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
-                shezhichuangkou,
-                tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
-                xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
-        });
+    // 设置窗口里“主窗口宽度/高度”真正生效的地方。之所以放在这里，是因为adjustAllWindows要用的那一堆控件到这时候才全都创建好了
+    yingyongZhuchuangkouDaxiao = [&]() {
+        adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
+            chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
+            tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
+            xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
+    };
 
     if (!a.arguments().contains("--autostart")) { // 程序启动时检查程序启动参数，如果没有包含我们专门为开机自启添加的标记“--autostart”（也就是说用户是通过双击可执行文件打开的程序，而不是通过开机自启自动打开的程序）
         chuangkou.move(config["chuangkou_x"].toInt(), config["chuangkou_y"].toInt()); // 把chuangkou移动到记录的位置
