@@ -3,6 +3,7 @@
 //1. 修改分组页面新增“每行短语数”选项。
 //2. 新增以“管理员权限启动”设置选项。勾选后就能允许QuickSay在任何地方输入。
 //3. 修复在设置里调整滚动条滚动速度后不能立即生效的问题。
+//4. 新增高级输入停止机制：锁屏、注销、会话断开、睡眠或休眠立即停止；某个输入动作失败也会停止。
 
 #include<QApplication>
 #include<QWidget>
@@ -56,6 +57,7 @@
 #include<sddl.h>
 #include<shellapi.h>
 #include<taskschd.h>
+#include<wtsapi32.h>
 #pragma comment(lib,"user32.lib")
 
 QJsonObject config;//全局对象，用于保存程序的设置
@@ -72,6 +74,8 @@ HHOOK g_keyboardHook=nullptr;
 int g_quickSayPressBlockCount=0;
 int g_phraseCellWidth=0;//多列排列时每个短语项该有的宽度，由updatePhraseListColumns算出来、由BadgeDelegate::sizeHint报给列表。0表示单列，此时短语项宽度交给列表自己撑满
 bool g_quickSayIsOutputting=false;
+class QuickSayOutputRunner;
+QuickSayOutputRunner * g_quickSayOutputRunner=nullptr;//当前正在执行高级输入的对象。锁屏、会话断开、睡眠等系统事件靠它立即停止整段输出
 bool g_searchMode=false;
 HWND g_lastForegroundBeforeSearch=nullptr;
 
@@ -758,7 +762,7 @@ bool showTabDialog(QWidget & parent,const QString & title,QString & tabName,int 
     return false;//如果用户点击了“取消”或按右上角关闭了窗口，返回 false
 }
 
-void moniCtrlV(){ //模拟Ctrl+V
+bool moniCtrlV(){ //模拟Ctrl+V。SendInput能可靠报告实际发送了几个事件，所以没有完整发送时返回false，让高级输入立即停止
     INPUT inputs[4]={};//定义一个长度为4的数组，存放：左Ctrl键按下、V键按下、V键抬起、左Ctrl键抬起
     //左Ctrl键按下
     inputs[0].type=INPUT_KEYBOARD;
@@ -775,7 +779,18 @@ void moniCtrlV(){ //模拟Ctrl+V
     inputs[3].ki.wVk=VK_LCONTROL;
     inputs[3].ki.dwFlags=KEYEVENTF_KEYUP;
     //一次性发送这4个事件
-    SendInput(4,inputs,sizeof(INPUT));
+    UINT sent=SendInput(4,inputs,sizeof(INPUT));
+    if(sent==4) return true;
+
+    INPUT releases[2]={};//SendInput可能只发送了前半截；失败后补发V和Ctrl的抬起，避免留下按下状态
+    releases[0].type=INPUT_KEYBOARD;
+    releases[0].ki.wVk='V';
+    releases[0].ki.dwFlags=KEYEVENTF_KEYUP;
+    releases[1].type=INPUT_KEYBOARD;
+    releases[1].ki.wVk=VK_LCONTROL;
+    releases[1].ki.dwFlags=KEYEVENTF_KEYUP;
+    SendInput(2,releases,sizeof(INPUT));//这是失败后的尽力清理；无论清理结果如何，调用方都会停止，绝不继续猜测性重试输出
+    return false;
 }
 
 struct QuickSayDropFiles{
@@ -828,11 +843,15 @@ bool setClipboardFileWin32(const QString & filePath){
         return false;
     }
 
-    EmptyClipboard();
+    if(!EmptyClipboard()){
+        CloseClipboard();
+        GlobalFree(hMem);
+        return false;
+    }
     bool ok=SetClipboardData(CF_HDROP,hMem)!=nullptr;
-    CloseClipboard();
-    if(!ok) GlobalFree(hMem);
-    return ok;
+    bool closed=CloseClipboard()!=FALSE;
+    if(!ok) GlobalFree(hMem);//SetClipboardData成功后内存所有权已经交给系统，即使CloseClipboard失败也不能再释放
+    return ok && closed;
 }
 
 bool setClipboardImageFileWin32(const QuickSayOutputAction & action){
@@ -882,16 +901,16 @@ bool isExtendedVirtualKey(WORD vk){
     }
 }
 
-void sendVirtualKey(WORD vk,bool keyUp=false){
+bool sendVirtualKey(WORD vk,bool keyUp=false){
     INPUT input={};
     input.type=INPUT_KEYBOARD;
     input.ki.wVk=vk;
     if(keyUp) input.ki.dwFlags|=KEYEVENTF_KEYUP;
     if(isExtendedVirtualKey(vk)) input.ki.dwFlags|=KEYEVENTF_EXTENDEDKEY;
-    SendInput(1,&input,sizeof(INPUT));
+    return SendInput(1,&input,sizeof(INPUT))==1;//SendInput的返回值就是实际成功插入的事件数，可以可靠判断这个按键有没有发出去
 }
 
-QuickSayModifierSnapshot releasePressedPhysicalModifiers(){
+bool releasePressedPhysicalModifiers(){
     QuickSayModifierSnapshot snapshot;
     snapshot.lCtrl=( GetAsyncKeyState(VK_LCONTROL) & 0x8000 )!=0;
     snapshot.rCtrl=( GetAsyncKeyState(VK_RCONTROL) & 0x8000 )!=0;
@@ -902,15 +921,15 @@ QuickSayModifierSnapshot releasePressedPhysicalModifiers(){
     snapshot.lMeta=( GetAsyncKeyState(VK_LWIN) & 0x8000 )!=0;
     snapshot.rMeta=( GetAsyncKeyState(VK_RWIN) & 0x8000 )!=0;
 
-    if(snapshot.lCtrl) sendVirtualKey(VK_LCONTROL,true);
-    if(snapshot.rCtrl) sendVirtualKey(VK_RCONTROL,true);
-    if(snapshot.lAlt) sendVirtualKey(VK_LMENU,true);
-    if(snapshot.rAlt) sendVirtualKey(VK_RMENU,true);
-    if(snapshot.lShift) sendVirtualKey(VK_LSHIFT,true);
-    if(snapshot.rShift) sendVirtualKey(VK_RSHIFT,true);
-    if(snapshot.lMeta) sendVirtualKey(VK_LWIN,true);
-    if(snapshot.rMeta) sendVirtualKey(VK_RWIN,true);
-    return snapshot;
+    if(snapshot.lCtrl && !sendVirtualKey(VK_LCONTROL,true)) return false;
+    if(snapshot.rCtrl && !sendVirtualKey(VK_RCONTROL,true)) return false;
+    if(snapshot.lAlt && !sendVirtualKey(VK_LMENU,true)) return false;
+    if(snapshot.rAlt && !sendVirtualKey(VK_RMENU,true)) return false;
+    if(snapshot.lShift && !sendVirtualKey(VK_LSHIFT,true)) return false;
+    if(snapshot.rShift && !sendVirtualKey(VK_RSHIFT,true)) return false;
+    if(snapshot.lMeta && !sendVirtualKey(VK_LWIN,true)) return false;
+    if(snapshot.rMeta && !sendVirtualKey(VK_RWIN,true)) return false;
+    return true;
 }
 
 void beginQuickSayPressBlock(){
@@ -1167,34 +1186,107 @@ bool parseQuickSayOutputActions(const QString & text,QVector<QuickSayOutputActio
     return true;
 }
 
-void sendPressAction(const QuickSayOutputAction & action){
-    for(WORD modifier:action.modifiers){
-        sendVirtualKey(modifier);
-    }
+bool sendPressAction(const QuickSayOutputAction & action){
+    QVector<INPUT> inputs;//一个<press>动作的按下和抬起放进同一次SendInput，既减少中途留下按下状态的窗口，也能用返回数量可靠判断是否完整发送
+    auto appendKey=[&](WORD vk,bool keyUp){
+        INPUT input={};
+        input.type=INPUT_KEYBOARD;
+        input.ki.wVk=vk;
+        if(keyUp) input.ki.dwFlags|=KEYEVENTF_KEYUP;
+        if(isExtendedVirtualKey(vk)) input.ki.dwFlags|=KEYEVENTF_EXTENDEDKEY;
+        inputs.append(input);
+    };
+    for(WORD modifier:action.modifiers) appendKey(modifier,false);
     if(action.key!=0){
-        sendVirtualKey(action.key);
-        sendVirtualKey(action.key,true);
+        appendKey(action.key,false);
+        appendKey(action.key,true);
     }
-    for(int i=action.modifiers.size()-1;i>=0;i--){
-        sendVirtualKey(action.modifiers.at(i),true);
-    }
+    for(int i=action.modifiers.size()-1;i>=0;i--) appendKey(action.modifiers.at(i),true);
+
+    UINT sent=SendInput(static_cast<UINT>(inputs.size()),inputs.data(),sizeof(INPUT));
+    if(sent==static_cast<UINT>(inputs.size())) return true;
+
+    QVector<INPUT> releases;//只发送了一部分时，补发本动作涉及的所有抬起事件，避免主键或修饰键永久卡在按下状态
+    auto appendRelease=[&](WORD vk){
+        INPUT input={};
+        input.type=INPUT_KEYBOARD;
+        input.ki.wVk=vk;
+        input.ki.dwFlags=KEYEVENTF_KEYUP;
+        if(isExtendedVirtualKey(vk)) input.ki.dwFlags|=KEYEVENTF_EXTENDEDKEY;
+        releases.append(input);
+    };
+    if(action.key!=0) appendRelease(action.key);
+    for(int i=action.modifiers.size()-1;i>=0;i--) appendRelease(action.modifiers.at(i));
+    if(!releases.isEmpty()) SendInput(static_cast<UINT>(releases.size()),releases.data(),sizeof(INPUT));//失败后的尽力清理不算作继续输出，清理完立即停止整段高级输入
+    return false;
 }
 
 class QuickSayOutputRunner:public QObject{
 private:
+    enum class WaitingStep{ //整段输出永远只有一个成员QTimer在等待；停止它就能一次性让所有尚未执行的步骤失效
+        None,
+        NextAction,
+        PasteText,
+        WriteImageClipboard,
+        PasteImage,
+        ReleasePressBlock,
+        FinishSleep
+    };
     QVector<QuickSayOutputAction> actions_;
     int index_=0;
+    QTimer timer_;
+    WaitingStep waitingStep_=WaitingStep::None;
+    QuickSayOutputAction waitingImageAction_;
+    bool pressBlockHeld_=false;
+    bool ended_=false;
 public:
-    QuickSayOutputRunner(const QVector<QuickSayOutputAction> & actions,QObject * parent=nullptr):QObject(parent),actions_(actions){}
+    QuickSayOutputRunner(const QVector<QuickSayOutputAction> & actions,QObject * parent=nullptr):QObject(parent),actions_(actions),timer_(this){
+        timer_.setSingleShot(true);
+        QObject::connect(&timer_,&QTimer::timeout,this,[this](){ runWaitingStep(); });
+    }
+
+    ~QuickSayOutputRunner() override{
+        timer_.stop();//正常情况下stop()早已清理过；这里再兜底，保证随QApplication销毁时也不会留下计时器和按键拦截计数
+        if(pressBlockHeld_){
+            endQuickSayPressBlock();
+            pressBlockHeld_=false;
+        }
+        if(g_quickSayOutputRunner==this){
+            g_quickSayOutputRunner=nullptr;
+            g_quickSayIsOutputting=false;
+        }
+    }
 
     void start(){
-        releasePressedPhysicalModifiers(); //开始输出时，一次性抬起用户当前按着的修饰键（典型情况就是触发短语用的快捷键，比如Ctrl+1里的Ctrl），整段输出期间保持抬起，避免它干扰moniCtrlV()的粘贴或模拟按键。此处只“抬起”、绝不再“按回去”：因为输出过程中用户随时可能松开快捷键，若结束时再注入一次按下，物理键已松开就会把修饰键永久卡在按下状态。彻底不注入down，就根除了卡键。
+        if(!releasePressedPhysicalModifiers()){ //开始输出时，一次性抬起用户当前按着的修饰键（典型情况就是触发短语用的快捷键，比如Ctrl+1里的Ctrl），整段输出期间保持抬起，避免它干扰moniCtrlV()的粘贴或模拟按键。此处只“抬起”、绝不再“按回去”：因为输出过程中用户随时可能松开快捷键，若结束时再注入一次按下，物理键已松开就会把修饰键永久卡在按下状态。彻底不注入down，就根除了卡键。
+            stop();//SendInput没有完整发送时有可靠的失败结果，立即停止，不再执行第一个动作
+            return;
+        }
         runCurrentAction();
     }
-private:
-    void finishOutput(){
+
+    void stop(){ //系统事件或可靠的输出失败都走这里：停表、作废等待步骤、恢复全局状态和按键拦截计数，再安全销毁自己
+        if(ended_) return;
+        ended_=true;
+        timer_.stop();
+        waitingStep_=WaitingStep::None;
+        if(pressBlockHeld_){
+            endQuickSayPressBlock();
+            pressBlockHeld_=false;
+        }
+        if(g_quickSayOutputRunner==this) g_quickSayOutputRunner=nullptr;
         g_quickSayIsOutputting=false;
         deleteLater();
+    }
+private:
+    void waitFor(int ms,WaitingStep step){
+        if(ended_) return;
+        waitingStep_=step;
+        timer_.start(qMax(0,ms));
+    }
+
+    void finishOutput(){
+        stop();//正常结束和中途停止需要恢复的是同一组状态；统一收口可避免漏掉计时器或按键拦截计数
     }
 
     void finishAction(){
@@ -1202,12 +1294,46 @@ private:
             finishOutput();
             return;
         }
-        QTimer::singleShot(   config["delay"].toInt()   ,[&](){ //动作之间等多久
+        waitFor(config["delay"].toInt(),WaitingStep::NextAction);//动作之间等多久
+    }
+
+    void runWaitingStep(){
+        if(ended_) return;
+        WaitingStep step=waitingStep_;
+        waitingStep_=WaitingStep::None;
+        switch(step){
+        case WaitingStep::NextAction:
             runCurrentAction();
-        });
+            break;
+        case WaitingStep::PasteText:
+            if(!moniCtrlV()) stop();
+            else finishAction();
+            break;
+        case WaitingStep::WriteImageClipboard:
+            if(!setClipboardImageFileWin32(waitingImageAction_)) stop();//OpenClipboard、EmptyClipboard、SetClipboardData或CloseClipboard明确失败时立即停止
+            else waitFor(50,WaitingStep::PasteImage);//写剪贴板和粘贴之间留50ms，让剪贴板传播到位
+            break;
+        case WaitingStep::PasteImage:
+            if(!moniCtrlV()) stop();
+            else finishAction();
+            break;
+        case WaitingStep::ReleasePressBlock:
+            if(pressBlockHeld_){
+                endQuickSayPressBlock();
+                pressBlockHeld_=false;
+            }
+            finishAction();
+            break;
+        case WaitingStep::FinishSleep:
+            finishAction();
+            break;
+        case WaitingStep::None:
+            break;
+        }
     }
 
     void runCurrentAction(){
+        if(ended_) return;
         if(index_>=actions_.size()){
             finishOutput();
             return;
@@ -1217,42 +1343,37 @@ private:
         index_++;
         switch(action.type){
         case QuickSayOutputActionType::Text:{
-            QApplication::clipboard()->setText(action.text);
+            QApplication::clipboard()->setText(action.text);//Qt写文本剪贴板没有可靠的成功返回值，因此这里只保留原行为，不用猜测性读取来判断成功与否
             //【【【【【这里的延迟考虑写进设置里，让用户自定义？
-            QTimer::singleShot(   50   ,[&](){ //写剪贴板后，到“目标程序能读到新内容”之间有一段传播延迟。若setText后立刻moniCtrlV()，Ctrl+V可能在这段窗口内到达，目标程序读到的还是上一条/空内容，导致这一行粘贴失败（剪贴板其实已写对，只是粘早了）。这里等50ms让剪贴板传播到位再粘，能明显降低输出失败概率。
-                moniCtrlV();
-                finishAction();
-            });
+            waitFor(50,WaitingStep::PasteText);//写剪贴板后，到“目标程序能读到新内容”之间有一段传播延迟。若setText后立刻moniCtrlV()，Ctrl+V可能在这段窗口内到达，目标程序读到的还是上一条/空内容，导致这一行粘贴失败（剪贴板其实已写对，只是粘早了）。这里等50ms让剪贴板传播到位再粘，能明显降低输出失败概率。
             break;
         }
         case QuickSayOutputActionType::Image:{
-            QTimer::singleShot(1000,[&,action](){ //在微信输出图片时，有时会出现一个bug，经测试，在<img>标签前面加一个<sleep>能有效解决这个bug。于是我就实现了个：当用户输入<img>标签后，先延迟1秒，再来执行<img>标签的操作
-                setClipboardImageFileWin32(action);
-                QTimer::singleShot(   50   ,[&](){ //同文本路径：写剪贴板和粘贴之间要留间隔。上面的1000ms是“写剪贴板之前”的微信缓冲，挡不住“写完立刻粘”这条竞态；所以这里在setClipboardImageFileWin32()之后、moniCtrlV()之前再等50ms，让剪贴板传播到位再粘。图片走的是同步的Win32 SetClipboardData，竞态窗口比文本小、失败更罕见，但加上更稳妥也和文本保持一致。
-                    moniCtrlV();
-                    finishAction();
-                });
-            });
+            waitingImageAction_=action;//图片动作要跨过前置的1秒等待，存成成员而不是让计时器回调引用已经失效的局部变量
+            waitFor(1000,WaitingStep::WriteImageClipboard);//在微信输出图片时，有时会出现一个bug，经测试，在<img>标签前面加一个<sleep>能有效解决这个bug。于是我就实现了个：当用户输入<img>标签后，先延迟1秒，再来执行<img>标签的操作
             break;
         }
         case QuickSayOutputActionType::Press:{
             beginQuickSayPressBlock();
-            sendPressAction(action);
-            QTimer::singleShot(   config["delay"].toInt()   ,[&](){ //程序在模拟按键后的动作延迟时间内，临时阻止 QuickSay 自己的键盘浏览逻辑处理这些按键，避免你模拟出来的按键又被 QuickSay 当成用户输入捕获。 //虽然这两个config["delay"].toInt()延迟语义不完全一样。但改成这样更方便管理
-                endQuickSayPressBlock();
-                finishAction();
-            });
+            pressBlockHeld_=true;
+            if(!sendPressAction(action)){
+                stop();//SendInput没有完整发送时立即停止；stop()也会归还上面刚取得的按键拦截计数
+                return;
+            }
+            waitFor(config["delay"].toInt(),WaitingStep::ReleasePressBlock);//程序在模拟按键后的动作延迟时间内，临时阻止 QuickSay 自己的键盘浏览逻辑处理这些按键，避免你模拟出来的按键又被 QuickSay 当成用户输入捕获。 //虽然这和动作之间的delay延迟语义不完全一样，但用同一设置更方便管理
             break;
         }
         case QuickSayOutputActionType::Sleep:{
-            QTimer::singleShot(action.sleepMs,[&](){
-                finishAction();
-            });
+            waitFor(action.sleepMs,WaitingStep::FinishSleep);
             break;
         }
         }
     }
 };
+
+void stopQuickSayOutput(){ //锁屏、会话断开、注销、睡眠和休眠发生时调用；没有正在输出就什么也不做
+    if(g_quickSayOutputRunner) g_quickSayOutputRunner->stop();
+}
 
 void startQuickSayOutput(const QString & text){
     if(g_quickSayIsOutputting) return;
@@ -1266,6 +1387,7 @@ void startQuickSayOutput(const QString & text){
     }
     g_quickSayIsOutputting=true;
     QuickSayOutputRunner * runner=new QuickSayOutputRunner(actions,qApp);
+    g_quickSayOutputRunner=runner;
     runner->start();
 }
 
@@ -1593,8 +1715,17 @@ bool isWindowFrontmost(QWidget & chuang){ //判断窗口当前是否在屏幕最
 class NoActivateNativeFilter:public QAbstractNativeEventFilter{
 public:
     bool nativeEventFilter(const QByteArray &,void * message,qintptr * result) override{
-        if(!pchuangkou) return false;
         MSG * msg=reinterpret_cast<MSG *>(message);
+        if(msg->message==WM_WTSSESSION_CHANGE){ //WTS会明确通知锁屏、注销以及本地/远程会话断开；这些状态下目标窗口已经不可安全继续接收高级输入
+            if(msg->wParam==WTS_SESSION_LOCK || msg->wParam==WTS_SESSION_LOGOFF ||
+               msg->wParam==WTS_CONSOLE_DISCONNECT || msg->wParam==WTS_REMOTE_DISCONNECT){
+                stopQuickSayOutput();
+            }
+        }
+        else if(msg->message==WM_POWERBROADCAST && msg->wParam==PBT_APMSUSPEND){ //睡眠和休眠都会先收到PBT_APMSUSPEND，立刻作废所有待执行输出步骤
+            stopQuickSayOutput();
+        }
+        if(!pchuangkou) return false;
         if(msg->message==WM_MOUSEACTIVATE){
             if(g_searchMode) return false;
             HWND mainHwnd=(HWND)pchuangkou->winId();
@@ -2663,6 +2794,12 @@ int main(int argc, char *argv[]){
     QWidget chuangkou;
     pchuangkou=&chuangkou;//创建主窗口时把地址赋值给全局指针，用于当用户启动程序时，如果已经有实例正在运行，那么显示正在运行的那个实例的主窗口
     a.installNativeEventFilter(new NoActivateNativeFilter());
+    HWND quickSayMainHwnd=(HWND)chuangkou.winId();//WTS会话通知必须注册到一个真实的Win32窗口句柄；即使主窗口开机时不显示，这个句柄也一直存在
+    bool wtsSessionRegistered=WTSRegisterSessionNotification(quickSayMainHwnd,NOTIFY_FOR_THIS_SESSION)!=FALSE;//只监听当前用户会话的锁屏、注销和断开，不接收其他登录用户的会话变化
+    QObject::connect(&a,&QCoreApplication::aboutToQuit,[quickSayMainHwnd,wtsSessionRegistered](){
+        stopQuickSayOutput();//退出事件循环前也先停掉成员计时器并恢复输出状态，避免QApplication销毁子对象时仍有等待步骤
+        if(wtsSessionRegistered) WTSUnRegisterSessionNotification(quickSayMainHwnd);
+    });
     chuangkou.setWindowTitle("QuickSay");
     chuangkou.setWindowIcon(QIcon(QCoreApplication::applicationDirPath()+"/icons/软件图标.svg"));
 
