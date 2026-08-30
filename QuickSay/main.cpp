@@ -4,6 +4,7 @@
 //2. 新增以“管理员权限启动”设置选项。勾选后就能允许QuickSay在任何地方输入。
 //3. 修复在设置里调整滚动条滚动速度后不能立即生效的问题。
 //4. 新增高级输入停止机制：锁屏、注销、会话断开、睡眠或休眠立即停止；某个输入动作失败也会停止。
+//5. 新增导入导出备份功能。
 
 #include<QApplication>
 #include<QWidget>
@@ -23,6 +24,13 @@
 #include<QXmlStreamReader>
 #include<QJsonDocument>
 #include<QFile>
+#include<QFileDialog>
+#include<QSaveFile>
+#include<QDateTime>
+#include<QCryptographicHash>
+#include<QRegularExpression>
+#include<QScreen>
+#include<QSet>
 #include<QKeyEvent>
 #include<QFormLayout>
 #include<QKeySequenceEdit>
@@ -56,11 +64,15 @@
 #include<windows.h>
 #include<sddl.h>
 #include<shellapi.h>
+#include<shldisp.h>
 #include<taskschd.h>
 #include<wtsapi32.h>
 #pragma comment(lib,"user32.lib")
 
 QJsonObject config;//全局对象，用于保存程序的设置
+static const QString g_quickSayVersion="1.8.0";//当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
+static const QString g_backupFormatVersion="1.0.0";//备份格式版本只在文件结构发生不兼容变化时才修改，不能跟着QuickSay版本一起改
+bool g_zhengzaiDaoruChongqi=false;//导入成功后直到旧进程退出都保持true，挡住旧设置窗口、焦点事件和窗口移动事件再次覆盖刚写入的备份
 
 QWidget * pchuangkou=nullptr;
 QWidget * g_shezhichuangkou=nullptr;
@@ -80,6 +92,7 @@ bool g_searchMode=false;
 HWND g_lastForegroundBeforeSearch=nullptr;
 
 void saveConfig(const QString & configPath){ //写入程序设置到config.json
+    if(g_zhengzaiDaoruChongqi) return;//导入后的旧全局config已经过期，重启结束前绝不能再拿它覆盖刚导入的config.json
     QJsonDocument doc(config);//把全局对象config转换成JSON文档
     QFile file(configPath);//打开指定路径文件config.json
     if(file.open( QIODevice::WriteOnly | QIODevice::Text )){ //如果config.json成功打开（写模式）
@@ -536,6 +549,7 @@ void updateItemDisplay(QListWidgetItem * it){ //更新对应短语项的显示�
 }
 
 void saveListToJson(QListWidget & liebiao,const QString & dataPath){ //写入列表内容到data.json
+    if(g_zhengzaiDaoruChongqi) return;//导入成功后列表仍是旧内容，旧进程退出前禁止它再次覆盖刚导入的data.json
     QJsonArray jsonArray;//创建一个JSON数组
     for(int i=0;i<liebiao.count();i++){ //遍历列表中的所有项
         QJsonObject obj;//创建一个JSON对象
@@ -627,6 +641,7 @@ void setTabData(QTabBar & tabBar,int index,int itemHeight,int columns){ //把短
 }
 
 void saveTabToJson(QTabBar & tabBar,const QString & tabPath){ //写入分组栏内容到tab.json
+    if(g_zhengzaiDaoruChongqi) return;//导入成功后分组栏仍是旧内容，旧进程退出前禁止它再次覆盖刚导入的tab.json
     QJsonArray jsonArray;//创建一个JSON数组
     for(int i=0;i<tabBar.count();i++){ //遍历分组栏中的所有分组
         QJsonObject obj;//创建一个JSON对象
@@ -678,6 +693,397 @@ void loadTabFromJson(QTabBar & tabBar,const QString & tabPath){ //读取tab.json
         setTabData(tabBar,2,config["default_item_height"].toInt(),1);
         saveTabToJson(tabBar,tabPath);
     }
+}
+
+//====================备份与恢复====================
+//备份只收录config、分组和短语本身。<img>/<file>后面的路径只是短语正文中的普通字符，因此外部文件不会被读取、复制或塞进备份
+struct QuickSayBackupData{
+    QJsonObject settings;//完整设置，对应config.json
+    QJsonArray groups;//完整分组，对应tab.json
+    QJsonArray phrases;//完整短语，对应data.json
+    QString quickSayVersion;//导出备份时的QuickSay版本，用于导入成功后的兼容性提醒
+    QDateTime exportedAtUtc;//UTC导出时间，旧版或未知版本提示时再转成本地日期时间
+};
+
+QJsonArray quickSayGroupsForBackup(const QTabBar & tabBar){ //把当前分组栏完整转换成备份里的groups数组
+    QJsonArray groups;
+    for(int i=0;i<tabBar.count();++i){
+        QJsonObject group;
+        group["tab"]=tabBar.tabText(i);
+        group["item_height"]=tabItemHeight(tabBar,i);
+        group["columns"]=tabColumns(tabBar,i);
+        groups.append(group);
+    }
+    return groups;
+}
+
+QJsonArray quickSayPhrasesForBackup(const QListWidget & liebiao){ //把当前短语列表完整转换成备份里的phrases数组，不解析也不打包正文中的外部文件路径
+    QJsonArray phrases;
+    for(int i=0;i<liebiao.count();++i){
+        const QListWidgetItem * item=liebiao.item(i);
+        QJsonObject phrase;
+        phrase["text"]=item->data(Qt::UserRole).toString();
+        phrase["remark"]=item->data(Qt::UserRole+1).toString();
+        phrase["tab"]=item->data(Qt::UserRole+2).toString();
+        phrase["hotkey"]=item->data(Qt::UserRole+3).toString();
+        phrases.append(phrase);
+    }
+    return phrases;
+}
+
+QByteArray createQuickSayBackupFile(const QListWidget & liebiao,const QTabBar & tabBar){ //生成一个带可读元数据头、Base64正文和SHA-256完整性校验的单文件备份
+    QString exportedAt=QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);//元数据必须固定记录UTC时间，显示给用户时才转换成本地时间
+    QJsonObject root;
+    root["format_version"]=g_backupFormatVersion;
+    root["quicksay_version"]=g_quickSayVersion;
+    root["exported_at"]=exportedAt;
+    root["settings"]=config;
+    root["groups"]=quickSayGroupsForBackup(tabBar);
+    root["phrases"]=quickSayPhrasesForBackup(liebiao);
+
+    QByteArray payload=QJsonDocument(root).toJson(QJsonDocument::Compact);
+    QByteArray checksum=QCryptographicHash::hash(payload,QCryptographicHash::Sha256).toHex();
+    QByteArray base64=payload.toBase64();
+    QByteArray wrapped;
+    for(int i=0;i<base64.size();i+=64){
+        wrapped+=base64.mid(i,64);
+        wrapped+='\n';
+    }
+    if(!wrapped.isEmpty()) wrapped.chop(1);//最后一行后面不额外留空行，使起止标记和参考格式一样紧凑
+
+    QByteArray result;
+    result+="------------------- QUICKSAY BACKUP BEGIN -------------------\n";
+    result+="- EXPORTED AT:       "+exportedAt.toUtf8()+"\n";
+    result+="- FORMAT VERSION:    "+g_backupFormatVersion.toUtf8()+"\n";
+    result+="- QUICKSAY VERSION:  "+g_quickSayVersion.toUtf8()+"\n";
+    result+="- SHA256:            "+checksum+"\n";
+    result+="----------------------------------------------------------------\n";
+    result+=wrapped+"\n";
+    result+="-------------------- QUICKSAY BACKUP END --------------------";
+    return result;
+}
+
+bool writeQuickSayFileAtomically(const QString & path,const QByteArray & data,QString & error){ //单个文件先写临时文件再原子替换，导出中途失败时不会留下半截备份
+    QSaveFile file(path);
+    if(!file.open(QIODevice::WriteOnly)){
+        error=file.errorString();
+        return false;
+    }
+    if(file.write(data)!=data.size()){
+        error=file.errorString();
+        file.cancelWriting();
+        return false;
+    }
+    if(!file.commit()){
+        error=file.errorString();
+        return false;
+    }
+    return true;
+}
+
+bool parseQuickSayBackupFile(const QByteArray & fileData,QuickSayBackupData & backup,QString & error){ //先完整校验文件头、校验和、JSON结构和三份数据的字段；此函数绝不碰现有数据
+    if(fileData.isEmpty() || fileData.size()>64*1024*1024){
+        error="文件为空或超过64 MB";
+        return false;
+    }
+    for(char ch:fileData){
+        if(static_cast<unsigned char>(ch)>127){
+            error="文件包含无效字符";//合法文件只有ASCII文件头和Base64正文，中文短语都封装在Base64里
+            return false;
+        }
+    }
+
+    QString text=QString::fromLatin1(fileData);
+    text.replace("\r\n","\n");
+    if(text.contains('\r')){
+        error="文件换行格式无效";
+        return false;
+    }
+    QStringList lines=text.split('\n');
+    while(!lines.isEmpty()&&lines.last().isEmpty()) lines.removeLast();//允许文本编辑器在文件末尾补一个换行
+    if(lines.size()<8 || lines.first()!="------------------- QUICKSAY BACKUP BEGIN -------------------" || lines.last()!="-------------------- QUICKSAY BACKUP END --------------------"){
+        error="文件头或结束标记无效";
+        return false;
+    }
+    if(lines.value(5)!="----------------------------------------------------------------"){
+        error="文件头分隔线无效";
+        return false;
+    }
+    auto headerValue=[&](int index,const QString & prefix,QString & value)->bool{
+        QString line=lines.value(index);
+        if(!line.startsWith(prefix)) return false;
+        value=line.mid(prefix.size());
+        return !value.isEmpty();
+    };
+    QString exportedAtText,formatVersion,quickSayVersion,checksumText;
+    if(!headerValue(1,"- EXPORTED AT:       ",exportedAtText) ||
+       !headerValue(2,"- FORMAT VERSION:    ",formatVersion) ||
+       !headerValue(3,"- QUICKSAY VERSION:  ",quickSayVersion) ||
+       !headerValue(4,"- SHA256:            ",checksumText)){
+        error="文件头元数据无效";
+        return false;
+    }
+    if(formatVersion!=g_backupFormatVersion){
+        error=QString("不支持的备份格式版本：%1").arg(formatVersion);
+        return false;
+    }
+    if(!QRegularExpression("^[A-Za-z0-9._+\\-]{1,40}$").match(quickSayVersion).hasMatch() ||
+       !QRegularExpression("^[0-9a-f]{64}$").match(checksumText).hasMatch()){
+        error="版本号或完整性校验值无效";
+        return false;
+    }
+    QDateTime exportedAt=QDateTime::fromString(exportedAtText,Qt::ISODateWithMs);
+    if(!exportedAt.isValid() || !exportedAtText.endsWith('Z')){
+        error="UTC导出时间无效";
+        return false;
+    }
+
+    QString base64Text;
+    QRegularExpression base64Line("^[A-Za-z0-9+/]+={0,2}$");
+    for(int i=6;i<lines.size()-1;++i){
+        if(lines[i].isEmpty() || lines[i].size()>64 || !base64Line.match(lines[i]).hasMatch()){
+            error="备份正文格式无效";
+            return false;
+        }
+        base64Text+=lines[i];
+    }
+    if(base64Text.isEmpty() || base64Text.size()%4!=0){
+        error="备份正文长度无效";
+        return false;
+    }
+    QByteArray payload=QByteArray::fromBase64(base64Text.toLatin1());
+    if(payload.toBase64()!=base64Text.toLatin1()){
+        error="备份正文Base64编码无效";
+        return false;
+    }
+    QString actualChecksum=QString::fromLatin1(QCryptographicHash::hash(payload,QCryptographicHash::Sha256).toHex());
+    if(actualChecksum!=checksumText){
+        error="文件完整性校验失败，文件可能已损坏";
+        return false;
+    }
+
+    QJsonParseError jsonError;
+    QJsonDocument document=QJsonDocument::fromJson(payload,&jsonError);
+    if(jsonError.error!=QJsonParseError::NoError || !document.isObject()){
+        error="备份正文不是有效的JSON对象";
+        return false;
+    }
+    QJsonObject root=document.object();
+    if(root.value("format_version").toString()!=formatVersion || root.value("quicksay_version").toString()!=quickSayVersion || root.value("exported_at").toString()!=exportedAtText ||
+       !root.value("settings").isObject() || !root.value("groups").isArray() || !root.value("phrases").isArray()){
+        error="文件头与备份正文不一致，或未找到完整数据";
+        return false;
+    }
+
+    QJsonObject settings=root.value("settings").toObject();
+    auto integerInRange=[&](const char * key,int minimum,int maximum)->bool{
+        QJsonValue value=settings.value(key);
+        if(!value.isDouble()) return false;
+        double number=value.toDouble();
+        return qIsFinite(number) && number==qFloor(number) && number>=minimum && number<=maximum;
+    };
+    auto booleanField=[&](const char * key)->bool{ return settings.value(key).isBool(); };
+    const char * boolKeys[]={"zhiding","jiaobiao","badge_key_input_phrase_when_pinned","enter_key_input_phrase_when_pinned","ziqidong","guanliyuan","tudingflag"};
+    for(const char * key:boolKeys){
+        if(!booleanField(key)){
+            error=QString("设置字段 %1 无效").arg(key);
+            return false;
+        }
+    }
+    if(!settings.value("hotkey").isString() || settings.value("hotkey").toString().isEmpty() || settings.value("hotkey").toString().size()>128 ||
+       !integerInRange("width",250,2000) || !integerInRange("height",250,2000) ||
+       !integerInRange("default_item_height",10,100) || !integerInRange("phrase_item_padding_horizontal",0,100) ||
+       !integerInRange("phrase_item_padding_vertical",0,100) || !integerInRange("gundong",1,100) || !integerInRange("delay",0,2000)){
+        error="备份中的基础设置无效";
+        return false;
+    }
+    const char * coordinateKeys[]={"chuangkou_x","chuangkou_y","shezhichuangkou_x","shezhichuangkou_y","tianjiachuangkou_x","tianjiachuangkou_y","xiugaichuangkou_x","xiugaichuangkou_y"};
+    for(const char * key:coordinateKeys){
+        if(!integerInRange(key,INT_MIN,INT_MAX)){
+            error=QString("窗口坐标字段 %1 无效").arg(key);
+            return false;
+        }
+    }
+
+    QJsonArray groups=root.value("groups").toArray();
+    if(groups.isEmpty() || groups.size()>10000){
+        error="备份中的分组数量无效";
+        return false;
+    }
+    QSet<QString> groupNames;
+    for(const QJsonValue & value:groups){
+        if(!value.isObject()){
+            error="备份中存在无效分组";
+            return false;
+        }
+        QJsonObject group=value.toObject();
+        QString name=group.value("tab").toString();
+        double itemHeight=group.value("item_height").toDouble(-1);
+        double columns=group.value("columns").toDouble(-1);
+        if(!group.value("tab").isString() || name.isEmpty() || groupNames.contains(name) ||
+           !group.value("item_height").isDouble() || itemHeight!=qFloor(itemHeight) || itemHeight<10 || itemHeight>100 ||
+           !group.value("columns").isDouble() || columns!=qFloor(columns) || columns<1 || columns>10){
+            error="备份中的分组名称或分组设置无效";
+            return false;
+        }
+        groupNames.insert(name);
+    }
+
+    QJsonArray phrases=root.value("phrases").toArray();
+    if(phrases.size()>100000){
+        error="备份中的短语数量过多";
+        return false;
+    }
+    for(const QJsonValue & value:phrases){
+        if(!value.isObject()){
+            error="备份中存在无效短语";
+            return false;
+        }
+        QJsonObject phrase=value.toObject();
+        if(!phrase.value("text").isString() || !phrase.value("remark").isString() || !phrase.value("tab").isString() || !phrase.value("hotkey").isString() ||
+           !groupNames.contains(phrase.value("tab").toString()) || phrase.value("hotkey").toString().size()>128){
+            error="备份中的短语字段或所属分组无效";
+            return false;
+        }
+    }
+
+    backup.settings=settings;
+    backup.groups=groups;
+    backup.phrases=phrases;
+    backup.quickSayVersion=quickSayVersion;
+    backup.exportedAtUtc=exportedAt.toUTC();
+    return true;
+}
+
+void moveImportedWindowsOntoScreens(QJsonObject & settings){ //保留仍位于任意屏幕上的原坐标；只有整个窗口已经落在所有屏幕之外时才移到主屏幕中央
+    int width=settings.value("width").toInt();
+    int height=settings.value("height").toInt();
+    QScreen * primary=QGuiApplication::primaryScreen();
+    if(!primary) return;
+    const QStringList prefixes={"chuangkou","shezhichuangkou","tianjiachuangkou","xiugaichuangkou"};
+    for(const QString & prefix:prefixes){
+        QString xKey=prefix+"_x",yKey=prefix+"_y";
+        QRect windowRect(settings.value(xKey).toInt(),settings.value(yKey).toInt(),width,height);
+        bool onAnyScreen=false;
+        for(QScreen * screen:QGuiApplication::screens()){
+            if(screen && screen->availableGeometry().intersects(windowRect)){
+                onAnyScreen=true;
+                break;
+            }
+        }
+        if(!onAnyScreen){
+            QRect primaryRect=primary->availableGeometry();
+            settings[xKey]=primaryRect.x()+(primaryRect.width()-width)/2;
+            settings[yKey]=primaryRect.y()+(primaryRect.height()-height)/2;
+        }
+    }
+}
+
+bool replaceQuickSayDataTransactionally(const QuickSayBackupData & backup,const QString & configPath,const QString & dataPath,const QString & tabPath,QString & error){ //三份新数据全部准备好后再替换；任一步失败就把已经改动的文件全部原样回滚
+    struct FileChange{
+        QString path;
+        QString stagedPath;
+        QString oldPath;
+        QByteArray newData;
+        bool existed=false;
+        bool oldRenamed=false;
+        bool installed=false;
+    };
+    QString suffix=QString(".%1.%2").arg(GetCurrentProcessId()).arg(QDateTime::currentMSecsSinceEpoch());
+    QVector<FileChange> files={
+        {configPath,configPath+".import-new"+suffix,configPath+".import-old"+suffix,QJsonDocument(backup.settings).toJson()},
+        {dataPath,dataPath+".import-new"+suffix,dataPath+".import-old"+suffix,QJsonDocument(backup.phrases).toJson()},
+        {tabPath,tabPath+".import-new"+suffix,tabPath+".import-old"+suffix,QJsonDocument(backup.groups).toJson()}
+    };
+    auto cleanupStaged=[&](){ for(FileChange & file:files) QFile::remove(file.stagedPath); };
+    auto rollback=[&]()->bool{
+        bool ok=true;
+        for(FileChange & file:files){
+            if(file.installed && QFile::exists(file.path) && !QFile::remove(file.path)) ok=false;
+        }
+        for(FileChange & file:files){
+            if(file.oldRenamed && !QFile::rename(file.oldPath,file.path)) ok=false;
+        }
+        cleanupStaged();
+        return ok;
+    };
+
+    for(FileChange & file:files){
+        file.existed=QFile::exists(file.path);
+        QString writeError;
+        if(!writeQuickSayFileAtomically(file.stagedPath,file.newData,writeError)){
+            cleanupStaged();
+            error=QString("无法准备新数据：%1").arg(writeError);
+            return false;
+        }
+    }
+    for(FileChange & file:files){
+        if(file.existed){
+            if(!QFile::rename(file.path,file.oldPath)){
+                bool restored=rollback();
+                error=restored?"无法暂存现有数据，现有数据未改变":"无法暂存现有数据，而且回滚失败，请不要关闭QuickSay并立即检查数据文件";
+                return false;
+            }
+            file.oldRenamed=true;
+        }
+    }
+    for(FileChange & file:files){
+        if(!QFile::rename(file.stagedPath,file.path)){
+            bool restored=rollback();
+            error=restored?"无法安装新数据，现有数据已恢复":"无法安装新数据，而且回滚失败，请不要关闭QuickSay并立即检查数据文件";
+            return false;
+        }
+        file.installed=true;
+    }
+    for(FileChange & file:files){
+        if(file.oldRenamed) QFile::remove(file.oldPath);//全部替换成功后才删除旧文件，至此导入事务完成
+    }
+    return true;
+}
+
+int compareQuickSayVersions(const QString & left,const QString & right,bool & known){ //按最多四段数字比较版本；任何非标准版本号都归为“未知”
+    QRegularExpression expression("^\\d+(?:\\.\\d+){1,3}$");
+    if(!expression.match(left).hasMatch() || !expression.match(right).hasMatch()){
+        known=false;
+        return 0;
+    }
+    known=true;
+    QStringList a=left.split('.'),b=right.split('.');
+    int count=qMax(a.size(),b.size());
+    for(int i=0;i<count;++i){
+        int av=(i<a.size())?a[i].toInt():0;
+        int bv=(i<b.size())?b[i].toInt():0;
+        if(av>bv) return 1;
+        if(av<bv) return -1;
+    }
+    return 0;
+}
+
+bool startQuickSayThroughExplorer(QString & error){ //让桌面Explorer进程执行新实例，即使旧QuickSay是管理员权限，新实例也会先以普通权限启动并自行读取导入后的管理员设置
+    QString exePath=ziqidongExePath();//这里只传exe路径，不传--autostart；新实例必须按一次正常手动启动完整处理提权和开机自启动
+    HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    bool shouldUninitialize=SUCCEEDED(init);
+    IShellDispatch2 * shell=nullptr;
+    HRESULT hr=CoCreateInstance(CLSID_Shell,nullptr,CLSCTX_LOCAL_SERVER,IID_IShellDispatch2,reinterpret_cast<void **>(&shell));
+    if(SUCCEEDED(hr)&&shell){
+        BSTR file=SysAllocString(reinterpret_cast<const OLECHAR *>(exePath.utf16()));
+        VARIANT empty,show;
+        VariantInit(&empty);
+        VariantInit(&show);
+        show.vt=VT_I4;
+        show.lVal=SW_SHOWNORMAL;
+        hr=shell->ShellExecute(file,empty,empty,empty,show);//Shell.Application实际位于普通权限的Windows Explorer中，由它启动就不会继承旧进程的管理员令牌
+        SysFreeString(file);
+        shell->Release();
+    }
+    if(shouldUninitialize) CoUninitialize();
+    if(SUCCEEDED(hr)) return true;
+
+    QString parameters=QString("\"%1\"").arg(QDir::toNativeSeparators(exePath));
+    HINSTANCE result=ShellExecuteW(nullptr,L"open",L"explorer.exe",reinterpret_cast<const wchar_t *>(parameters.utf16()),nullptr,SW_SHOWNORMAL);//COM外壳极少数情况下不可用时，仍然明确把启动请求交给Explorer
+    if(reinterpret_cast<INT_PTR>(result)>32) return true;
+    error=QString("Windows Explorer 启动失败（错误 %1）").arg(reinterpret_cast<INT_PTR>(result));
+    return false;
 }
 
 void filterListByTab(QListWidget & liebiao,const QString & currentTab,const QString & searchKeyword){ //根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
@@ -2118,6 +2524,7 @@ public:
     WindowMoveFilter(QWidget * main,QWidget * shezhi,QWidget * tianjia,QWidget * xiugai,const QString & path,QObject * parent=nullptr):chuangkou(main),shezhichuangkou(shezhi),tianjiachuangkou(tianjia),xiugaichuangkou(xiugai),configPath_(path),QObject(parent){}
 protected:
     bool eventFilter(QObject * obj,QEvent * event) override{
+        if(g_zhengzaiDaoruChongqi) return QObject::eventFilter(obj,event);//导入完成后窗口关闭、失焦时可能再产生Move事件，不能让旧坐标写回刚导入的config.json
         if(event->type()==QEvent::Move){ //如果是窗口移动事件
             if(obj==chuangkou){ //如果移动的是主窗口
                 config["chuangkou_x"]=chuangkou->x();//记录主窗口在x轴上的位置
@@ -3370,12 +3777,102 @@ int main(int argc, char *argv[]){
                      }
                     );
 
+    //备份与恢复：导出一个无扩展名单文件；导入先完整验证、确认覆盖，再一次性替换设置/分组/短语并强制重启
+    QWidget backupWidget(&shezhichuangkou);//创建一个容器，把导出和导入两个按钮并排放置
+    QHBoxLayout backupLayout(&backupWidget);
+    backupLayout.setSpacing(8);
+    backupLayout.setContentsMargins(0,0,0,0);
+    QPushButton exportBackupButton("导出备份",&backupWidget);
+    QPushButton importBackupButton("导入备份",&backupWidget);
+    backupWidget.setFixedHeight(37);
+    backupLayout.addWidget(&exportBackupButton);
+    backupLayout.addWidget(&importBackupButton);
+    backupLayout.addStretch();
+    formLayout->addRow("备份与恢复：",&backupWidget);
+
+    //导出时直接从当前内存里的设置、分组和短语生成备份；正文中的<img>/<file>路径保持原文，不读取路径指向的文件
+    QObject::connect(&exportBackupButton,&QPushButton::clicked,
+                     [&](){
+                         QString defaultName=QString("QuickSay备份_%1").arg(QDate::currentDate().toString(Qt::ISODate));
+                         QString selectedPath=QFileDialog::getSaveFileName(&shezhichuangkou,"导出QuickSay备份",QDir::home().filePath(defaultName),"QuickSay备份文件 (*)");
+                         if(selectedPath.isEmpty()) return;
+                         QFileInfo selectedInfo(selectedPath);
+                         QString filePath=selectedPath;
+                         if(!selectedInfo.suffix().isEmpty()) filePath=selectedInfo.dir().filePath(selectedInfo.completeBaseName());//即使用户手动输入了.txt之类的扩展名，也按要求导出为无扩展名文件
+                         if(filePath!=selectedPath && QFile::exists(filePath)){
+                             if(QMessageBox::question(&shezhichuangkou,"确认覆盖",QString("文件“%1”已存在，是否覆盖？").arg(QFileInfo(filePath).fileName()),QMessageBox::Yes|QMessageBox::No,QMessageBox::No)!=QMessageBox::Yes) return;
+                         }
+                         QString error;
+                         if(!writeQuickSayFileAtomically(filePath,createQuickSayBackupFile(liebiao,tabBar),error)){
+                             QMessageBox::warning(&shezhichuangkou,"导出备份失败",QString("无法导出备份：%1").arg(error));
+                             return;
+                         }
+                         QMessageBox::information(&shezhichuangkou,"导出备份成功",QString("备份已导出到：\n%1").arg(QDir::toNativeSeparators(filePath)));
+                     }
+                    );
+
+    //导入失败时parseQuickSayBackupFile只读取不写入；用户确认后才进入三文件事务，因此取消、校验失败或替换失败都不会改变现有数据
+    QObject::connect(&importBackupButton,&QPushButton::clicked,
+                     [&](){
+                         QString filePath=QFileDialog::getOpenFileName(&shezhichuangkou,"导入QuickSay备份",QDir::homePath(),"QuickSay备份文件 (*)");
+                         if(filePath.isEmpty()) return;
+                         QFile file(filePath);
+                         if(!file.open(QIODevice::ReadOnly)){
+                             QMessageBox::warning(&shezhichuangkou,"导入备份失败",QString("无法读取备份：%1").arg(file.errorString()));
+                             return;
+                         }
+                         QByteArray fileData=file.readAll();
+                         file.close();
+                         QuickSayBackupData backup;
+                         QString error;
+                         if(!parseQuickSayBackupFile(fileData,backup,error)){
+                             QMessageBox::warning(&shezhichuangkou,"导入备份失败",QString("文件无效或已损坏：%1").arg(error));
+                             return;
+                         }
+                         QString confirmText="导入备份将完全覆盖当前的全部设置、分组和短语，且无法撤销。\n\n是否继续？";
+                         if(QMessageBox::warning(&shezhichuangkou,"确认导入备份",confirmText,QMessageBox::Yes|QMessageBox::No,QMessageBox::No)!=QMessageBox::Yes) return;
+
+                         moveImportedWindowsOntoScreens(backup.settings);//原坐标仍在任意屏幕上就原样保留，完全离屏的窗口才回到主屏幕中央
+                         if(!replaceQuickSayDataTransactionally(backup,configPath,dataPath,tabPath,error)){
+                             QMessageBox::warning(&shezhichuangkou,"导入备份失败",QString("导入失败：%1").arg(error));
+                             return;
+                         }
+                         g_zhengzaiDaoruChongqi=true;//从这一刻开始旧窗口和旧全局状态只准退出，绝不准再落盘覆盖导入结果
+
+                         bool versionKnown=false;
+                         int versionCompare=compareQuickSayVersions(backup.quickSayVersion,g_quickSayVersion,versionKnown);
+                         if(versionKnown && versionCompare>0){
+                             QMessageBox::warning(&shezhichuangkou,"导入成功",QString("刚刚导入的备份来自 QuickSay 的较新版本（%1），某些设置或短语内容可能无法被完整识别或支持。建议更新到最新版本。").arg(backup.quickSayVersion));
+                         }
+                         else if(!versionKnown || versionCompare<0){
+                             QString localDateTime=backup.exportedAtUtc.toLocalTime().toString("yyyy年M月d日 HH:mm:ss");
+                             QMessageBox::warning(&shezhichuangkou,"导入成功",QString("刚刚导入的备份版本较旧或未知（导出于：%1），建议重新导出以更新备份。").arg(localDateTime));
+                         }
+                         else{
+                             QMessageBox::information(&shezhichuangkou,"导入成功","备份已完整导入，QuickSay 将立即重启。");
+                         }
+
+                         //导入成功后不提供“稍后重启”：先停输出和键盘钩子、注销全部快捷键、释放单实例对象，再让普通权限Explorer启动不带参数的新实例
+                         stopQuickSayOutput();
+                         stopQuickSayKeyboardHook();
+                         for(auto & hk:itemHotkeys){ if(hk) hk->setRegistered(false); }
+                         if(hotkey) hotkey->setRegistered(false);
+                         danshiliTongzhi.setEnabled(false);
+                         shifangDanshili();
+                         QString restartError;
+                         if(!startQuickSayThroughExplorer(restartError)){
+                             QMessageBox::critical(&shezhichuangkou,"重启失败",QString("备份已经导入，但无法通过 Windows Explorer 重新启动 QuickSay：%1\n\n请手动启动 QuickSay。").arg(restartError));
+                         }
+                         a.quit();//无论Explorer返回结果如何，旧实例都必须立即退出，不能带着导入前的全局状态继续运行
+                     }
+                    );
+
     //版本号显示
     QWidget versionWidget(&shezhichuangkou);//创建一个容器，用来包装水平布局
     QHBoxLayout versionLayout(&versionWidget);//创建一个水平布局，放置在刚才创建的容器中
     versionLayout.setSpacing(4);//控件之间间距4像素
     versionLayout.setContentsMargins(0,0,0,0);//去掉布局的默认边距
-    QPushButton versionButton("1.8.0",&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下这里的文本】】】
+    QPushButton versionButton(g_quickSayVersion,&versionWidget);//创建版本号按钮 //【【【更新版本后记得改一下文件开头的g_quickSayVersion】】】
     versionButton.setFixedWidth(100);//固定版本号按钮的宽度为100像素
     versionButton.setCursor(Qt::PointingHandCursor);//当鼠标悬停在该按钮上时，鼠标光标变成手形状
     versionWidget.setFixedHeight(37);//通过给容器设置固定填充高度的方式，实现标签和复选框对齐
