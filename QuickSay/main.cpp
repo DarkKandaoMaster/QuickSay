@@ -5,6 +5,7 @@
 // 3. 修复在设置里调整滚动条滚动速度后不能立即生效的问题。
 // 4. 新增高级输入停止机制：锁屏、注销、会话断开、睡眠或休眠立即停止；某个输入动作失败也会停止。
 // 5. 新增导入导出备份功能。
+// 6. “窗口大小”更名为“主窗口大小”，该设置不再影响其他窗口。
 
 #include <QApplication>
 #include <QWidget>
@@ -125,8 +126,8 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["zhiding"] = true; // 默认主窗口始终置顶
         // config["clipboard"]=true;//默认输入时也将短语复制到剪贴板
         config["delay"] = 200; // 默认高级输入间隔200毫秒
-        config["width"] = 500; // 默认窗口宽度
-        config["height"] = 500; // 默认窗口高度
+        config["width"] = 500; // 默认主窗口宽度
+        config["height"] = 500; // 默认主窗口高度
         config["default_item_height"] = 40; // 默认短语项高度40
         config["phrase_item_padding_horizontal"] = 16; // 默认短语项左右内边距16
         config["phrase_item_padding_vertical"] = 12; // 默认短语项上下内边距12
@@ -982,7 +983,9 @@ void moveImportedWindowsOntoScreens(QJsonObject &settings) { // 保留仍位于�
     const QStringList prefixes = {"chuangkou", "shezhichuangkou", "tianjiachuangkou", "xiugaichuangkou"};
     for (const QString &prefix : prefixes) {
         QString xKey = prefix + "_x", yKey = prefix + "_y";
-        QRect windowRect(settings.value(xKey).toInt(), settings.value(yKey).toInt(), width, height);
+        int windowWidth = prefix == "chuangkou" ? width : 500; // 只有主窗口使用设置里的宽高，其他窗口一直按默认500*500判断位置
+        int windowHeight = prefix == "chuangkou" ? height : 500;
+        QRect windowRect(settings.value(xKey).toInt(), settings.value(yKey).toInt(), windowWidth, windowHeight);
         bool onAnyScreen = false;
         for (QScreen *screen : QGuiApplication::screens()) {
             if (screen && screen->availableGeometry().intersects(windowRect)) {
@@ -992,8 +995,8 @@ void moveImportedWindowsOntoScreens(QJsonObject &settings) { // 保留仍位于�
         }
         if (!onAnyScreen) {
             QRect primaryRect = primary->availableGeometry();
-            settings[xKey] = primaryRect.x() + (primaryRect.width() - width) / 2;
-            settings[yKey] = primaryRect.y() + (primaryRect.height() - height) / 2;
+            settings[xKey] = primaryRect.x() + (primaryRect.width() - windowWidth) / 2;
+            settings[yKey] = primaryRect.y() + (primaryRect.height() - windowHeight) / 2;
         }
     }
 }
@@ -2460,7 +2463,7 @@ void showAdvancedInputHelp(QWidget &parent) {
     helpWindow->activateWindow();
 }
 
-void adjustAllWindows(int w, int h, // 根据宽高，设置所有窗口大小和所有控件大小，以及所有控件位置
+void adjustAllWindows(int w, int h, // 根据设置里的宽高调整主窗口；其他窗口始终使用默认的500*500
     QWidget &chuangkou, QListWidget &liebiao, QTabBar &tabBar, QLineEdit &search, QPushButton &shezhi, QPushButton &tianjia, QPushButton &tuding, // 主窗口
     QWidget &shezhichuangkou, // 设置窗口
     QWidget &tianjiachuangkou, QPlainTextEdit &tianjiakuang, QPushButton &tianjia_gaojishuru, QLabel &tianjia_beizhuwenben, QPlainTextEdit &tianjia_beizhukuang, QLabel &tianjia_kjjwenben, QKeySequenceEdit &tianjia_kjjkuang, QPushButton &tianjia_kjjqingkong, QPushButton &tianjiaquxiao, QPushButton &tianjiaqueding, // 添加窗口
@@ -2480,6 +2483,9 @@ void adjustAllWindows(int w, int h, // 根据宽高，设置所有窗口大小�
     tianjia.setFixedSize(36, 36);
     tuding.move(w - 113, 5); // 387,5
     tuding.setFixedSize(36, 36);
+
+    w = 500; // 其他窗口暂时不跟随“主窗口大小”设置，一直使用默认宽度
+    h = 500; // 其他窗口暂时不跟随“主窗口大小”设置，一直使用默认高度
 
     // 设置窗口
     shezhichuangkou.setFixedSize(w, h);
@@ -3483,7 +3489,7 @@ int main(int argc, char *argv[]) {
             }
         });
 
-    // 窗口大小设置
+    // 主窗口大小设置
     QWidget *sizeWidget = new QWidget(&shezhichuangkou); // 创建一个容器，用来包装水平布局
     QHBoxLayout *sizeLayout = new QHBoxLayout(sizeWidget); // 创建一个水平布局，放置在刚才创建的容器中
     sizeLayout->setSpacing(4); // 控件之间间距4像素
@@ -3501,8 +3507,8 @@ int main(int argc, char *argv[]) {
     heightSpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed); // 让QSpinBox高度和标签对齐
     sizeLayout->addWidget(heightSpin); // 加入布局
     sizeLayout->addStretch(); // 让水平布局右边控件整体靠左对齐
-    formLayout->addRow("窗口大小：", sizeWidget); // 在表单布局中添加一行，左边是标签“窗口大小：”，右边是“宽度”“高度”和两个输入框
-    // 如果用户在设置-窗口大小里修改了宽度/高度，那么写入程序设置到config.json，同时调整所有窗口大小，这个功能的实现代码我放最后面了
+    formLayout->addRow("主窗口大小：", sizeWidget); // 在表单布局中添加一行，左边是标签“主窗口大小：”，右边是“宽度”“高度”和两个输入框
+    // 如果用户在设置-主窗口大小里修改了宽度/高度，那么写入程序设置到config.json，同时调整主窗口大小，这个功能的实现代码我放最后面了
 
     // 默认短语项高度设置
     QSpinBox itemHeightSpin(&shezhichuangkou); // 创建一个数字输入框
@@ -4117,32 +4123,32 @@ int main(int argc, char *argv[]) {
     // 使用自定义的事件过滤器类MyEventFilter，实现：Esc键可以关闭主窗口/添加窗口/修改窗口；回车键Enter可以输出光标处短语；左右方向键可以切换分组
     a.installEventFilter(new MyEventFilter(&chuangkou, &tianjiachuangkou, &xiugaichuangkou, &tianjiaquxiao, &xiugaiquxiao, &liebiao, &tabBar, &search)); // 创建事件过滤器对象，并把它安装到a上
 
-    // 从全局对象config读取窗口大小，然后根据宽高，设置所有窗口大小和所有控件大小，以及所有控件位置
+    // 从全局对象config读取主窗口大小；其他窗口及其控件始终使用默认的500*500
     adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
         chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
         shezhichuangkou,
         tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
         xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
-    // 如果用户在设置-窗口大小里修改了宽度，那么写入程序设置到config.json，同时调整所有窗口大小和所有控件大小，以及所有控件位置
+    // 如果用户在设置-主窗口大小里修改了宽度，那么写入程序设置到config.json，同时调整主窗口大小和主窗口控件
     QObject::connect(widthSpin, QOverload<int>::of(&QSpinBox::valueChanged),
         [&](int w) {
             config["width"] = w; // 更新config里的宽度
             config["height"] = heightSpin->value(); // 读取当前高度，然后更新config里的高度
             saveConfig(configPath); // 写入程序设置到config.json
-            // 调用adjustAllWindows函数，调整所有窗口大小
+            // 调用adjustAllWindows函数，调整主窗口大小；其他窗口保持默认大小
             adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
                 chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
                 shezhichuangkou,
                 tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
                 xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
         });
-    // 如果用户在设置-窗口大小里修改了高度，那么写入程序设置到config.json，同时调整所有窗口大小和所有控件大小，以及所有控件位置
+    // 如果用户在设置-主窗口大小里修改了高度，那么写入程序设置到config.json，同时调整主窗口大小和主窗口控件
     QObject::connect(heightSpin, QOverload<int>::of(&QSpinBox::valueChanged),
         [&](int h) {
             config["height"] = h; // 更新config里的高度
             config["width"] = widthSpin->value(); // 读取当前宽度，然后更新config里的宽度
             saveConfig(configPath); // 写入程序设置到config.json
-            // 调用adjustAllWindows函数，调整所有窗口大小
+            // 调用adjustAllWindows函数，调整主窗口大小；其他窗口保持默认大小
             adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
                 chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
                 shezhichuangkou,
