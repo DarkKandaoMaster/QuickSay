@@ -2,6 +2,7 @@
 //更新内容：
 //1. 修改分组页面新增“每行短语数”选项。
 //2. 新增以“管理员权限启动”设置选项。勾选后就能允许QuickSay在任何地方输入。
+//3. 修复在设置里调整滚动条滚动速度后不能立即生效的问题。
 
 #include<QApplication>
 #include<QWidget>
@@ -3022,6 +3023,7 @@ int main(int argc, char *argv[]){
     QObject::connect(&gundongSpin,QOverload<int>::of(&QSpinBox::valueChanged),
                      [&](int value){
                          config["gundong"]=value;
+                         liebiao.verticalScrollBar()->setSingleStep(value);//设置改完后立刻同步到正在使用的滚动条，不用重启软件才能生效
                          saveConfig(configPath);
                      }
                     );
