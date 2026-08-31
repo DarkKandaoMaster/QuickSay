@@ -2037,10 +2037,20 @@ void moveCurrentVisibleItem(int direction) { // 上下方向键：在同一列�
     selectVisibleItemWithScrollSafeArea((direction > 0) ? items.size() - 1 : 0, direction);
 }
 
+bool g_zuoyouZhiqiehuanFenzu = false; // 左右方向键已经切过一次分组的标记：置位后左右键一律切分组，不再在行内移动短语；按上下键清除
+
 void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时切换分组。direction为-1是切到上一个分组、1是切到下一个分组
     if (!g_tabBar) return;
     int index = g_tabBar->currentIndex() + direction;
     if (index < 0 || index >= g_tabBar->count()) return; // 已经是第一个/最后一个分组了，不再继续切换
+    g_zuoyouZhiqiehuanFenzu = true; // 确实切成了分组，打上标记；之后接着按左右键就是一直翻分组，不会在某个分组里被一行好几条短语拦住
+    static QTimer *qingchuJishi = nullptr; // 停手0.5秒后自动清除上面那个标记，免得隔了半天再按左右键还在翻分组
+    if (!qingchuJishi) {
+        qingchuJishi = new QTimer(qApp);
+        qingchuJishi->setSingleShot(true);
+        QObject::connect(qingchuJishi, &QTimer::timeout, [] { g_zuoyouZhiqiehuanFenzu = false; });
+    }
+    qingchuJishi->start(500); // 【【【注：改这个数字就能改“停手多久后标记失效”，单位毫秒】】】每切一次分组都重新计时
     g_tabBar->setCurrentIndex(index); // 切换分组。分组切换的槽函数里会顺手把新分组的第一项选中，这正是往右切要的结果
     if (direction < 0) { // 往左切过来的，改成选中新分组第一行最后一个实际存在的短语，这样光标看起来是从右边接着走的
         QVector<QListWidgetItem *> items = visiblePhraseItems();
@@ -2050,6 +2060,10 @@ void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时�
 }
 
 void moveCurrentVisibleItemHorizontal(int direction) { // 左右方向键：在同一行里左右移动，不跨行；已经在行首/行尾了就切换分组。direction为-1是←、1是→
+    if (g_zuoyouZhiqiehuanFenzu) { // 刚才已经用左右键切过分组了，那就一直切分组，不管这个分组一行有几条短语
+        switchTabAndSelect(direction);
+        return;
+    }
     QVector<QListWidgetItem *> items = visiblePhraseItems();
     int k = currentVisibleIndex(items);
     if (k < 0) { // 空分组，或者当前没选中可见短语，那么直接切换分组。这样在空分组里连按左右键也能一直切下去
@@ -2138,9 +2152,11 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
         moveCurrentVisibleItemHorizontal(1);
         return true;
     case VK_UP:
+        g_zuoyouZhiqiehuanFenzu = false; // 按了上下键，清除“左右键只切分组”的标记，左右键恢复成正常的行内移动
         moveCurrentVisibleItem(-1);
         return true;
     case VK_DOWN:
+        g_zuoyouZhiqiehuanFenzu = false; // 同上
         moveCurrentVisibleItem(1);
         return true;
     case VK_HOME:
