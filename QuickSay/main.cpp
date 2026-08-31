@@ -8,6 +8,7 @@
 // 6. “窗口大小”更名为“主窗口大小”，该设置不再影响其他窗口。
 // 7. 重新设计设置窗口，新增分页布局以及“确定”“取消”“应用”操作。
 // 8. 重新设计托盘右键菜单。
+// 9. 优化方向键浏览短语时的滚动体验。
 
 #include <QApplication>
 #include <QWidget>
@@ -1972,22 +1973,61 @@ void selectVisibleItemAt(int index) { // 选中第index个可见短语项，并�
     g_liebiao->scrollToItem(items[index], QAbstractItemView::PositionAtCenter);
 }
 
+void selectVisibleItemWithScrollSafeArea(int index, int direction) { // 上下方向键专用：选中短语后只在越过上下安全区时滚动，不再每次都强制居中。direction为-1是↑、1是↓
+    QVector<QListWidgetItem *> items = visiblePhraseItems();
+    if (!g_liebiao || index < 0 || index >= items.size()) return;
+
+    QListWidgetItem *item = items[index];
+    QScrollBar *scrollBar = g_liebiao->verticalScrollBar();
+    int oldScrollValue = scrollBar->value(); // setCurrentItem在某些Qt样式下可能会顺手滚动；先记住像素位置，确保后面完全按安全区规则决定滚不滚
+    g_liebiao->setCurrentItem(item);
+    if (scrollBar->value() != oldScrollValue) scrollBar->setValue(oldScrollValue);
+
+    QRect itemRect = g_liebiao->visualItemRect(item); // 直接使用选中项在viewport里的实际像素矩形，多列时同一行各项的top/bottom相同，因此安全区天然按“行”计算
+    int itemHeight = itemRect.height();
+    int viewportHeight = g_liebiao->viewport()->height();
+    if (!itemRect.isValid() || itemHeight <= 0 || viewportHeight <= 0) { // 窗口布局尚未完成时拿不到有效矩形，至少保证选中项能显示出来
+        g_liebiao->scrollToItem(item, QAbstractItemView::EnsureVisible);
+        return;
+    }
+
+    int visibleRows = viewportHeight / itemHeight; // 只按完整可视行计算，窗口过矮时不会把上下安全区硬挤到一起
+    int safeRows = qMin(1, qMax(0, (visibleRows - 1) / 2)); // 正常上下各留1行；可视行数不足时同时缩小，至少给选中项自身留出一行【【【方向键安全区在这里调整】】】
+    int safeTop = safeRows * itemHeight; // 选中项顶部允许到达的最上边界（viewport像素坐标）
+    int safeBottom = viewportHeight - safeRows * itemHeight; // 选中项底部允许到达的最下边界；这里用右开坐标，便于和QRect的bottom()+1比较
+    int newScrollValue = oldScrollValue;
+
+    bool crossedTop = itemRect.top() < safeTop;
+    bool crossedBottom = itemRect.bottom() + 1 > safeBottom;
+    if (crossedTop && crossedBottom) { // 单项比可视区还高时会同时越过两边，只按本次移动方向对齐一边，避免在列表顶/底反复按键时滚动条来回跳
+        if (direction < 0) newScrollValue += itemRect.top() - safeTop;
+        else newScrollValue += itemRect.bottom() + 1 - safeBottom;
+    } else if (crossedTop) { // 向上越过安全区：把选中项推回上边界；滚动条到顶后Qt会自动钳住，选中项就能继续往列表顶端移动
+        newScrollValue += itemRect.top() - safeTop;
+    } else if (crossedBottom) { // 向下越过安全区：把选中项推回下边界；滚动条到底后同理允许选中项继续往列表底端移动
+        newScrollValue += itemRect.bottom() + 1 - safeBottom;
+    }
+
+    newScrollValue = qBound(scrollBar->minimum(), newScrollValue, scrollBar->maximum()); // ScrollPerPixel下滚动条值就是像素位置，直接加矩形越界的像素数才能避免跳动
+    if (newScrollValue != oldScrollValue) scrollBar->setValue(newScrollValue);
+}
+
 void moveCurrentVisibleItem(int direction) { // 上下方向键：在同一列里上下移动。direction为-1是↑、1是↓
     QVector<QListWidgetItem *> items = visiblePhraseItems();
     if (items.isEmpty()) return; // 空分组，不选中短语
     int k = currentVisibleIndex(items);
     if (k < 0) { // 当前没选中任何可见短语（比如刚从空分组切过来），那么按↓选第一项、按↑选最后一项
-        selectVisibleItemAt((direction > 0) ? 0 : items.size() - 1);
+        selectVisibleItemWithScrollSafeArea((direction > 0) ? 0 : items.size() - 1, direction);
         return;
     }
     int target = k + direction * currentTabColumns(); // 同一列上/下一行的那个短语，序号正好差一个“每行短语数”
     if (target >= 0 && target < items.size()) { // 上/下一行的同列位置确实有短语，那就选它
-        selectVisibleItemAt(target);
+        selectVisibleItemWithScrollSafeArea(target, direction);
         return;
     }
     // 上/下一行的同列位置没有短语（已经在第一行了，或者最后一行的这一列排不满）：按↑就跳到本分组第一项，按↓就跳到本分组最后一项
     // 顺带覆盖了“第一项按↑、最后一项按↓保持不动”——因为此时跳过去的就是它自己
-    selectVisibleItemAt((direction > 0) ? items.size() - 1 : 0);
+    selectVisibleItemWithScrollSafeArea((direction > 0) ? items.size() - 1 : 0, direction);
 }
 
 void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时切换分组。direction为-1是切到上一个分组、1是切到下一个分组
