@@ -2044,14 +2044,16 @@ void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时�
     if (!g_tabBar) return;
     int index = g_tabBar->currentIndex() + direction;
     if (index < 0 || index >= g_tabBar->count()) return; // 已经是第一个/最后一个分组了，不再继续切换
-    g_zuoyouZhiqiehuanFenzu = true; // 确实切成了分组，打上标记；之后接着按左右键就是一直翻分组，不会在某个分组里被一行好几条短语拦住
+    bool qieDaoBianjieFenzu = (index == 0 || index == g_tabBar->count() - 1); // 切到第一个或最后一个分组时不再保持连续切分组标记，让下一次反向按键恢复正常的行内移动
+    g_zuoyouZhiqiehuanFenzu = !qieDaoBianjieFenzu; // 只有切到中间分组才打上标记；之后接着按左右键就是一直翻分组，不会被一行好几条短语拦住
     static QTimer *qingchuJishi = nullptr; // 停手0.5秒后自动清除上面那个标记，免得隔了半天再按左右键还在翻分组
     if (!qingchuJishi) {
         qingchuJishi = new QTimer(qApp);
         qingchuJishi->setSingleShot(true);
         QObject::connect(qingchuJishi, &QTimer::timeout, [] { g_zuoyouZhiqiehuanFenzu = false; });
     }
-    qingchuJishi->start(500); // 【【【注：改这个数字就能改“停手多久后标记失效”，单位毫秒】】】每切一次分组都重新计时
+    if (g_zuoyouZhiqiehuanFenzu) qingchuJishi->start(500); // 【【【注：改这个数字就能改“停手多久后标记失效”，单位毫秒】】】每切到中间分组都重新计时
+    else qingchuJishi->stop(); // 已经到第一或最后一个分组就立即取消旧计时，避免边界处还残留连续切换状态
     g_tabBar->setCurrentIndex(index); // 切换分组。分组切换的槽函数里会顺手把新分组的第一项选中，这正是往右切要的结果
     if (direction < 0) { // 往左切过来的，改成选中新分组第一行最后一个实际存在的短语，这样光标看起来是从右边接着走的
         QVector<QListWidgetItem *> items = visiblePhraseItems();
