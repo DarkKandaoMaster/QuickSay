@@ -11,6 +11,7 @@
 // 9. 优化方向键浏览短语时的滚动体验。
 // 10. 新增检查更新功能。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证QuickSay新版本只会比旧版本更好用。
 // 11. 优化短语鼠标悬停提示：正文显示在上方、备注显示在下方，并为备注预留固定显示空间。
+// 12. 新增了几个钉住窗口时的键盘操作设置。
 
 #include <QApplication>
 #include <QWidget>
@@ -136,8 +137,14 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
             if (!config.contains("phrase_item_padding_horizontal")) config["phrase_item_padding_horizontal"] = 16; // 如果config里没有phrase_item_padding_horizontal，那么默认短语项左右内边距16
             if (!config.contains("phrase_item_padding_vertical")) config["phrase_item_padding_vertical"] = 12; // 如果config里没有phrase_item_padding_vertical，那么默认短语项上下内边距12
             if (!config.contains("gundong")) config["gundong"] = 10; // 如果config里没有gundong，那么默认滚动条滚动速度10
-            if (!config.contains("badge_key_input_phrase_when_pinned")) config["badge_key_input_phrase_when_pinned"] = false; // 如果config里没有badge_key_input_phrase_when_pinned，那么默认钉住窗口时按下短语项对应角标不输入短语
-            if (!config.contains("enter_key_input_phrase_when_pinned")) config["enter_key_input_phrase_when_pinned"] = false; // 如果config里没有enter_key_input_phrase_when_pinned，那么默认钉住窗口时按下回车键不输入短语
+            if (!config.contains("badge_key_passthrough_when_pinned")) config["badge_key_passthrough_when_pinned"] = !config["badge_key_input_phrase_when_pinned"].toBool(false); // 新开关改成“钉住窗口时角标按键不输入短语”；旧开关表达的是相反含义，所以迁移时必须取反。老字段不存在时toBool(false)会让新开关默认勾选
+            if (!config.contains("enter_key_passthrough_when_pinned")) config["enter_key_passthrough_when_pinned"] = !config["enter_key_input_phrase_when_pinned"].toBool(false); // 回车键开关同样从旧版的“输入短语”反向迁移成“不输入短语”
+            if (!config.contains("arrow_key_passthrough_when_pinned")) config["arrow_key_passthrough_when_pinned"] = true; // 如果config里没有arrow_key_passthrough_when_pinned，那么默认钉住窗口时方向键不切换短语或分组，而是传给前台程序
+            if (!config.contains("badge_key_ctrl_when_pinned")) config["badge_key_ctrl_when_pinned"] = false; // 如果config里没有badge_key_ctrl_when_pinned，那么默认不允许用Ctrl+角标按键输入短语（这个组合会顶掉前台程序的Ctrl+C、Ctrl+V之类，得用户自己去勾）
+            if (!config.contains("enter_key_ctrl_when_pinned")) config["enter_key_ctrl_when_pinned"] = false; // 如果config里没有enter_key_ctrl_when_pinned，那么默认不允许用Ctrl+回车键输入短语
+            if (!config.contains("arrow_key_ctrl_when_pinned")) config["arrow_key_ctrl_when_pinned"] = false; // 如果config里没有arrow_key_ctrl_when_pinned，那么默认不允许用Ctrl+方向键切换短语或分组
+            config.remove("badge_key_input_phrase_when_pinned"); // 老键名读过一次就清掉，避免正反两套开关同时留在config.json里
+            config.remove("enter_key_input_phrase_when_pinned"); // 同上
             if (!config.contains("guanliyuan")) config["guanliyuan"] = config["ziqidong_guanliyuan"].toBool(false); // 如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（1.8.0以前这两件事是绑在一起的，现在拆成了独立选项）
             if (!config.contains("shezhichuangkou_w")) config["shezhichuangkou_w"] = 620; // 如果config里没有shezhichuangkou_w，那么默认设置窗口外框宽度620（和TrafficMonitor中文设置窗口一致）
             if (!config.contains("shezhichuangkou_h")) config["shezhichuangkou_h"] = 576; // 如果config里没有shezhichuangkou_h，那么默认设置窗口外框高度576
@@ -157,8 +164,12 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["phrase_item_padding_vertical"] = 12; // 默认短语项上下内边距12
         config["gundong"] = 10; // 默认滚动条滚动速度10
         config["jiaobiao"] = false; // 默认角标放在右上角
-        config["badge_key_input_phrase_when_pinned"] = false; // 默认钉住窗口时按下短语项对应角标不输入短语
-        config["enter_key_input_phrase_when_pinned"] = false; // 默认钉住窗口时按下回车键不输入短语
+        config["badge_key_passthrough_when_pinned"] = true; // 默认钉住窗口时按下短语项对应角标按键不输入短语，而是把按键传给前台程序
+        config["enter_key_passthrough_when_pinned"] = true; // 默认钉住窗口时按下回车键不输入短语，而是把按键传给前台程序
+        config["arrow_key_passthrough_when_pinned"] = true; // 默认钉住窗口时按下方向键不切换短语或分组，而是把按键传给前台程序
+        config["badge_key_ctrl_when_pinned"] = false; // 默认不允许按Ctrl+角标按键输入短语。这个组合会顶掉前台程序的Ctrl+C、Ctrl+V之类，所以默认不开
+        config["enter_key_ctrl_when_pinned"] = false; // 默认不允许按Ctrl+回车键输入短语
+        config["arrow_key_ctrl_when_pinned"] = false; // 默认不允许按Ctrl+方向键切换短语或分组
         config["ziqidong"] = true; // 默认开机自启动
         config["guanliyuan"] = false; // 默认不以管理员权限启动
         config["tudingflag"] = true; // 默认钉住窗口
@@ -922,6 +933,14 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     }
 
     QJsonObject settings = root.value("settings").toObject();
+    if (!settings.contains("badge_key_passthrough_when_pinned") && settings.value("badge_key_input_phrase_when_pinned").isBool()) settings["badge_key_passthrough_when_pinned"] = !settings["badge_key_input_phrase_when_pinned"].toBool(); // 兼容改名前导出的备份：旧字段勾选代表输入短语，新字段勾选代表不输入短语，所以取反
+    if (!settings.contains("enter_key_passthrough_when_pinned") && settings.value("enter_key_input_phrase_when_pinned").isBool()) settings["enter_key_passthrough_when_pinned"] = !settings["enter_key_input_phrase_when_pinned"].toBool(); // 回车键的旧备份字段也按相反含义迁移
+    settings.remove("badge_key_input_phrase_when_pinned"); // 导入后只保留新字段，避免恢复出的config.json里同时出现正反两套设置
+    settings.remove("enter_key_input_phrase_when_pinned"); // 同上
+    if (!settings.contains("arrow_key_passthrough_when_pinned")) settings["arrow_key_passthrough_when_pinned"] = true; // 旧版备份里没有方向键开关，按新版默认值补齐后再校验
+    if (!settings.contains("badge_key_ctrl_when_pinned")) settings["badge_key_ctrl_when_pinned"] = false; // 旧版备份里没有这三个Ctrl子开关，同样按新版默认值补齐后再校验
+    if (!settings.contains("enter_key_ctrl_when_pinned")) settings["enter_key_ctrl_when_pinned"] = false; // 同上
+    if (!settings.contains("arrow_key_ctrl_when_pinned")) settings["arrow_key_ctrl_when_pinned"] = false; // 同上
     auto integerInRange = [&](const char *key, int minimum, int maximum) -> bool {
         QJsonValue value = settings.value(key);
         if (!value.isDouble()) return false;
@@ -931,7 +950,7 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     auto booleanField = [&](const char *key) -> bool {
         return settings.value(key).isBool();
     };
-    const char *boolKeys[] = {"zhiding", "jiaobiao", "badge_key_input_phrase_when_pinned", "enter_key_input_phrase_when_pinned", "ziqidong", "guanliyuan", "tudingflag"};
+    const char *boolKeys[] = {"zhiding", "jiaobiao", "badge_key_passthrough_when_pinned", "enter_key_passthrough_when_pinned", "arrow_key_passthrough_when_pinned", "badge_key_ctrl_when_pinned", "enter_key_ctrl_when_pinned", "arrow_key_ctrl_when_pinned", "ziqidong", "guanliyuan", "tudingflag"};
     for (const char *key : boolKeys) {
         if (!booleanField(key)) {
             error = QString("设置字段 %1 无效").arg(key);
@@ -1763,18 +1782,26 @@ class QuickSayOutputRunner : public QObject {
         case WaitingStep::NextAction:
             runCurrentAction();
             break;
-        case WaitingStep::PasteText:
-            if (!moniCtrlV()) stop();
+        case WaitingStep::PasteText: {
+            beginQuickSayPressBlock(); // moniCtrlV会用SendInput模拟Ctrl+V；临时挡住自家键盘钩子，避免启用“Ctrl+角标按键”后把模拟出来的V当成角标吞掉
+            bool chenggong = moniCtrlV();
+            endQuickSayPressBlock();
+            if (!chenggong) stop();
             else finishAction();
             break;
+        }
         case WaitingStep::WriteImageClipboard:
             if (!setClipboardImageFileWin32(waitingImageAction_)) stop(); // OpenClipboard、EmptyClipboard、SetClipboardData或CloseClipboard明确失败时立即停止
             else waitFor(50, WaitingStep::PasteImage); // 写剪贴板和粘贴之间留50ms，让剪贴板传播到位
             break;
-        case WaitingStep::PasteImage:
-            if (!moniCtrlV()) stop();
+        case WaitingStep::PasteImage: {
+            beginQuickSayPressBlock(); // 图片粘贴也走同一套Ctrl+V模拟，必须同样防止自家钩子处理注入按键
+            bool chenggong = moniCtrlV();
+            endQuickSayPressBlock();
+            if (!chenggong) stop();
             else finishAction();
             break;
+        }
         case WaitingStep::ReleasePressBlock:
             if (pressBlockHeld_) {
                 endQuickSayPressBlock();
@@ -2128,6 +2155,16 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
         (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
         (GetAsyncKeyState(VK_RWIN) & 0x8000);
 
+    bool zhiAnzhuoCtrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
+        !(GetAsyncKeyState(VK_SHIFT) & 0x8000) &&
+        !(GetAsyncKeyState(VK_MENU) & 0x8000) &&
+        !(GetAsyncKeyState(VK_LWIN) & 0x8000) &&
+        !(GetAsyncKeyState(VK_RWIN) & 0x8000); // 只按着Ctrl、没同时按Shift、Alt或Win。下面三个“允许按下Ctrl+…”的子选项认的就是这种组合
+
+    bool shiFangxiangJian = vkCode == VK_LEFT || vkCode == VK_RIGHT || vkCode == VK_UP || vkCode == VK_DOWN;
+    if (shiFangxiangJian && config["tudingflag"].toBool() && config["arrow_key_passthrough_when_pinned"].toBool(true) &&
+        !(zhiAnzhuoCtrl && config["arrow_key_ctrl_when_pinned"].toBool(false))) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，按下方向键不切换短语或分组”，那么不拦截方向键，让它传给前台程序；但如果子选项“允许按下Ctrl+方向键切换短语或分组”也开着，而且此刻正按着Ctrl，那还是照常拦下来切换
+
     switch (vkCode) {
     case VK_TAB:
         enterSearchMode();
@@ -2142,7 +2179,8 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
         pchuangkou->close();
         return true;
     case VK_RETURN:
-        if (config["tudingflag"].toBool() && !config["enter_key_input_phrase_when_pinned"].toBool(true)) return false; // 如果钉住了窗口，并且关闭了“钉住窗口时按下回车键输入短语”，那么不拦截回车键，让它传给前台程序
+        if (config["tudingflag"].toBool() && config["enter_key_passthrough_when_pinned"].toBool(true) &&
+            !(zhiAnzhuoCtrl && config["enter_key_ctrl_when_pinned"].toBool(false))) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，按下回车键不输入短语”，那么不拦截回车键，让它传给前台程序；但如果子选项“允许按下Ctrl+回车键输入短语”也开着，而且此刻正按着Ctrl，那还是照常拦下来输入短语
         if (g_liebiao && g_liebiao->currentItem()) {
             shuchu(g_liebiao->currentItem(), pchuangkou);
             return true;
@@ -2177,8 +2215,9 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
     else if (vkCode == '0') targetIndex = 10;
     else if (vkCode >= 'A' && vkCode <= 'Z') targetIndex = vkCode - 'A' + 11;
 
-    if (targetIndex != -1 && !hasSystemModifier) {
-        if (config["tudingflag"].toBool() && !config["badge_key_input_phrase_when_pinned"].toBool(true)) return false; // 如果钉住了窗口，并且关闭了“钉住窗口时按下短语项对应角标输入短语”，那么不拦截角标对应按键，让它传给前台程序
+    bool ctrlJiaobiao = zhiAnzhuoCtrl && config["tudingflag"].toBool() && config["badge_key_passthrough_when_pinned"].toBool(true) && config["badge_key_ctrl_when_pinned"].toBool(false); // 钉住窗口且角标按键放行时，子选项“允许按下Ctrl+角标按键输入短语”开着的话，Ctrl+角标按键就是唯一还能输入短语的走法
+    if (targetIndex != -1 && (!hasSystemModifier || ctrlJiaobiao)) { // 平时角标按键不能带任何修饰键，只有走Ctrl+角标这条路时才允许带着Ctrl
+        if (config["tudingflag"].toBool() && config["badge_key_passthrough_when_pinned"].toBool(true) && !ctrlJiaobiao) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，按下短语项对应角标按键不输入短语”，那么不拦截角标对应按键，让它传给前台程序
         QListWidgetItem *item = visibleItemByBadgeIndex(targetIndex);
         if (item) {
             shuchu(item, pchuangkou);
@@ -3929,6 +3968,21 @@ int main(int argc, char *argv[]) {
     auto jiaGouxuan = [](QGridLayout *gezi, QCheckBox *gouxuan) {
         gezi->addWidget(gouxuan, gezi->rowCount(), 0, 1, 3);
     };
+    // 往分组框里加一行缩进的子复选框，从属于上面那个父复选框：父的不勾选，子的就取消勾选并整行隐藏
+    auto jiaZiGouxuan = [](QGridLayout *gezi, QCheckBox *fuGouxuan, QCheckBox *ziGouxuan) -> QWidget * {
+        QWidget *hang = new QWidget; // 拿个容器把子复选框整体往右推，视觉上表示从属关系。不直接给复选框设margin是为了不碰它的原生外观
+        QHBoxLayout *hangBuju = new QHBoxLayout(hang);
+        hangBuju->setContentsMargins(24, 0, 0, 0); // 【【【注：子选项的缩进量】】】
+        hangBuju->addWidget(ziGouxuan);
+        gezi->addWidget(hang, gezi->rowCount(), 0, 1, 3);
+        QObject::connect(fuGouxuan, &QCheckBox::toggled, hang, [hang, ziGouxuan](bool kai) {
+            if (!kai) ziGouxuan->setChecked(false); // 父选项一关，子选项就跟着取消勾选，免得藏着一个还生效的开关
+            hang->setVisible(kai); // 父选项不勾选时整行藏起来
+        });
+        hang->setVisible(fuGouxuan->isChecked());
+        return hang; // 把这一行还回去。填值时父复选框的信号是屏蔽的，得靠它手动摆正显隐
+    };
+
     // 往分组框里加一行灰色说明文字，横跨整行
     auto jiaShuoming = [](QGridLayout *gezi, const QString &wenzi) {
         QLabel *biaoqian = new QLabel(wenzi);
@@ -3981,10 +4035,19 @@ int main(int argc, char *argv[]) {
     jiaShuoming(zu_gaojishuru, "高级输入里每两个动作之间等待的时间。目标程序反应慢时可以调大一些。");
 
     QGridLayout *zu_jianpan = jianFenzukuang("键盘操作", yemian2Layout);
-    QCheckBox *badgeKeyCheck = new QCheckBox("钉住窗口时，按下短语项对应角标输入短语");
-    jiaGouxuan(zu_jianpan, badgeKeyCheck);
-    QCheckBox *enterKeyCheck = new QCheckBox("钉住窗口时，按下回车键输入短语");
-    jiaGouxuan(zu_jianpan, enterKeyCheck);
+    QCheckBox *badgeKeyPassthroughCheck = new QCheckBox("钉住窗口时，按下短语项对应角标按键不输入短语");
+    jiaGouxuan(zu_jianpan, badgeKeyPassthroughCheck);
+    QCheckBox *badgeKeyCtrlCheck = new QCheckBox("钉住窗口时，允许按下Ctrl+角标按键输入短语");
+    QWidget *badgeKeyCtrlHang = jiaZiGouxuan(zu_jianpan, badgeKeyPassthroughCheck, badgeKeyCtrlCheck);
+    QCheckBox *enterKeyPassthroughCheck = new QCheckBox("钉住窗口时，按下回车键不输入短语");
+    jiaGouxuan(zu_jianpan, enterKeyPassthroughCheck);
+    QCheckBox *enterKeyCtrlCheck = new QCheckBox("钉住窗口时，允许按下Ctrl+回车键输入短语");
+    QWidget *enterKeyCtrlHang = jiaZiGouxuan(zu_jianpan, enterKeyPassthroughCheck, enterKeyCtrlCheck);
+    QCheckBox *arrowKeyPassthroughCheck = new QCheckBox("钉住窗口时，按下方向键不切换短语或分组");
+    jiaGouxuan(zu_jianpan, arrowKeyPassthroughCheck);
+    QCheckBox *arrowKeyCtrlCheck = new QCheckBox("钉住窗口时，允许按下Ctrl+方向键切换短语或分组");
+    QWidget *arrowKeyCtrlHang = jiaZiGouxuan(zu_jianpan, arrowKeyPassthroughCheck, arrowKeyCtrlCheck);
+    jiaShuoming(zu_jianpan, "勾上Ctrl+角标按键那一项后，Ctrl+C、Ctrl+V这类组合键会被QuickSay吃掉，不会再传给前台程序。");
     yemian2Layout->addStretch();
 
     //--------------------页签3：常规设置--------------------
@@ -4087,8 +4150,12 @@ int main(int argc, char *argv[]) {
         if (gundongSpin->value() != config["gundong"].toInt()) return true;
         if (jiaobiaoCheck->isChecked() != config["jiaobiao"].toBool()) return true;
         if (delaySpin->value() != config["delay"].toInt()) return true;
-        if (badgeKeyCheck->isChecked() != config["badge_key_input_phrase_when_pinned"].toBool()) return true;
-        if (enterKeyCheck->isChecked() != config["enter_key_input_phrase_when_pinned"].toBool()) return true;
+        if (badgeKeyPassthroughCheck->isChecked() != config["badge_key_passthrough_when_pinned"].toBool()) return true;
+        if (enterKeyPassthroughCheck->isChecked() != config["enter_key_passthrough_when_pinned"].toBool()) return true;
+        if (arrowKeyPassthroughCheck->isChecked() != config["arrow_key_passthrough_when_pinned"].toBool()) return true;
+        if (badgeKeyCtrlCheck->isChecked() != config["badge_key_ctrl_when_pinned"].toBool()) return true;
+        if (enterKeyCtrlCheck->isChecked() != config["enter_key_ctrl_when_pinned"].toBool()) return true;
+        if (arrowKeyCtrlCheck->isChecked() != config["arrow_key_ctrl_when_pinned"].toBool()) return true;
         if (autostartupCheck->isChecked() != config["ziqidong"].toBool()) return true;
         if (guanliyuanCheck->isChecked() != config["guanliyuan"].toBool()) return true;
         if (gengxinCheck->isChecked() != config["qidong_jiancha_gengxin"].toBool()) return true;
@@ -4097,7 +4164,7 @@ int main(int argc, char *argv[]) {
     auto gengxinYingyongButton = [&]() { yingyongButton->setEnabled(youWeiYingyongXiugai()); }; // 没有修改时“应用”是灰的
 
     // 把config里的设置填回所有控件。打开窗口、点“取消”、关掉窗口时都调它，效果就是丢弃还没应用的修改
-    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, jiaobiaoCheck, delaySpin, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
+    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, jiaobiaoCheck, delaySpin, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
     auto zairuShezhi = [&]() {
         for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(true); // 程序自己填值时不能触发下面那些信号，否则又要跑一遍“有没有修改”的判断
         hotkeyEdit->setKeySequence(QKeySequence(config["hotkey"].toString()));
@@ -4110,8 +4177,15 @@ int main(int argc, char *argv[]) {
         gundongSpin->setValue(config["gundong"].toInt());
         jiaobiaoCheck->setChecked(config["jiaobiao"].toBool());
         delaySpin->setValue(config["delay"].toInt());
-        badgeKeyCheck->setChecked(config["badge_key_input_phrase_when_pinned"].toBool());
-        enterKeyCheck->setChecked(config["enter_key_input_phrase_when_pinned"].toBool());
+        badgeKeyPassthroughCheck->setChecked(config["badge_key_passthrough_when_pinned"].toBool());
+        enterKeyPassthroughCheck->setChecked(config["enter_key_passthrough_when_pinned"].toBool());
+        arrowKeyPassthroughCheck->setChecked(config["arrow_key_passthrough_when_pinned"].toBool());
+        badgeKeyCtrlHang->setVisible(badgeKeyPassthroughCheck->isChecked()); // 上面填父选项时信号是屏蔽的，子选项那三行的显隐不会自己跟上，这里手动摆正
+        enterKeyCtrlHang->setVisible(enterKeyPassthroughCheck->isChecked());
+        arrowKeyCtrlHang->setVisible(arrowKeyPassthroughCheck->isChecked());
+        badgeKeyCtrlCheck->setChecked(config["badge_key_ctrl_when_pinned"].toBool()); // 三个子选项必须在父选项之后填：父选项的toggled会把子选项清空
+        enterKeyCtrlCheck->setChecked(config["enter_key_ctrl_when_pinned"].toBool());
+        arrowKeyCtrlCheck->setChecked(config["arrow_key_ctrl_when_pinned"].toBool());
         autostartupCheck->setChecked(config["ziqidong"].toBool());
         guanliyuanCheck->setChecked(config["guanliyuan"].toBool());
         gengxinCheck->setChecked(config["qidong_jiancha_gengxin"].toBool());
@@ -4122,7 +4196,7 @@ int main(int argc, char *argv[]) {
 
     // 任何一个控件被改动都要重算“应用”按钮的可用状态
     QObject::connect(hotkeyEdit, &QKeySequenceEdit::keySequenceChanged, [&]() { gengxinYingyongButton(); });
-    for (QCheckBox *gouxuan : {zhidingCheck, jiaobiaoCheck, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
+    for (QCheckBox *gouxuan : {zhidingCheck, jiaobiaoCheck, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
         QObject::connect(gouxuan, &QCheckBox::toggled, [&]() { gengxinYingyongButton(); });
     }
     for (QSpinBox *shuzi : {widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, delaySpin}) {
@@ -4170,8 +4244,12 @@ int main(int argc, char *argv[]) {
         config["gundong"] = gundongSpin->value();
         config["jiaobiao"] = jiaobiaoCheck->isChecked();
         config["delay"] = delaySpin->value();
-        config["badge_key_input_phrase_when_pinned"] = badgeKeyCheck->isChecked();
-        config["enter_key_input_phrase_when_pinned"] = enterKeyCheck->isChecked();
+        config["badge_key_passthrough_when_pinned"] = badgeKeyPassthroughCheck->isChecked();
+        config["enter_key_passthrough_when_pinned"] = enterKeyPassthroughCheck->isChecked();
+        config["arrow_key_passthrough_when_pinned"] = arrowKeyPassthroughCheck->isChecked();
+        config["badge_key_ctrl_when_pinned"] = badgeKeyCtrlCheck->isChecked();
+        config["enter_key_ctrl_when_pinned"] = enterKeyCtrlCheck->isChecked();
+        config["arrow_key_ctrl_when_pinned"] = arrowKeyCtrlCheck->isChecked();
         config["qidong_jiancha_gengxin"] = gengxinCheck->isChecked();
         saveConfig(configPath); // 写入程序设置到config.json
 
