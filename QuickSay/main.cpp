@@ -2071,16 +2071,14 @@ void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时�
     if (!g_tabBar) return;
     int index = g_tabBar->currentIndex() + direction;
     if (index < 0 || index >= g_tabBar->count()) return; // 已经是第一个/最后一个分组了，不再继续切换
-    bool qieDaoBianjieFenzu = (index == 0 || index == g_tabBar->count() - 1); // 切到第一个或最后一个分组时不再保持连续切分组标记，让下一次反向按键恢复正常的行内移动
-    g_zuoyouZhiqiehuanFenzu = !qieDaoBianjieFenzu; // 只有切到中间分组才打上标记；之后接着按左右键就是一直翻分组，不会被一行好几条短语拦住
+    g_zuoyouZhiqiehuanFenzu = true; // 切过一次分组就打上标记；之后接着按左右键就是一直翻分组，不会被一行好几条短语拦住。切到第一个/最后一个分组也照样打标记，标记不取消，只是在那两个分组里不生效（见 moveCurrentVisibleItemHorizontal），从边界分组切回中间分组后又能接着连续翻
     static QTimer *qingchuJishi = nullptr; // 停手0.5秒后自动清除上面那个标记，免得隔了半天再按左右键还在翻分组
     if (!qingchuJishi) {
         qingchuJishi = new QTimer(qApp);
         qingchuJishi->setSingleShot(true);
         QObject::connect(qingchuJishi, &QTimer::timeout, [] { g_zuoyouZhiqiehuanFenzu = false; });
     }
-    if (g_zuoyouZhiqiehuanFenzu) qingchuJishi->start(500); // 【【【注：改这个数字就能改“停手多久后标记失效”，单位毫秒】】】每切到中间分组都重新计时
-    else qingchuJishi->stop(); // 已经到第一或最后一个分组就立即取消旧计时，避免边界处还残留连续切换状态
+    qingchuJishi->start(500); // 【【【注：改这个数字就能改“停手多久后标记失效”，单位毫秒】】】每切一次分组都重新计时
     g_tabBar->setCurrentIndex(index); // 切换分组。分组切换的槽函数里会顺手把新分组的第一项选中，这正是往右切要的结果
     if (direction < 0) { // 往左切过来的，改成选中新分组第一行最后一个实际存在的短语，这样光标看起来是从右边接着走的
         QVector<QListWidgetItem *> items = visiblePhraseItems();
@@ -2090,7 +2088,9 @@ void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时�
 }
 
 void moveCurrentVisibleItemHorizontal(int direction) { // 左右方向键：在同一行里左右移动，不跨行；已经在行首/行尾了就切换分组。direction为-1是←、1是→
-    if (g_zuoyouZhiqiehuanFenzu) { // 刚才已经用左右键切过分组了，那就一直切分组，不管这个分组一行有几条短语
+    bool zaiBianjieFenzu = g_tabBar && (g_tabBar->currentIndex() == 0 || g_tabBar->currentIndex() == g_tabBar->count() - 1); // 当前停在第一个或最后一个分组
+    // 停在第一/最后一个分组时标记不生效（但也不清除）：这两个分组只有一边还能翻，另一边翻不动，那就按正常的行内移动来，免得光标卡在分组第一项动不了。等切回中间分组，标记还在，又能接着连续翻分组
+    if (g_zuoyouZhiqiehuanFenzu && !zaiBianjieFenzu) { // 刚才已经用左右键切过分组了，那就一直切分组，不管这个分组一行有几条短语
         switchTabAndSelect(direction);
         return;
     }
