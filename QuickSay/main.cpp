@@ -4031,7 +4031,7 @@ int main(int argc, char *argv[]) {
     xiangmuLianjie->setOpenExternalLinks(true); // 点一下用系统默认浏览器打开
     xiangmuLianjie->setCursor(Qt::PointingHandCursor);
     jiaHang(zu_guanyu, "项目地址", xiangmuLianjie);
-    jiaShuoming(zu_guanyu, "QuickSay 是一个 Windows 上的快捷短语工具：把常用的话存起来，用快捷键或角标一键输入到当前窗口。");
+    jiaShuoming(zu_guanyu, "QuickSay 是一个 Windows 上的快捷短语工具：把常用的话存起来，并在需要时使用 QuickSay 输入。");
 
     QGridLayout *zu_gengxin = jianFenzukuang("更新", yemian4Layout);
     QCheckBox *gengxinCheck = new QCheckBox("启动时检查更新");
