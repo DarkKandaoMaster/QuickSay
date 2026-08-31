@@ -1,4 +1,4 @@
-﻿// 版本：1.8.0
+﻿// 版本：2.0.0
 // 更新内容：
 // 1. 修改分组页面新增“每行短语数”选项。
 // 2. 新增以“管理员权限启动”设置选项。勾选后就能允许QuickSay在任何地方输入。
@@ -90,7 +90,7 @@
 #pragma comment(lib, "user32.lib")
 
 QJsonObject config; // 全局对象，用于保存程序的设置
-static const QString g_quickSayVersion = "1.8.0"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
+static const QString g_quickSayVersion = "2.0.0"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
 static const QString g_backupFormatVersion = "1.0.0"; // 备份格式版本只在文件结构发生不兼容变化时才修改，不能跟着QuickSay版本一起改
 bool g_zhengzaiDaoruChongqi = false; // 导入成功后直到旧进程退出都保持true，挡住旧设置窗口、焦点事件和窗口移动事件再次覆盖刚写入的备份
 
@@ -145,7 +145,7 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
             if (!config.contains("arrow_key_ctrl_when_pinned")) config["arrow_key_ctrl_when_pinned"] = false; // 如果config里没有arrow_key_ctrl_when_pinned，那么默认不允许用Ctrl+方向键切换短语或分组
             config.remove("badge_key_input_phrase_when_pinned"); // 老键名读过一次就清掉，避免正反两套开关同时留在config.json里
             config.remove("enter_key_input_phrase_when_pinned"); // 同上
-            if (!config.contains("guanliyuan")) config["guanliyuan"] = config["ziqidong_guanliyuan"].toBool(false); // 如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（1.8.0以前这两件事是绑在一起的，现在拆成了独立选项）
+            if (!config.contains("guanliyuan")) config["guanliyuan"] = config["ziqidong_guanliyuan"].toBool(false); // 如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（2.0.0以前这两件事是绑在一起的，现在拆成了独立选项）
             if (!config.contains("shezhichuangkou_w")) config["shezhichuangkou_w"] = 620; // 如果config里没有shezhichuangkou_w，那么默认设置窗口外框宽度620（和TrafficMonitor中文设置窗口一致）
             if (!config.contains("shezhichuangkou_h")) config["shezhichuangkou_h"] = 576; // 如果config里没有shezhichuangkou_h，那么默认设置窗口外框高度576
             if (!config.contains("qidong_jiancha_gengxin")) config["qidong_jiancha_gengxin"] = true; // 如果config里没有qidong_jiancha_gengxin，那么默认启动时检查更新
