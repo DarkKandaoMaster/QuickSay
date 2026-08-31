@@ -9,6 +9,7 @@
 // 7. 重新设计设置窗口，新增分页布局以及“确定”“取消”“应用”操作。
 // 8. 重新设计托盘右键菜单。
 // 9. 优化方向键浏览短语时的滚动体验。
+// 10. 新增检查更新功能。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证QuickSay新版本只会比旧版本更好用。
 
 #include <QApplication>
 #include <QWidget>
@@ -82,6 +83,8 @@
 #include <shldisp.h>
 #include <taskschd.h>
 #include <wtsapi32.h>
+#include <winhttp.h>
+#include <thread>
 #pragma comment(lib, "user32.lib")
 
 QJsonObject config; // 全局对象，用于保存程序的设置
@@ -137,6 +140,8 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
             if (!config.contains("guanliyuan")) config["guanliyuan"] = config["ziqidong_guanliyuan"].toBool(false); // 如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（1.8.0以前这两件事是绑在一起的，现在拆成了独立选项）
             if (!config.contains("shezhichuangkou_w")) config["shezhichuangkou_w"] = 620; // 如果config里没有shezhichuangkou_w，那么默认设置窗口外框宽度620（和TrafficMonitor中文设置窗口一致）
             if (!config.contains("shezhichuangkou_h")) config["shezhichuangkou_h"] = 576; // 如果config里没有shezhichuangkou_h，那么默认设置窗口外框高度576
+            if (!config.contains("qidong_jiancha_gengxin")) config["qidong_jiancha_gengxin"] = true; // 如果config里没有qidong_jiancha_gengxin，那么默认启动时检查更新
+            if (!config.contains("hulve_banben")) config["hulve_banben"] = ""; // 如果config里没有hulve_banben，那么默认一个版本都没忽略过
             config.remove("ziqidong_guanliyuan"); // 老键名读过一次就清掉，免得两个键一起留在config.json里让人分不清哪个在起作用
         }
     } else { // 如果config.json不存在
@@ -162,6 +167,8 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["shezhichuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
         config["shezhichuangkou_w"] = 620; // 设置窗口默认外框宽度，和TrafficMonitor中文设置窗口一致
         config["shezhichuangkou_h"] = 576; // 设置窗口默认外框高度
+        config["qidong_jiancha_gengxin"] = true; // 默认启动时检查更新
+        config["hulve_banben"] = ""; // 默认一个版本都没忽略过。用户在更新弹窗上点了“忽略该版本”，这里才会记下那个版本号
         config["tianjiachuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2 + 501; // tianjiachuangkou默认显示位置
         config["tianjiachuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
         config["xiugaichuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2 + 501; // xiugaichuangkou默认显示位置
@@ -3213,6 +3220,150 @@ class MyTabBar : public QTabBar {
     }
 };
 
+//====================检查更新====================
+// 向GitHub Releases API要最新的一个release，拿它的tag_name和本地版本号比大小。
+// 请求用WinHTTP裸写：整个程序就这一处要联网，犯不着为一个GET把Qt Network整个模块拉进来。
+// 请求本身是阻塞的，所以扔到后台线程里跑，结果再抛回主线程弹窗——GitHub偶尔要卡好几秒，绝不能卡住界面
+static const wchar_t *g_gengxinZhuji = L"api.github.com";
+static const wchar_t *g_gengxinLujing = L"/repos/DarkKandaoMaster/QuickSay/releases/latest";
+static const QString g_gengxinFabuYe = "https://github.com/DarkKandaoMaster/QuickSay/releases"; // 检查失败时手上没有具体某个release的地址，一律退回到发布列表页
+bool g_zhengzaiJianchaGengxin = false; // 一次只允许有一个检查在跑：启动后的自动检查和手动点的“立即检查”可能撞在一起
+int g_gengxinShibaiCishu = 0; // 启动后自动检查连续失败了几次。连着失败3次就不再重试
+
+struct GengxinJieguo {
+    bool chenggong = false; // 网络请求和解析都成功才算
+    QString banben; // 最新版本号，比如“1.8.1”
+    QString url; // 那个release的页面地址，更新日志和下载都在这一页上
+};
+
+GengxinJieguo qingqiuZuixinBanben() { // 真的发一次HTTPS GET。整段是同步阻塞的，只能在后台线程里调
+    GengxinJieguo jieguo;
+    HINTERNET huihua = WinHttpOpen(L"QuickSay", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0); // 走系统的自动代理设置，用户挂着代理时也能通
+    if (!huihua) return jieguo;
+    WinHttpSetTimeouts(huihua, 8000, 8000, 8000, 8000); // 连不上时8秒就放弃，别让10秒后的那次重试排到几十秒之后去
+    QByteArray shuju;
+    if (HINTERNET lianjie = WinHttpConnect(huihua, g_gengxinZhuji, INTERNET_DEFAULT_HTTPS_PORT, 0)) {
+        if (HINTERNET qingqiu = WinHttpOpenRequest(lianjie, L"GET", g_gengxinLujing, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)) {
+            const wchar_t *toubu = L"User-Agent: QuickSay\r\nAccept: application/vnd.github+json\r\n"; // GitHub API强制要求带User-Agent，不带直接被403挡回来
+            if (WinHttpSendRequest(qingqiu, toubu, -1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) && WinHttpReceiveResponse(qingqiu, nullptr)) {
+                DWORD zhuangtaima = 0, changdu = sizeof(zhuangtaima);
+                WinHttpQueryHeaders(qingqiu, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &zhuangtaima, &changdu, WINHTTP_NO_HEADER_INDEX);
+                if (zhuangtaima == 200) {
+                    DWORD keduo = 0;
+                    while (WinHttpQueryDataAvailable(qingqiu, &keduo) && keduo > 0) { // 一块一块读，直到读不出东西为止
+                        QByteArray kuai(keduo, 0);
+                        DWORD dudao = 0;
+                        if (!WinHttpReadData(qingqiu, kuai.data(), keduo, &dudao)) break;
+                        shuju.append(kuai.constData(), dudao);
+                        if (shuju.size() > 1024 * 1024) break; // release的JSON最多也就几十KB，超过1MB说明拿到的根本不是想要的东西，别一直读下去
+                    }
+                }
+            }
+            WinHttpCloseHandle(qingqiu);
+        }
+        WinHttpCloseHandle(lianjie);
+    }
+    WinHttpCloseHandle(huihua);
+
+    QJsonDocument wendang = QJsonDocument::fromJson(shuju);
+    if (!wendang.isObject()) return jieguo;
+    QJsonObject dui = wendang.object();
+    // release的标签名不是光秃秃的版本号，历来写成“QuickSay_v1.8.1”这样，所以从里面把第一串数字点分的版本号抠出来
+    QRegularExpressionMatch pipei = QRegularExpression("\\d+(?:\\.\\d+){1,3}").match(dui["tag_name"].toString());
+    if (!pipei.hasMatch()) return jieguo;
+    QString biaoqian = pipei.captured();
+    QString url = dui["html_url"].toString();
+    jieguo.chenggong = true;
+    jieguo.banben = biaoqian;
+    jieguo.url = url.startsWith("https://github.com/") ? url : g_gengxinFabuYe; // 只认GitHub自己的地址，免得响应被人掉包后把用户带去别处
+    return jieguo;
+}
+
+// 更新弹窗：一行说明文字 + 一个“查看更新日志”链接 + 两个按钮。这里一句样式表都不挂，控件全交给Qt原生样式去画，风格和设置窗口一致。
+// zuoAnniuWenzi是左边那个按钮的文字：启动时自动弹出来的写“忽略该版本”，手动点“立即检查”弹出来的写“取消”。
+// 返回值：2=点了“前往下载”，1=点了左边那个按钮，0=直接把窗口关掉了
+int tanchuGengxinChuangkou(const QString &shuoming, const QString &url, const QString &zuoAnniuWenzi) {
+    QDialog duihua;
+    duihua.setWindowTitle("QuickSay");
+    duihua.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg"));
+    duihua.setWindowFlags(duihua.windowFlags() & ~Qt::WindowContextHelpButtonHint); // 去掉标题栏上那个没用的问号按钮
+    QVBoxLayout *waiceng = new QVBoxLayout(&duihua);
+    waiceng->setContentsMargins(16, 16, 16, 14);
+    waiceng->setSpacing(10);
+    waiceng->addWidget(new QLabel(shuoming));
+    QLabel *rizhi = new QLabel(QString("<a href=\"%1\">查看更新日志</a>").arg(url));
+    rizhi->setOpenExternalLinks(true); // 点一下用系统默认浏览器打开
+    rizhi->setCursor(Qt::PointingHandCursor);
+    waiceng->addWidget(rizhi);
+    waiceng->addStretch();
+    QHBoxLayout *anniuHang = new QHBoxLayout;
+    anniuHang->setSpacing(12); // 按钮之间空12像素，和设置窗口底部那三个按钮一样
+    anniuHang->addStretch();
+    QPushButton *zuoAnniu = new QPushButton(zuoAnniuWenzi, &duihua);
+    QPushButton *xiazaiAnniu = new QPushButton("前往下载", &duihua);
+    for (QPushButton *anniu : {zuoAnniu, xiazaiAnniu}) {
+        anniu->setFixedSize(92, 28); // 按钮尺寸也和设置窗口保持一致
+        anniuHang->addWidget(anniu);
+    }
+    waiceng->addLayout(anniuHang);
+    xiazaiAnniu->setDefault(true);
+    QObject::connect(zuoAnniu, &QPushButton::clicked, [&duihua]() { duihua.done(1); });
+    QObject::connect(xiazaiAnniu, &QPushButton::clicked, [&duihua]() { duihua.done(2); });
+    duihua.setFixedSize(300, 148);
+    QRect ping = QGuiApplication::primaryScreen()->geometry();
+    duihua.move(ping.center() - QPoint(duihua.width() / 2, duihua.height() / 2)); // 没有父窗口，Qt不会帮忙居中，自己摆到屏幕中间
+    return duihua.exec();
+}
+
+void jianchaGengxin(bool shoudong); // 处理结果时失败还要再排一次检查，两个函数互相调用，这里先声明一下
+
+void chuliGengxinJieguo(bool shoudong, const GengxinJieguo &jieguo) { // 在主线程里处理后台线程拿回来的结果。shoudong=true表示这次是用户点“立即检查”点出来的
+    g_zhengzaiJianchaGengxin = false;
+    if (shoudong) QApplication::restoreOverrideCursor();
+    if (!jieguo.chenggong) {
+        if (shoudong) { // 手动检查失败要报出来，同时照样给出更新日志和下载入口，让用户能自己去看一眼
+            if (tanchuGengxinChuangkou("检查更新失败，请检查网络连接。", g_gengxinFabuYe, "取消") == 2) QDesktopServices::openUrl(QUrl(g_gengxinFabuYe));
+            return;
+        }
+        if (++g_gengxinShibaiCishu >= 3) return; // 启动后的自动检查一律静默：连着失败3次就彻底放弃，剩下的交给用户自己去点“立即检查”
+        QTimer::singleShot(10000, qApp, []() { jianchaGengxin(false); }); // 10秒后再试一次
+        return;
+    }
+    g_gengxinShibaiCishu = 0;
+    bool kezhi = false; // 两个版本号里只要有一个不是纯数字点分格式，就没法比大小
+    if (compareQuickSayVersions(jieguo.banben, g_quickSayVersion, kezhi) <= 0 || !kezhi) { // 服务器上的版本不比本地新
+        if (shoudong) {
+            QMessageBox tishi;
+            tishi.setWindowTitle("QuickSay");
+            tishi.setWindowIcon(QIcon(QCoreApplication::applicationDirPath() + "/icons/软件图标.svg"));
+            tishi.setIcon(QMessageBox::Information);
+            tishi.setText("当前已经是最新版本。  ");
+            tishi.setStandardButtons(QMessageBox::Ok);
+            tishi.button(QMessageBox::Ok)->setText("确定");
+            tishi.exec();
+        }
+        return;
+    }
+    if (!shoudong && jieguo.banben == config["hulve_banben"].toString()) return; // 这个版本用户已经说过“忽略”了，启动时就别再拿它烦人
+    int xuanle = tanchuGengxinChuangkou(QString("发现新版本 %1").arg(jieguo.banben), jieguo.url, shoudong ? "取消" : "忽略该版本");
+    if (xuanle == 2) {
+        QDesktopServices::openUrl(QUrl(jieguo.url)); // 更新日志和下载都在同一个release页面上
+    } else if (xuanle == 1 && !shoudong) { // 只有“忽略该版本”这个按钮才记忽略，直接把窗口关掉不算——那只是这次不想看
+        config["hulve_banben"] = jieguo.banben;
+        saveConfig(QCoreApplication::applicationDirPath() + "/config.json");
+    }
+}
+
+void jianchaGengxin(bool shoudong) { // 检查更新的唯一入口。启动后的自动检查传false（失败静默重试），设置里点“立即检查”传true（失败要报出来）
+    if (g_zhengzaiJianchaGengxin) return; // 上一次还没跑完，这次就不重复发请求了
+    g_zhengzaiJianchaGengxin = true;
+    if (shoudong) QApplication::setOverrideCursor(Qt::WaitCursor); // 手动检查时给个等待光标，不然点完按钮好几秒没动静，用户会以为按钮坏了
+    std::thread([shoudong]() {
+        GengxinJieguo jieguo = qingqiuZuixinBanben(); // 阻塞的网络请求在这条后台线程里跑
+        QMetaObject::invokeMethod(qApp, [shoudong, jieguo]() { chuliGengxinJieguo(shoudong, jieguo); }, Qt::QueuedConnection); // 弹窗只能在主线程里弹，把结果抛回去
+    }).detach();
+}
+
 //====================设置窗口====================
 // 设置窗口的外观照着TrafficMonitor的设置对话框做：顶部四个页签、每页一块独立的滚动区域、底部固定“确定/取消/应用”。
 // 这份样式表只挂在设置窗口自己身上，而且每条选择器都以 #shezhiChuangkou 开头——ID选择器的优先级比main()里那份全局QSS高，
@@ -3881,6 +4032,14 @@ int main(int argc, char *argv[]) {
     xiangmuLianjie->setCursor(Qt::PointingHandCursor);
     jiaHang(zu_guanyu, "项目地址", xiangmuLianjie);
     jiaShuoming(zu_guanyu, "QuickSay 是一个 Windows 上的快捷短语工具：把常用的话存起来，用快捷键或角标一键输入到当前窗口。");
+
+    QGridLayout *zu_gengxin = jianFenzukuang("更新", yemian4Layout);
+    QCheckBox *gengxinCheck = new QCheckBox("启动时检查更新");
+    jiaGouxuan(zu_gengxin, gengxinCheck);
+    QPushButton *lijiJianchaButton = new QPushButton("立即检查");
+    lijiJianchaButton->setFixedSize(92, 28);
+    zu_gengxin->addWidget(lijiJianchaButton, zu_gengxin->rowCount(), 0, 1, 3, Qt::AlignLeft);
+    QObject::connect(lijiJianchaButton, &QPushButton::clicked, []() { jianchaGengxin(true); });
     yemian4Layout->addStretch();
 
     //--------------------底部固定的三个按钮--------------------
@@ -3913,12 +4072,13 @@ int main(int argc, char *argv[]) {
         if (enterKeyCheck->isChecked() != config["enter_key_input_phrase_when_pinned"].toBool()) return true;
         if (autostartupCheck->isChecked() != config["ziqidong"].toBool()) return true;
         if (guanliyuanCheck->isChecked() != config["guanliyuan"].toBool()) return true;
+        if (gengxinCheck->isChecked() != config["qidong_jiancha_gengxin"].toBool()) return true;
         return false;
     };
     auto gengxinYingyongButton = [&]() { yingyongButton->setEnabled(youWeiYingyongXiugai()); }; // 没有修改时“应用”是灰的
 
     // 把config里的设置填回所有控件。打开窗口、点“取消”、关掉窗口时都调它，效果就是丢弃还没应用的修改
-    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, jiaobiaoCheck, delaySpin, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck};
+    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, jiaobiaoCheck, delaySpin, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
     auto zairuShezhi = [&]() {
         for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(true); // 程序自己填值时不能触发下面那些信号，否则又要跑一遍“有没有修改”的判断
         hotkeyEdit->setKeySequence(QKeySequence(config["hotkey"].toString()));
@@ -3935,6 +4095,7 @@ int main(int argc, char *argv[]) {
         enterKeyCheck->setChecked(config["enter_key_input_phrase_when_pinned"].toBool());
         autostartupCheck->setChecked(config["ziqidong"].toBool());
         guanliyuanCheck->setChecked(config["guanliyuan"].toBool());
+        gengxinCheck->setChecked(config["qidong_jiancha_gengxin"].toBool());
         for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(false);
         gengxinYingyongButton();
     };
@@ -3942,7 +4103,7 @@ int main(int argc, char *argv[]) {
 
     // 任何一个控件被改动都要重算“应用”按钮的可用状态
     QObject::connect(hotkeyEdit, &QKeySequenceEdit::keySequenceChanged, [&]() { gengxinYingyongButton(); });
-    for (QCheckBox *gouxuan : {zhidingCheck, jiaobiaoCheck, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck}) {
+    for (QCheckBox *gouxuan : {zhidingCheck, jiaobiaoCheck, badgeKeyCheck, enterKeyCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
         QObject::connect(gouxuan, &QCheckBox::toggled, [&]() { gengxinYingyongButton(); });
     }
     for (QSpinBox *shuzi : {widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, delaySpin}) {
@@ -3992,6 +4153,7 @@ int main(int argc, char *argv[]) {
         config["delay"] = delaySpin->value();
         config["badge_key_input_phrase_when_pinned"] = badgeKeyCheck->isChecked();
         config["enter_key_input_phrase_when_pinned"] = enterKeyCheck->isChecked();
+        config["qidong_jiancha_gengxin"] = gengxinCheck->isChecked();
         saveConfig(configPath); // 写入程序设置到config.json
 
         liebiao.verticalScrollBar()->setSingleStep(config["gundong"].toInt()); // 滚动速度立刻同步到正在使用的滚动条，不用重启软件才能生效
@@ -4432,6 +4594,9 @@ int main(int argc, char *argv[]) {
         xianshi(chuangkou);
     }
     // 否则就是通过开机自启自动打开的程序，那么什么也不做，就后台运行个托盘
+
+    // 启动后延时检查一次更新。开机自启的那份多等一会儿：开机时Windows还在忙着拉一堆自启动程序，网络也未必已经通了
+    if (config["qidong_jiancha_gengxin"].toBool()) QTimer::singleShot(houtaiQidong ? 10000 : 3000, &a, []() { jianchaGengxin(false); });
 
     return a.exec();
 }
