@@ -10,6 +10,7 @@
 // 8. 重新设计托盘右键菜单。
 // 9. 优化方向键浏览短语时的滚动体验。
 // 10. 新增检查更新功能。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证QuickSay新版本只会比旧版本更好用。
+// 11. 优化短语鼠标悬停提示：正文显示在上方、备注显示在下方，并为备注预留固定显示空间。
 
 #include <QApplication>
 #include <QWidget>
@@ -555,12 +556,10 @@ void applyPhraseListLayout(QListWidget &liebiao, int itemHeight, int columns) { 
     updatePhraseListColumns(liebiao, columns);
 }
 
-QString clampTooltipText(const QString &text) { // 限制鼠标悬停提示的长宽：单行过长则按宽度上限换行（限制宽度），总行数过多则截断并追加省略号（限制高度）
+QString clampTooltipText(const QString &text, int maxLines = 30) { // 限制一段悬停提示的长宽：单行过长则按宽度上限换行，总行数过多则在限定行数内截断并显示省略号
     const int maxCharsPerLine = 50; // 宽度上限：每行最多约50个字符，超出部分自动换到下一行
-    const int maxLines = 30; // 高度上限：最多显示15行，超出则截断
 
     QStringList out;
-    bool truncated = false;
     const QStringList rawLines = text.split('\n');
     for (const QString &raw : rawLines) {
         if (raw.length() <= maxCharsPerLine) {
@@ -570,21 +569,23 @@ QString clampTooltipText(const QString &text) { // 限制鼠标悬停提示的�
                 out << raw.mid(i, maxCharsPerLine);
             }
         }
-        if (out.size() > maxLines) { // 已超过高度上限，截断
-            out = out.mid(0, maxLines);
-            truncated = true;
-            break;
-        }
     }
-    QString result = out.join('\n');
-    if (truncated) result += "\n……"; // 被截断时在末尾追加省略号，提示内容未显示完
-    return result;
+    if (out.size() > maxLines) { // 超过这段文字分到的行数时，最后一行专门用省略号提示内容未显示完
+        out = out.mid(0, maxLines - 1);
+        out << "……";
+    }
+    return out.join('\n');
 }
 
 void updateItemDisplay(QListWidgetItem *it) { // 更新对应短语项的显示，如果对应的备注不是空字符串，那么显示备注；否则显示短语
     QString text = it->data(Qt::UserRole).toString(); // 取出短语
     QString remark = it->data(Qt::UserRole + 1).toString(); // 取出备注
-    it->setToolTip(clampTooltipText(remark.isEmpty() ? text : (remark + "\n────────────────────────\n" + text))); // 为短语项设置鼠标悬停时的提示文字（已限制长宽）。这样用户就可以通过鼠标悬停查看短语了
+    if (remark.isEmpty()) {
+        it->setToolTip(clampTooltipText(text)); // 没有备注时，正文可以独占全部30行
+    } else {
+        QString tooltipText = clampTooltipText(text, 20) + "\n\n────────────────────────\n\n" + clampTooltipText(remark, 7); // 正文最多20行，中间空行和分隔线占3行，给备注固定保留7行
+        it->setToolTip(tooltipText); // 有备注时总高度仍限制在30行以内，避免正文过长把备注完全挤出提示框
+    }
     if (!remark.isEmpty()) { // 如果备注不是空字符串
         it->setText(remark); // 设置显示文本为备注
         it->setForeground(QColor("#2E7D32")); // 设置备注字体颜色：蓝色【【【注：想修改备注字体颜色在这里修改】】】
