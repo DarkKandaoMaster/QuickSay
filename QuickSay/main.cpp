@@ -13,6 +13,7 @@
 // 11. 优化短语鼠标悬停提示：正文显示在上方、备注显示在下方，并为备注预留固定显示空间。
 // 12. 新增了几个钉住窗口时的键盘操作设置。
 // 13. 重新设计主窗口分组，改用分组按钮和悬浮分组面板。同时新增了几个对应设置。
+// 14. 新增批量编辑短语功能，可通过记事本一次修改同一分组下的全部短语正文。
 
 #include <QApplication>
 #include <QWidget>
@@ -75,6 +76,8 @@
 #include <QAbstractItemView>
 #include <QImage>
 #include <QPixmap>
+#include <QProcess>
+#include <QTemporaryDir>
 #include <functional>
 #include <QDialog>
 #include <QDesktopServices>
@@ -99,6 +102,7 @@ static const QString g_backupFormatVersion = "1.0.0"; // 备份格式版本只�
 bool g_zhengzaiDaoruChongqi = false; // 导入成功后直到旧进程退出都保持true，挡住旧设置窗口、焦点事件和窗口移动事件再次覆盖刚写入的备份
 
 bool g_yuanshengCaidanZhankai = false; // 托盘的Windows原生右键菜单弹出期间为true。原生菜单不是Qt的弹出控件，QApplication::activePopupWidget()看不见它，所以要靠这个标志让键盘钩子放行按键
+bool g_zhengzaiPiliangBianjiFenzu = false; // 记事本正在批量编辑某个分组时为true，让主窗口的低级键盘钩子把方向键、回车等按键全部放给记事本
 
 QWidget *pchuangkou = nullptr;
 QWidget *g_shezhichuangkou = nullptr;
@@ -1895,6 +1899,7 @@ void stopQuickSayOutput() { // 锁屏、会话断开、注销、睡眠和休眠�
 }
 
 void startQuickSayOutput(const QString &text) {
+    if (g_zhengzaiPiliangBianjiFenzu) return; // 记事本批量编辑期间绝不能响应短语快捷键，否则会把短语直接粘进正在编辑的临时文件
     if (g_quickSayIsOutputting) return;
 
     QVector<QuickSayOutputAction> actions;
@@ -2188,6 +2193,7 @@ void selectVisibleItemAtEdge(int direction) {
 bool hasQuickSayBlockingWindow() {
     if (g_quickSayPressBlockCount > 0) return true;
     if (g_yuanshengCaidanZhankai) return true; // 托盘的原生右键菜单开着的时候也要放行按键
+    if (g_zhengzaiPiliangBianjiFenzu) return true; // 批量编辑记事本开着时QuickSay仍在后台跑事件循环，必须显式放行键盘，不能把记事本里的方向键、回车、Tab等吃掉
     if (QApplication::activeModalWidget() || QApplication::activePopupWidget()) return true;
     return (g_shezhichuangkou && g_shezhichuangkou->isVisible()) ||
         (g_tianjiachuangkou && g_tianjiachuangkou->isVisible()) ||
@@ -4143,8 +4149,9 @@ int main(int argc, char *argv[]) {
             }
         });
 
-    // 新建/修改/删除分组这三件事，原来是写在分组栏的右键菜单里的。现在分组栏藏起来了，改分组的入口有两个（分组按钮和分组面板），
-    // 所以把这三件事抽成下面三个函数，两个入口都调它们，免得同一段逻辑抄两遍
+    // 新建、修改、批量编辑、删除分组相关内容，原来是写在分组栏的右键菜单里的。现在分组栏藏起来了，入口有两个（分组按钮和分组面板），
+    // 所以把这四件事抽成下面四个函数，两个入口都调它们，免得同一段逻辑抄两遍
+    bool zhengzaiPiliangBianji = false; // 同一时间只允许开一个批量编辑记事本；它是异步进程，状态要一直保留到记事本退出
     auto xinjianFenzu = [&](int weizhi) { // weizhi<0表示加在末尾，否则插到weizhi这个位置上
         QString tabName = "";
         int itemHeight = config["default_item_height"].toInt(); // 取出config里的默认短语项高度，用作弹窗输入框里的默认值
@@ -4189,6 +4196,154 @@ int main(int argc, char *argv[]) {
         shuaxinFenzuAnniu(); // 改的可能就是当前分组，按钮上的分组名得跟着改
         chongjianFenzuMianban();
     };
+    auto piliangBianjiFenzu = [&](int index) {
+        if (index < 0 || index >= tabBar.count()) return;
+        if (zhengzaiPiliangBianji) {
+            QMessageBox::information(&chuangkou, "提示", "已有一个分组正在记事本中编辑，请先保存并关闭该记事本。  ");
+            return;
+        }
+        QString tabName = tabBar.tabText(index); // 从点菜单这一刻起锁住QuickSay主窗口，所以记事本关闭前这个分组不会被改名或删除
+        QString jinggao = "即将在记事本中批量编辑该分组下的全部短语。\n\n"
+            "短语之间会插入带有“请勿修改”字样的分隔线。修改、删除或复制分隔线，或者增删短语，都可能破坏短语项的结构。为保护备注和快捷键，QuickSay检测到短语数量变化时不会应用修改。\n\n"
+            "建议先在设置中导出备份。是否继续？";
+        QMessageBox jinggaoBox(QMessageBox::Warning, "批量编辑短语", jinggao, QMessageBox::NoButton, &chuangkou);
+        QPushButton *jinggaoYes = jinggaoBox.addButton("Yes", QMessageBox::RejectRole); // 交换按钮角色，让Yes显示在右边、No显示在左边
+        QPushButton *jinggaoNo = jinggaoBox.addButton("No", QMessageBox::AcceptRole);
+        jinggaoBox.setDefaultButton(jinggaoYes); // 默认按钮是Yes，回车直接开始批量编辑
+        jinggaoBox.setEscapeButton(jinggaoNo);
+        jinggaoBox.exec();
+        if (jinggaoBox.clickedButton() != jinggaoYes) return;
+
+        QString fengefu = QString("========== QuickSay短语分隔线_%1（请勿修改） ==========").arg(QDateTime::currentMSecsSinceEpoch()); // 每次带一个不同数字，避免短语正文刚好也有同样一行文字而被误拆开
+        QStringList yuanshiDuanluo;
+        for (int i = 0; i < liebiao.count(); i++) {
+            QListWidgetItem *item = liebiao.item(i);
+            if (item->data(Qt::UserRole + 2).toString() == tabName) yuanshiDuanluo.append(item->data(Qt::UserRole).toString()); // 只把短语正文交给记事本；备注和快捷键仍留在原短语项里，按顺序跟随
+        }
+
+        QTemporaryDir *linshiMulu = new QTemporaryDir(QDir::tempPath() + "/QuickSay-editor-XXXXXX"); // 和Pi的Ctrl+G一样，把待编辑内容放进独立临时目录，编辑结束后整个删掉
+        if (!linshiMulu->isValid()) {
+            delete linshiMulu;
+            QMessageBox::warning(&chuangkou, "无法批量编辑", "无法创建临时编辑文件，请稍后重试。  ");
+            return;
+        }
+        QString linshiPath = linshiMulu->filePath("QuickSay批量编辑短语.txt");
+        QFile linshiWenjian(linshiPath);
+        if (!linshiWenjian.open(QIODevice::WriteOnly)) {
+            QString error = linshiWenjian.errorString();
+            delete linshiMulu;
+            QMessageBox::warning(&chuangkou, "无法批量编辑", QString("无法写入临时编辑文件：%1").arg(error));
+            return;
+        }
+        QByteArray wenjianNeirong = QByteArray::fromHex("EFBBBF"); // 写UTF-8 BOM，让Windows 10/11的记事本都能稳定按UTF-8识别中文
+        wenjianNeirong.append(yuanshiDuanluo.join("\n" + fengefu + "\n").toUtf8());
+        if (linshiWenjian.write(wenjianNeirong) != wenjianNeirong.size()) {
+            QString error = linshiWenjian.errorString();
+            linshiWenjian.close();
+            delete linshiMulu;
+            QMessageBox::warning(&chuangkou, "无法批量编辑", QString("无法完整写入临时编辑文件：%1").arg(error));
+            return;
+        }
+        linshiWenjian.close();
+
+        QProcess *jishiben = new QProcess(&a); // 不阻塞Qt事件循环地启动记事本；等进程真正退出后再读取临时文件，行为和Pi的Ctrl+G一致
+        stopQuickSayOutput(); // 如果用户恰好在上一段高级输入还没结束时打开批量编辑，先停掉余下动作，绝不能让它们继续粘进记事本
+        zhengzaiPiliangBianji = true;
+        g_zhengzaiPiliangBianjiFenzu = true;
+        chuangkou.setEnabled(false); // Pi打开外部编辑器时会暂停自己的TUI；这里同样锁住全部QuickSay窗口，防止编辑期间目标分组被改动或从设置里触发重启/退出
+        if (g_shezhichuangkou) g_shezhichuangkou->setEnabled(false);
+        if (g_tianjiachuangkou) g_tianjiachuangkou->setEnabled(false);
+        if (g_xiugaichuangkou) g_xiugaichuangkou->setEnabled(false);
+        fenzuMianban.hide();
+        QObject::connect(jishiben, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            [&, jishiben, linshiMulu, linshiPath, fengefu, tabName](int exitCode, QProcess::ExitStatus exitStatus) {
+                if (jishiben->property("piliangBianjiYijingShoushi").toBool()) return; // 启动失败和正常退出共用这些资源，只允许其中一条路径清理一次
+                jishiben->setProperty("piliangBianjiYijingShoushi", true);
+                zhengzaiPiliangBianji = false;
+                g_zhengzaiPiliangBianjiFenzu = false;
+                chuangkou.setEnabled(true);
+                if (g_shezhichuangkou) g_shezhichuangkou->setEnabled(true);
+                if (g_tianjiachuangkou) g_tianjiachuangkou->setEnabled(true);
+                if (g_xiugaichuangkou) g_xiugaichuangkou->setEnabled(true);
+                if (exitStatus != QProcess::NormalExit || exitCode != 0) {
+                    delete linshiMulu;
+                    jishiben->deleteLater();
+                    QMessageBox::warning(&chuangkou, "批量编辑未完成", "记事本没有正常退出，未修改任何短语。  ");
+                    return;
+                }
+
+                QFile editedFile(linshiPath);
+                if (!editedFile.open(QIODevice::ReadOnly)) {
+                    QString error = editedFile.errorString();
+                    delete linshiMulu;
+                    jishiben->deleteLater();
+                    QMessageBox::warning(&chuangkou, "批量编辑未完成", QString("无法读取编辑后的临时文件：%1").arg(error));
+                    return;
+                }
+                QByteArray editedData = editedFile.readAll();
+                editedFile.close();
+                if (editedData.startsWith(QByteArray::fromHex("EFBBBF"))) editedData.remove(0, 3); // 记事本一般会保留BOM，读回时不能把它混进第一条短语
+                QString editedText = QString::fromUtf8(editedData);
+                editedText.replace("\r\n", "\n"); // 记事本可能把行尾保存成CRLF，统一成QuickSay正文一直使用的LF
+                editedText.replace('\r', '\n');
+                QStringList xinDuanluo;
+                if (!editedText.isEmpty()) xinDuanluo = editedText.split("\n" + fengefu + "\n", Qt::KeepEmptyParts);
+                delete linshiMulu; // 内容已经读回内存，和Pi一样立刻清掉整个临时目录，不在用户的临时文件夹里留下短语正文
+                jishiben->deleteLater();
+
+                for (const QString &duan : xinDuanluo) {
+                    if (duan.isEmpty()) {
+                        QMessageBox::warning(&chuangkou, "短语结构无效", "编辑结果中出现了空短语，可能是分隔线被移动或连续放置。为避免破坏数据，本次修改没有应用。  ");
+                        return;
+                    }
+                }
+
+                QVector<QListWidgetItem *> yuanshiXiangmu;
+                for (int i = 0; i < liebiao.count(); i++) {
+                    QListWidgetItem *item = liebiao.item(i);
+                    if (item->data(Qt::UserRole + 2).toString() == tabName) yuanshiXiangmu.append(item);
+                }
+                if (xinDuanluo.count() != yuanshiXiangmu.count()) {
+                    QMessageBox::warning(&chuangkou, "短语结构已变化", QString("原有 %1 条短语，编辑后识别出 %2 条。可能有分隔线或短语项被增删。\n\n为避免备注和快捷键错位，本次修改没有应用。").arg(yuanshiXiangmu.count()).arg(xinDuanluo.count()));
+                    return;
+                }
+
+                QString queren = QString("记事本已关闭。确定用编辑后的内容替换分组“%1”下的全部 %2 条短语吗？\n\n备注和快捷键会保留，此操作无法撤销。")
+                    .arg(tabName).arg(yuanshiXiangmu.count());
+                QMessageBox querenBox(QMessageBox::Warning, "确认替换短语", queren, QMessageBox::NoButton, &chuangkou);
+                QPushButton *querenYes = querenBox.addButton("Yes", QMessageBox::RejectRole); // 和前一个弹窗一致，让Yes显示在右边、No显示在左边
+                QPushButton *querenNo = querenBox.addButton("No", QMessageBox::AcceptRole);
+                querenBox.setDefaultButton(querenYes); // 默认按钮是Yes，回车直接应用修改
+                querenBox.setEscapeButton(querenNo);
+                querenBox.exec();
+                if (querenBox.clickedButton() != querenYes) return;
+
+                for (int i = 0; i < yuanshiXiangmu.count(); i++) {
+                    yuanshiXiangmu[i]->setData(Qt::UserRole, xinDuanluo[i]); // 只按原顺序替换正文，每一项原有的备注、分组和快捷键都保持不变
+                    updateItemDisplay(yuanshiXiangmu[i]);
+                }
+                saveListToJson(liebiao, dataPath);
+                rebuildItemHotkeys(liebiao, itemHotkeys, &a); // 正文虽然不影响快捷键注册，但整个重建一次能继续保持itemHotkeys与列表行号一一对应的硬约定
+                filterListByTab(liebiao, tabBar.tabText(tabBar.currentIndex()), search.text()); // 替换后重新过滤并生成角标，当前显示的可能是被编辑分组，也可能是另一个分组
+            });
+
+        jishiben->start("notepad.exe", QStringList() << QDir::toNativeSeparators(linshiPath)); // finished必须在start之前连好，避免记事本秒退时漏掉退出信号、让主窗口永久锁死
+        if (!jishiben->waitForStarted(3000)) {
+            if (jishiben->property("piliangBianjiYijingShoushi").toBool()) return; // 极端情况下进程已经秒退，finished回调已经完成了清理，这里不能再删一次
+            jishiben->setProperty("piliangBianjiYijingShoushi", true);
+            QString error = jishiben->errorString();
+            zhengzaiPiliangBianji = false;
+            g_zhengzaiPiliangBianjiFenzu = false;
+            chuangkou.setEnabled(true);
+            if (g_shezhichuangkou) g_shezhichuangkou->setEnabled(true);
+            if (g_tianjiachuangkou) g_tianjiachuangkou->setEnabled(true);
+            if (g_xiugaichuangkou) g_xiugaichuangkou->setEnabled(true);
+            jishiben->deleteLater();
+            delete linshiMulu;
+            QMessageBox::warning(&chuangkou, "无法批量编辑", QString("无法启动记事本：%1").arg(error));
+            return;
+        }
+    };
     auto shanchuFenzu = [&](int index) {
         if (tabBar.count() <= 1) {
             QMessageBox::warning(&chuangkou, "提示", "至少需要保留一个分组  ");
@@ -4212,7 +4367,7 @@ int main(int argc, char *argv[]) {
     };
 
     fenzuAnniu.setContextMenuPolicy(Qt::CustomContextMenu); // 为分组按钮设置自定义右键菜单
-    // 右键分组按钮：和右键分组面板里的分组一样是三项菜单。按钮上显示的就是当前分组，所以修改/删除就作用在当前分组上
+    // 右键分组按钮：和右键分组面板里的分组一样是四项菜单。按钮上显示的就是当前分组，所以修改、批量编辑、删除都作用在当前分组上
     QObject::connect(&fenzuAnniu, &QWidget::customContextMenuRequested,
         [&](const QPoint &pos) {
             int index = tabBar.currentIndex(); // 按钮上没有“点到哪一项”这回事，作用对象固定是当前分组
@@ -4220,19 +4375,24 @@ int main(int argc, char *argv[]) {
             menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
             QAction tianjia("新建分组", &menu2);
             QAction xiugai("修改分组", &menu2);
+            QAction piliangBianji("批量编辑短语", &menu2);
             QAction shanchu("删除分组", &menu2);
-            if (index >= 0) menu2.addAction(&xiugai); // 一个分组都没选中的时候修改/删除这两项没有作用对象，就不放上去了
-            menu2.addAction(&tianjia); // 菜单顺序固定是：修改分组、新建分组、删除分组
+            if (index >= 0) {
+                menu2.addAction(&xiugai);
+                menu2.addAction(&piliangBianji); // 按需求紧挨着放在“修改分组”的下面
+            }
+            menu2.addAction(&tianjia); // 菜单顺序固定是：修改分组、批量编辑短语、新建分组、删除分组
             if (index >= 0) menu2.addAction(&shanchu);
             QAction *selectedAction = menu2.exec(fenzuAnniu.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
             if (selectedAction == &tianjia) xinjianFenzu(-1); // 加在所有分组的末尾
             else if (selectedAction == &xiugai) xiugaiFenzu(index);
+            else if (selectedAction == &piliangBianji) piliangBianjiFenzu(index);
             else if (selectedAction == &shanchu) shanchuFenzu(index);
             jianchaYincangFenzuMianban(); // 菜单弹出来的时候分组面板可能正开着，菜单关掉后鼠标早就不在上面了，立刻判断一次该不该收起面板
         });
 
     fenzuMianban.setContextMenuPolicy(Qt::CustomContextMenu); // 为分组面板设置自定义右键菜单
-    // 右键分组面板：点到某个分组就是三项菜单，点到空白处就只有新建分组。接替原来右键分组栏的那两个菜单
+    // 右键分组面板：点到某个分组就是四项菜单，点到空白处就只有新建分组。接替原来右键分组栏的那两个菜单
     QObject::connect(&fenzuMianban, &QWidget::customContextMenuRequested,
         [&](const QPoint &pos) {
             QListWidgetItem *dianzhongde = fenzuMianban.itemAt(pos); // 根据点击位置取出该位置处的分组（如果点到空白区域则返回nullptr）
@@ -4241,13 +4401,18 @@ int main(int argc, char *argv[]) {
             menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
             QAction tianjia(index < 0 ? "新建分组" : "在当前分组后新建分组", &menu2);
             QAction xiugai("修改分组", &menu2);
+            QAction piliangBianji("批量编辑短语", &menu2);
             QAction shanchu("删除分组", &menu2);
-            if (index >= 0) menu2.addAction(&xiugai); // 点到空白区域时修改/删除这两项没有作用对象，就不放上去了
-            menu2.addAction(&tianjia); // 菜单顺序固定是：修改分组、在当前分组后新建分组、删除分组
+            if (index >= 0) {
+                menu2.addAction(&xiugai);
+                menu2.addAction(&piliangBianji); // 按需求紧挨着放在“修改分组”的下面
+            }
+            menu2.addAction(&tianjia); // 菜单顺序固定是：修改分组、批量编辑短语、在当前分组后新建分组、删除分组
             if (index >= 0) menu2.addAction(&shanchu);
             QAction *selectedAction = menu2.exec(fenzuMianban.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
             if (selectedAction == &tianjia) xinjianFenzu(index < 0 ? -1 : index + 1);
             else if (selectedAction == &xiugai) xiugaiFenzu(index);
+            else if (selectedAction == &piliangBianji) piliangBianjiFenzu(index);
             else if (selectedAction == &shanchu) shanchuFenzu(index);
             jianchaYincangFenzuMianban(); // 菜单关掉了，鼠标这时候可能早就不在面板上了，立刻判断一次该不该收起面板
         });
@@ -4404,6 +4569,7 @@ int main(int argc, char *argv[]) {
     // 设置按下全局快捷键后会怎样
     QObject::connect(hotkey, &QHotkey::activated,
         [&]() {
+            if (g_zhengzaiPiliangBianjiFenzu) return; // 外部记事本开着时QuickSay处于锁定状态，呼出快捷键不能把禁用的主窗口盖到记事本上面
             // 按下呼出快捷键时的切换逻辑：
             // 窗口没显示 → 显示并拉到最前；
             // 窗口已显示且开启了“主窗口始终置顶”（此时必然在最前） → 关闭窗口到托盘（相当于按下Esc）；
@@ -5008,6 +5174,7 @@ int main(int argc, char *argv[]) {
     // 左键单击：把主窗口叫出来。右键单击：弹出Windows原生右键菜单——不用QMenu，所以菜单是系统自己画的，外观和TrafficMonitor一致，也完全不受QuickSay全局QSS影响
     QObject::connect(trayIcon, &QSystemTrayIcon::activated,
         [&](QSystemTrayIcon::ActivationReason reason) { // reason变量可以用来接收托盘被激活的具体原因
+            if (g_zhengzaiPiliangBianjiFenzu) return; // 记事本开着时暂停托盘入口，尤其不能让用户退出QuickSay后留下含短语正文的临时文件
             if (reason == QSystemTrayIcon::Trigger) { // 如果具体原因是鼠标左键单击
                 chuangkou.move(config["chuangkou_x"].toInt(), config["chuangkou_y"].toInt());
                 xianshi(chuangkou);
