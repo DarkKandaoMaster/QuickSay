@@ -121,6 +121,17 @@ D:\Programs\DevEnvironments\Qt\6.5.3\mingw_64\bin\windeployqt.exe --no-translati
 
 钩子里加新按键处理时注意 `hasQuickSayBlockingWindow()`：设置/添加/修改窗口或弹出菜单打开时必须放行按键。
 
+### 翻组惯性
+
+**「翻组惯性」是左右方向键连续切分组那套机制的名字**，作者提到这个词就是指 `g_zuoyouZhiqiehuanFenzu` 这个全局标记及其相关逻辑（`switchTabAndSelect`、`moveCurrentVisibleItemHorizontal`、键盘钩子里按上下键清标记那几处）。
+
+- 用左右方向键切过一次分组后置位标记，期间左右键一律翻分组，不再在行内移动短语。
+- 停手后自动清除，默认时长为 1.5 秒，可在设置窗口“主窗口设置-分组”里调整（`config["fenzu_yanshi"]`，同时也是鼠标移开后收起分组面板的延时）。
+- 按上下方向键立刻清除。
+- 停在第一个或最后一个分组时惯性**挂起但不清除**——那两个分组只有一边翻得动，直接按正常的行内移动来；切回中间分组时标记还在，能接着连续翻。
+
+叫「惯性」是因为它由动作触发、自己会衰减、被反向动作打断。
+
 ### 开机自启 / 以管理员权限启动
 
 config 里两个开关**互相独立**：`ziqidong`（开机自启动）、`guanliyuan`（以管理员权限启动）。老版本的 `ziqidong_guanliyuan` 在 `loadConfig` 里迁移成 `guanliyuan` 后删掉。

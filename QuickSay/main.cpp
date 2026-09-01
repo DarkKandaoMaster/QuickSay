@@ -12,6 +12,7 @@
 // 10. 新增检查更新功能。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证QuickSay新版本只会比旧版本更好用。
 // 11. 优化短语鼠标悬停提示：正文显示在上方、备注显示在下方，并为备注预留固定显示空间。
 // 12. 新增了几个钉住窗口时的键盘操作设置。
+// 13. 重新设计主窗口分组，改用分组按钮和悬浮分组面板。同时新增了几个对应设置。
 
 #include <QApplication>
 #include <QWidget>
@@ -60,6 +61,9 @@
 #include <QPainter>
 #include <QStylePainter>
 #include <QStyleOptionTab>
+#include <QVariantAnimation>
+#include <QFontMetrics>
+#include <QCursor>
 #include <QScrollBar>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -113,6 +117,26 @@ QuickSayOutputRunner *g_quickSayOutputRunner = nullptr; // 当前正在执行高
 bool g_searchMode = false;
 HWND g_lastForegroundBeforeSearch = nullptr;
 
+// ====================分组按钮和分组面板====================
+// 主窗口左上角不再摆一整条分组栏，只留一个“箭头+当前分组名”的按钮；鼠标一移上去，主窗口左边就贴出一个竖着列所有分组的小窗口。
+// QTabBar并没有被删掉，只是hide()了：分组名、每个分组的tabData（短语项高度/每行短语数）、分组顺序、落盘、切换分组的槽函数全都还挂在它身上。
+// 下面这些东西只是它的另一副皮——所有切换分组的动作，最后都落到g_tabBar->setCurrentIndex()上
+class FenzuAnniu;
+class FenzuMianban;
+const int g_fenzuAnniuZuidaKuandu = 150; // 【【【注：改这个数字就能改左上角分组按钮最宽能有多宽】】】主窗口窄的时候按钮会比这个更窄，见adjustAllWindows。和下面分组面板那边没有关系，两个各宽各的
+const int g_fenzuXiangKuandu = 150; // 【【【注：改这个数字就能改分组面板里每个分组有多宽】】】面板自己多宽是拿这个数加上边框内边距算出来的，见xianshiFenzuMianban
+FenzuAnniu *g_fenzuAnniu = nullptr; // 主窗口左上角那个显示当前分组名的按钮
+FenzuMianban *g_fenzuMianban = nullptr; // 贴在主窗口左边的分组面板，它是一个独立的顶层窗口
+bool g_fenzuMianbanXuanting = false; // 鼠标此刻是不是停在按钮或者面板上。由悬停轮询计时器每120毫秒算一次
+bool g_fenzuPaixuZhong = false; // 正在面板里拖动分组改顺序：这期间不许重建面板列表，否则拖到一半列表被整个换掉
+void xianshiFenzuMianban(); // 弹出分组面板（顺带重建列表内容、重新定位、把箭头转过去）
+void yincangFenzuMianban(); // 收起分组面板（顺带把箭头转回来）
+void jianchaYincangFenzuMianban(); // 判断现在该不该收起面板：鼠标还悬着、或者翻组惯性还没过，都不收
+void chongjianFenzuMianban(); // 按g_tabBar重建面板里的分组列表
+void gundongFenzuMianban(); // 把面板里当前分组标成选中，并按安全区规则滚动面板
+void shuaxinFenzuAnniu(); // 把按钮上的文字刷成当前分组名
+void yingyongFenzuChangxian(); // 让面板跟上“始终显示分组面板”这个开关
+
 void saveConfig(const QString &configPath) { // 写入程序设置到config.json
     if (g_zhengzaiDaoruChongqi) return; // 导入后的旧全局config已经过期，重启结束前绝不能再拿它覆盖刚导入的config.json
     QJsonDocument doc(config); // 把全局对象config转换成JSON文档
@@ -148,6 +172,9 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
             if (!config.contains("guanliyuan")) config["guanliyuan"] = config["ziqidong_guanliyuan"].toBool(false); // 如果config里没有guanliyuan，那么沿用老版本里“以管理员权限开机自启”的值（2.0.0以前这两件事是绑在一起的，现在拆成了独立选项）
             if (!config.contains("shezhichuangkou_w")) config["shezhichuangkou_w"] = 620; // 如果config里没有shezhichuangkou_w，那么默认设置窗口外框宽度620（和TrafficMonitor中文设置窗口一致）
             if (!config.contains("shezhichuangkou_h")) config["shezhichuangkou_h"] = 576; // 如果config里没有shezhichuangkou_h，那么默认设置窗口外框高度576
+            if (!config.contains("fenzu_yanshi")) config["fenzu_yanshi"] = 1500; // 如果config里没有fenzu_yanshi，那么默认停手1500毫秒后收起分组面板、同时取消翻组惯性
+            if (!config.contains("fenzu_changxian")) config["fenzu_changxian"] = false; // 如果config里没有fenzu_changxian，那么默认不始终显示分组面板，还是鼠标移上去才弹出
+            if (!config.contains("anquanqu_hangshu")) config["anquanqu_hangshu"] = 1; // 如果config里没有anquanqu_hangshu，那么默认方向键浏览时上下各留出1行的安全区
             if (!config.contains("qidong_jiancha_gengxin")) config["qidong_jiancha_gengxin"] = true; // 如果config里没有qidong_jiancha_gengxin，那么默认启动时检查更新
             if (!config.contains("hulve_banben")) config["hulve_banben"] = ""; // 如果config里没有hulve_banben，那么默认一个版本都没忽略过
             config.remove("ziqidong_guanliyuan"); // 老键名读过一次就清掉，免得两个键一起留在config.json里让人分不清哪个在起作用
@@ -157,12 +184,15 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["zhiding"] = true; // 默认主窗口始终置顶
         // config["clipboard"]=true;//默认输入时也将短语复制到剪贴板
         config["delay"] = 200; // 默认高级输入间隔200毫秒
-        config["width"] = 500; // 默认主窗口宽度
+        config["width"] = 360; // 默认主窗口宽度
         config["height"] = 500; // 默认主窗口高度
         config["default_item_height"] = 40; // 默认短语项高度40
         config["phrase_item_padding_horizontal"] = 16; // 默认短语项左右内边距16
         config["phrase_item_padding_vertical"] = 12; // 默认短语项上下内边距12
         config["gundong"] = 10; // 默认滚动条滚动速度10
+        config["fenzu_yanshi"] = 1500; // 默认停手1500毫秒后收起分组面板、同时取消翻组惯性
+        config["fenzu_changxian"] = false; // 默认不始终显示分组面板，还是鼠标移上去才弹出
+        config["anquanqu_hangshu"] = 1; // 默认方向键浏览时上下各留出1行的安全区
         config["jiaobiao"] = false; // 默认角标放在右上角
         config["badge_key_passthrough_when_pinned"] = true; // 默认钉住窗口时按下短语项对应角标按键不输入短语，而是把按键传给前台程序
         config["enter_key_passthrough_when_pinned"] = true; // 默认钉住窗口时按下回车键不输入短语，而是把按键传给前台程序
@@ -173,7 +203,7 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["ziqidong"] = true; // 默认开机自启动
         config["guanliyuan"] = false; // 默认不以管理员权限启动
         config["tudingflag"] = true; // 默认钉住窗口
-        config["chuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2; // chuangkou默认显示位置 //获取屏幕的宽高，然后 (屏幕宽度-窗口宽度)/2 ，于是就获得了能让窗口在x轴上居中显示的位置
+        config["chuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 360) / 2; // chuangkou默认显示位置 //获取屏幕的宽高，然后 (屏幕宽度-窗口宽度)/2 ，于是就获得了能让窗口在x轴上居中显示的位置
         config["chuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
         config["shezhichuangkou_x"] = (QGuiApplication::primaryScreen()->geometry().width() - 500) / 2 + 501; // shezhichuangkou默认显示位置。加上501是为了不让它和主窗口重叠
         config["shezhichuangkou_y"] = (QGuiApplication::primaryScreen()->geometry().height() - 500) / 2;
@@ -941,6 +971,9 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     if (!settings.contains("badge_key_ctrl_when_pinned")) settings["badge_key_ctrl_when_pinned"] = false; // 旧版备份里没有这三个Ctrl子开关，同样按新版默认值补齐后再校验
     if (!settings.contains("enter_key_ctrl_when_pinned")) settings["enter_key_ctrl_when_pinned"] = false; // 同上
     if (!settings.contains("arrow_key_ctrl_when_pinned")) settings["arrow_key_ctrl_when_pinned"] = false; // 同上
+    if (!settings.contains("fenzu_changxian")) settings["fenzu_changxian"] = false; // 旧版备份里没有“始终显示分组面板”，按新版默认值补齐后再校验
+    if (!settings.contains("fenzu_yanshi")) settings["fenzu_yanshi"] = 1500; // 旧版备份里没有面板收起延时和翻组惯性时长，按新版默认的1500毫秒补齐
+    if (!settings.contains("anquanqu_hangshu")) settings["anquanqu_hangshu"] = 1; // 旧版备份里没有方向键浏览安全区行数，按新版默认的上下各1行补齐
     auto integerInRange = [&](const char *key, int minimum, int maximum) -> bool {
         QJsonValue value = settings.value(key);
         if (!value.isDouble()) return false;
@@ -950,7 +983,7 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     auto booleanField = [&](const char *key) -> bool {
         return settings.value(key).isBool();
     };
-    const char *boolKeys[] = {"zhiding", "jiaobiao", "badge_key_passthrough_when_pinned", "enter_key_passthrough_when_pinned", "arrow_key_passthrough_when_pinned", "badge_key_ctrl_when_pinned", "enter_key_ctrl_when_pinned", "arrow_key_ctrl_when_pinned", "ziqidong", "guanliyuan", "tudingflag"};
+    const char *boolKeys[] = {"zhiding", "jiaobiao", "badge_key_passthrough_when_pinned", "enter_key_passthrough_when_pinned", "arrow_key_passthrough_when_pinned", "badge_key_ctrl_when_pinned", "enter_key_ctrl_when_pinned", "arrow_key_ctrl_when_pinned", "ziqidong", "guanliyuan", "tudingflag", "fenzu_changxian"};
     for (const char *key : boolKeys) {
         if (!booleanField(key)) {
             error = QString("设置字段 %1 无效").arg(key);
@@ -960,7 +993,8 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     if (!settings.value("hotkey").isString() || settings.value("hotkey").toString().isEmpty() || settings.value("hotkey").toString().size() > 128 ||
         !integerInRange("width", 250, 2000) || !integerInRange("height", 250, 2000) ||
         !integerInRange("default_item_height", 10, 100) || !integerInRange("phrase_item_padding_horizontal", 0, 100) ||
-        !integerInRange("phrase_item_padding_vertical", 0, 100) || !integerInRange("gundong", 1, 100) || !integerInRange("delay", 0, 2000)) {
+        !integerInRange("phrase_item_padding_vertical", 0, 100) || !integerInRange("gundong", 1, 100) || !integerInRange("delay", 0, 2000) ||
+        !integerInRange("fenzu_yanshi", 0, 5000) || !integerInRange("anquanqu_hangshu", 0, 10)) {
         error = "备份中的基础设置无效";
         return false;
     }
@@ -1941,7 +1975,7 @@ void startQuickSayKeyboardHook();
 void enterSearchMode() {
     if (!pchuangkou || !g_search) return;
 
-    g_searchMode = true;
+    g_searchMode = true; // 搜索期间仍允许悬停或常显分组面板；点面板切分组后，搜索文字继续用来过滤新分组
     g_lastForegroundBeforeSearch = GetForegroundWindow();
     stopQuickSayKeyboardHook();
     setMainWindowNoActivateEnabled(false);
@@ -1966,6 +2000,7 @@ void leaveSearchMode(bool restorePreviousFocus = true) {
         SetForegroundWindow(g_lastForegroundBeforeSearch);
     }
     g_lastForegroundBeforeSearch = nullptr;
+    yingyongFenzuChangxian(); // 搜索期间面板也允许使用；退出时再按常显开关兜底同步一次，避免主窗口状态变化后面板没有摆回来
 }
 
 QListWidgetItem *visibleItemByBadgeIndex(int targetIndex) {
@@ -2008,26 +2043,25 @@ void selectVisibleItemAt(int index) { // 选中第index个可见短语项，并�
     g_liebiao->scrollToItem(items[index], QAbstractItemView::PositionAtCenter);
 }
 
-void selectVisibleItemWithScrollSafeArea(int index, int direction) { // 上下方向键专用：选中短语后只在越过上下安全区时滚动，不再每次都强制居中。direction为-1是↑、1是↓
-    QVector<QListWidgetItem *> items = visiblePhraseItems();
-    if (!g_liebiao || index < 0 || index >= items.size()) return;
-
-    QListWidgetItem *item = items[index];
-    QScrollBar *scrollBar = g_liebiao->verticalScrollBar();
+// 方向键浏览的安全区规则：选中item，然后只在它越过上下安全区时才滚动列表，不再每次都强制居中。direction为-1是往上、1是往下。
+// 主窗口短语列表用上下方向键浏览短语、分组面板用左右方向键翻分组，两边共用这一个函数，行为完全一致
+void anAnquanquXuanzhong(QListWidget *liebiao, QListWidgetItem *item, int direction) {
+    if (!liebiao || !item) return;
+    QScrollBar *scrollBar = liebiao->verticalScrollBar();
     int oldScrollValue = scrollBar->value(); // setCurrentItem在某些Qt样式下可能会顺手滚动；先记住像素位置，确保后面完全按安全区规则决定滚不滚
-    g_liebiao->setCurrentItem(item);
+    liebiao->setCurrentItem(item);
     if (scrollBar->value() != oldScrollValue) scrollBar->setValue(oldScrollValue);
 
-    QRect itemRect = g_liebiao->visualItemRect(item); // 直接使用选中项在viewport里的实际像素矩形，多列时同一行各项的top/bottom相同，因此安全区天然按“行”计算
+    QRect itemRect = liebiao->visualItemRect(item); // 直接使用选中项在viewport里的实际像素矩形，多列时同一行各项的top/bottom相同，因此安全区天然按“行”计算
     int itemHeight = itemRect.height();
-    int viewportHeight = g_liebiao->viewport()->height();
+    int viewportHeight = liebiao->viewport()->height();
     if (!itemRect.isValid() || itemHeight <= 0 || viewportHeight <= 0) { // 窗口布局尚未完成时拿不到有效矩形，至少保证选中项能显示出来
-        g_liebiao->scrollToItem(item, QAbstractItemView::EnsureVisible);
+        liebiao->scrollToItem(item, QAbstractItemView::EnsureVisible);
         return;
     }
 
     int visibleRows = viewportHeight / itemHeight; // 只按完整可视行计算，窗口过矮时不会把上下安全区硬挤到一起
-    int safeRows = qMin(1, qMax(0, (visibleRows - 1) / 2)); // 正常上下各留1行；可视行数不足时同时缩小，至少给选中项自身留出一行【【【方向键安全区在这里调整】】】
+    int safeRows = qMin(config["anquanqu_hangshu"].toInt(1), qMax(0, (visibleRows - 1) / 2)); // 上下各留出设置里那么多行；可视行数不足时同时缩小，至少给选中项自身留出一行。行数在设置窗口“主窗口设置-滚动”里改
     int safeTop = safeRows * itemHeight; // 选中项顶部允许到达的最上边界（viewport像素坐标）
     int safeBottom = viewportHeight - safeRows * itemHeight; // 选中项底部允许到达的最下边界；这里用右开坐标，便于和QRect的bottom()+1比较
     int newScrollValue = oldScrollValue;
@@ -2047,7 +2081,16 @@ void selectVisibleItemWithScrollSafeArea(int index, int direction) { // 上下�
     if (newScrollValue != oldScrollValue) scrollBar->setValue(newScrollValue);
 }
 
+void selectVisibleItemWithScrollSafeArea(int index, int direction) { // 上下方向键专用：选中第index个可见短语项，滚不滚由上面那套安全区规则说了算。direction为-1是↑、1是↓
+    QVector<QListWidgetItem *> items = visiblePhraseItems();
+    if (!g_liebiao || index < 0 || index >= items.size()) return;
+    anAnquanquXuanzhong(g_liebiao, items[index], direction);
+}
+
+void qingchuFanzuGuanxing(); // 上下浏览的所有入口都通过moveCurrentVisibleItem统一清除翻组惯性
+
 void moveCurrentVisibleItem(int direction) { // 上下方向键：在同一列里上下移动。direction为-1是↑、1是↓
+    qingchuFanzuGuanxing(); // 不管按键来自低级键盘钩子还是搜索模式里的Qt事件，上下浏览都要立刻清除翻组惯性
     QVector<QListWidgetItem *> items = visiblePhraseItems();
     if (items.isEmpty()) return; // 空分组，不选中短语
     int k = currentVisibleIndex(items);
@@ -2067,19 +2110,25 @@ void moveCurrentVisibleItem(int direction) { // 上下方向键：在同一列�
 
 bool g_zuoyouZhiqiehuanFenzu = false; // 左右方向键已经切过一次分组的标记：置位后左右键一律切分组，不再在行内移动短语；按上下键清除
 
+void qingchuFanzuGuanxing() { // 清除上面那个标记。翻组惯性一没，分组面板就该立刻收起来（除非鼠标还悬在上面）。清标记的地方有好几处，所以收口成这一个函数
+    g_zuoyouZhiqiehuanFenzu = false;
+    jianchaYincangFenzuMianban();
+}
+
 void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时切换分组。direction为-1是切到上一个分组、1是切到下一个分组
     if (!g_tabBar) return;
     int index = g_tabBar->currentIndex() + direction;
     if (index < 0 || index >= g_tabBar->count()) return; // 已经是第一个/最后一个分组了，不再继续切换
     g_zuoyouZhiqiehuanFenzu = true; // 切过一次分组就打上标记；之后接着按左右键就是一直翻分组，不会被一行好几条短语拦住。切到第一个/最后一个分组也照样打标记，标记不取消，只是在那两个分组里不生效（见 moveCurrentVisibleItemHorizontal），从边界分组切回中间分组后又能接着连续翻
-    static QTimer *qingchuJishi = nullptr; // 停手0.5秒后自动清除上面那个标记，免得隔了半天再按左右键还在翻分组
+    static QTimer *qingchuJishi = nullptr; // 停手一会儿后自动清除上面那个标记，免得隔了半天再按左右键还在翻分组。停多久由设置里的fenzu_yanshi决定，和鼠标移开后收起面板用的是同一个时长
     if (!qingchuJishi) {
         qingchuJishi = new QTimer(qApp);
         qingchuJishi->setSingleShot(true);
-        QObject::connect(qingchuJishi, &QTimer::timeout, [] { g_zuoyouZhiqiehuanFenzu = false; });
+        QObject::connect(qingchuJishi, &QTimer::timeout, [] { qingchuFanzuGuanxing(); });
     }
-    qingchuJishi->start(500); // 【【【注：改这个数字就能改“停手多久后标记失效”，单位毫秒】】】每切一次分组都重新计时
+    qingchuJishi->start(config["fenzu_yanshi"].toInt(1500)); // 每切一次分组都重新计时。时长在设置窗口“主窗口设置-分组”里改
     g_tabBar->setCurrentIndex(index); // 切换分组。分组切换的槽函数里会顺手把新分组的第一项选中，这正是往右切要的结果
+    xianshiFenzuMianban(); // 用左右键翻组的同时把分组面板弹出来，让用户看见自己翻到哪儿了。惯性标记一失效，面板就会立刻收回去
     if (direction < 0) { // 往左切过来的，改成选中新分组第一行最后一个实际存在的短语，这样光标看起来是从右边接着走的
         QVector<QListWidgetItem *> items = visiblePhraseItems();
         if (items.isEmpty()) return; // 空分组，不选中短语
@@ -2163,7 +2212,7 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
 
     bool shiFangxiangJian = vkCode == VK_LEFT || vkCode == VK_RIGHT || vkCode == VK_UP || vkCode == VK_DOWN;
     if (shiFangxiangJian && config["tudingflag"].toBool() && config["arrow_key_passthrough_when_pinned"].toBool(true) &&
-        !(zhiAnzhuoCtrl && config["arrow_key_ctrl_when_pinned"].toBool(false))) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，按下方向键不切换短语或分组”，那么不拦截方向键，让它传给前台程序；但如果子选项“允许按下Ctrl+方向键切换短语或分组”也开着，而且此刻正按着Ctrl，那还是照常拦下来切换
+        !(zhiAnzhuoCtrl && config["arrow_key_ctrl_when_pinned"].toBool(false))) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，不允许按下方向键切换短语或分组”，那么不拦截方向键，让它传给前台程序；但如果子选项“允许按下Ctrl+方向键切换短语或分组”也开着，而且此刻正按着Ctrl，那还是照常拦下来切换
 
     switch (vkCode) {
     case VK_TAB:
@@ -2180,7 +2229,7 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
         return true;
     case VK_RETURN:
         if (config["tudingflag"].toBool() && config["enter_key_passthrough_when_pinned"].toBool(true) &&
-            !(zhiAnzhuoCtrl && config["enter_key_ctrl_when_pinned"].toBool(false))) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，按下回车键不输入短语”，那么不拦截回车键，让它传给前台程序；但如果子选项“允许按下Ctrl+回车键输入短语”也开着，而且此刻正按着Ctrl，那还是照常拦下来输入短语
+            !(zhiAnzhuoCtrl && config["enter_key_ctrl_when_pinned"].toBool(false))) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，不允许按下回车键输入短语”，那么不拦截回车键，让它传给前台程序；但如果子选项“允许按下Ctrl+回车键输入短语”也开着，而且此刻正按着Ctrl，那还是照常拦下来输入短语
         if (g_liebiao && g_liebiao->currentItem()) {
             shuchu(g_liebiao->currentItem(), pchuangkou);
             return true;
@@ -2193,12 +2242,10 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
         moveCurrentVisibleItemHorizontal(1);
         return true;
     case VK_UP:
-        g_zuoyouZhiqiehuanFenzu = false; // 按了上下键，清除“左右键只切分组”的标记，左右键恢复成正常的行内移动
-        moveCurrentVisibleItem(-1);
+        moveCurrentVisibleItem(-1); // 上下浏览会在函数入口统一清除“左右键只切分组”的标记，分组面板也跟着收起来
         return true;
     case VK_DOWN:
-        g_zuoyouZhiqiehuanFenzu = false; // 同上
-        moveCurrentVisibleItem(1);
+        moveCurrentVisibleItem(1); // 同上
         return true;
     case VK_HOME:
         selectVisibleItemAtEdge(1);
@@ -2217,7 +2264,7 @@ bool handleQuickSayBrowseKey(DWORD vkCode) {
 
     bool ctrlJiaobiao = zhiAnzhuoCtrl && config["tudingflag"].toBool() && config["badge_key_passthrough_when_pinned"].toBool(true) && config["badge_key_ctrl_when_pinned"].toBool(false); // 钉住窗口且角标按键放行时，子选项“允许按下Ctrl+角标按键输入短语”开着的话，Ctrl+角标按键就是唯一还能输入短语的走法
     if (targetIndex != -1 && (!hasSystemModifier || ctrlJiaobiao)) { // 平时角标按键不能带任何修饰键，只有走Ctrl+角标这条路时才允许带着Ctrl
-        if (config["tudingflag"].toBool() && config["badge_key_passthrough_when_pinned"].toBool(true) && !ctrlJiaobiao) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，按下短语项对应角标按键不输入短语”，那么不拦截角标对应按键，让它传给前台程序
+        if (config["tudingflag"].toBool() && config["badge_key_passthrough_when_pinned"].toBool(true) && !ctrlJiaobiao) return false; // 如果钉住了窗口，并且开启了“钉住窗口时，不允许按下短语项对应角标按键输入短语”，那么不拦截角标对应按键，让它传给前台程序
         QListWidgetItem *item = visibleItemByBadgeIndex(targetIndex);
         if (item) {
             shuchu(item, pchuangkou);
@@ -2251,6 +2298,7 @@ void showMainWindowNoActivate(QWidget &chuang) {
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     HWND insertAfter = config["zhiding"].toBool() ? HWND_TOPMOST : HWND_TOP;
     SetWindowPos(hwnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (config["fenzu_changxian"].toBool(false)) xianshiFenzuMianban(); // 主窗口已经显示但被别的程序盖住时，呼出动作不会再触发Show事件；常显面板是独立顶层窗口，必须在这里一起提升层级
     startQuickSayKeyboardHook();
 }
 
@@ -2437,6 +2485,21 @@ static const char *g_quanjuQss = R"(
     QListWidget::item:selected:hover{
         background-color: #cce7ff;                  /*鼠标选中且悬停，短语项背景：浅蓝色*/
         border-color: #106ebe;                      /*鼠标选中且悬停，短语项边框：更深的蓝色*/
+    }
+    /*====================分组按钮样式（主窗口左上角那个“箭头+当前分组名”的按钮）====================*/
+    /*颜色整套照抄下面QTabBar::tab的普通状态（不是:selected），要的就是一个不抢眼的普通分组的样子*/
+    QPushButton#fenzuAnniu{
+        background-color: #ffffff;                  /*按钮背景：纯白色*/
+        border: 1px solid #e5e5e5;                  /*按钮边框：1像素浅灰色*/
+        border-radius: 4px;                         /*按钮圆角*/
+        color: #323130;                             /*按钮字体颜色：深灰色。左边那个箭头也是这个颜色，见FenzuAnniu::paintEvent*/
+        text-align: left;                           /*分组名靠左排*/
+        padding: 0px 2px 0px 20px;                  /*按钮内边距：左边20像素是留给箭头的*//*【【【注：改左边这个20要连着改FenzuAnniu::paintEvent里那个11】】】*/
+        outline: none;                              /*用于去掉焦点时的虚线边框*/
+    }
+    QPushButton#fenzuAnniu:hover{
+        background-color: #f9f9f9;                  /*鼠标悬停背景：白色*/
+        border-color: #d1d1d1;                      /*悬停边框：浅灰色。字体颜色不跟着变，箭头也不变*/
     }
     /*====================分组栏样式====================*/
     QTabBar{
@@ -2825,7 +2888,7 @@ void showAdvancedInputHelp(QWidget &parent) {
 }
 
 void adjustAllWindows(int w, int h, // 根据设置里的宽高调整主窗口；其他窗口始终使用默认的500*500
-    QWidget &chuangkou, QListWidget &liebiao, QTabBar &tabBar, QLineEdit &search, QPushButton &shezhi, QPushButton &tianjia, QPushButton &tuding, // 主窗口
+    QWidget &chuangkou, QListWidget &liebiao, QPushButton &fenzuAnniu, QLineEdit &search, QPushButton &shezhi, QPushButton &tianjia, QPushButton &tuding, // 主窗口
     QWidget &tianjiachuangkou, QPlainTextEdit &tianjiakuang, QPushButton &tianjia_gaojishuru, QLabel &tianjia_beizhuwenben, QPlainTextEdit &tianjia_beizhukuang, QLabel &tianjia_kjjwenben, QKeySequenceEdit &tianjia_kjjkuang, QPushButton &tianjia_kjjqingkong, QPushButton &tianjiaquxiao, QPushButton &tianjiaqueding, // 添加窗口
     QWidget &xiugaichuangkou, QPlainTextEdit &xiugaikuang, QPushButton &xiugai_gaojishuru, QLabel &xiugai_beizhuwenben, QPlainTextEdit &xiugai_beizhukuang, QLabel &xiugai_kjjwenben, QKeySequenceEdit &xiugai_kjjkuang, QPushButton &xiugai_kjjqingkong, QPushButton &xiugaiquxiao, QPushButton &xiugaiqueding // 修改窗口
 ) {
@@ -2833,8 +2896,9 @@ void adjustAllWindows(int w, int h, // 根据设置里的宽高调整主窗口�
     chuangkou.setFixedSize(w, h);
     liebiao.move(0, 46);
     liebiao.setFixedSize(w, h - 40); // 500*460 //把liebiao最下面的6个像素放到窗口外，隐藏起来。这样平行滚动条就不会不好看了
-    tabBar.move(5, 5);
-    tabBar.setFixedSize(w - 230, 40); // 270*40
+    fenzuAnniu.move(5, 5);
+    fenzuAnniu.setFixedSize(qMin(g_fenzuAnniuZuidaKuandu, w - 220), 36); // 高度和右边那三个图标按钮一样是36，看着才齐。宽度以g_fenzuAnniuZuidaKuandu为上限，主窗口一窄就跟着缩：w-230是刨掉左边5像素留白、右上角搜索框加三个图标按钮占掉的205、以及和搜索框之间10像素间距之后剩下的地方
+    shuaxinFenzuAnniu(); // 按钮宽度定下来了，重新按这个宽度把分组名截断一次
     search.move(w - 205, 7); // 295,7
     search.setFixedSize(90, 35);
     shezhi.move(w - 41, 5); // 459,5
@@ -2945,6 +3009,14 @@ class MyEventFilter : public QObject {
     bool eventFilter(QObject *obj, QEvent *event) override {
         if (obj == chuangkou && event->type() == QEvent::Hide) { // 主窗口关闭到托盘时，一并隐藏可能还在显示的鼠标悬停提示
             QToolTip::hideText();
+        }
+        if (obj == chuangkou && (event->type() == QEvent::Hide || event->type() == QEvent::Move)) {
+            // 分组面板是贴着主窗口外沿的独立窗口，主窗口一收起来或者被拖走，它不能自己留在原地
+            if (config["fenzu_changxian"].toBool(false) && event->type() == QEvent::Move && chuangkou->isVisible()) xianshiFenzuMianban(); // 开着常显时不能一拖窗口面板就没了，得跟着挪到新位置
+            else yincangFenzuMianban();
+        }
+        if (obj == chuangkou && event->type() == QEvent::Show) {
+            QTimer::singleShot(0, [] { yingyongFenzuChangxian(); }); // 主窗口刚显示出来，位置大小还没定下来，等事件循环转一圈再摆面板
         }
         if (obj == search && event->type() == QEvent::FocusOut && g_searchMode) {
             QTimer::singleShot(0, []() {
@@ -3262,21 +3334,238 @@ class BadgeDelegate : public QStyledItemDelegate { // 自定义一个委托类�
     }
 };
 
-// 为tabBar单独自定义一个继承自QTabBar的子类，同时重写wheelEvent()实现滚动鼠标滚轮可以切换分组
-class MyTabBar : public QTabBar {
+// ====================分组按钮和分组面板====================
+void gundongQiehuanFenzu(QWheelEvent *event) { // 滚轮切分组：向上滚切到上一个分组，向下滚切到下一个分组。分组按钮和分组面板上滚都是这一套
+    if (!g_tabBar) return;
+    int delta = event->angleDelta().y(); // 获取鼠标滚轮的y方向角度增量。正值为向上滚，负值为向下滚
+    if (delta > 0) {
+        g_tabBar->setCurrentIndex(qMax(0, g_tabBar->currentIndex() - 1)); // 设置选中分组为 当前选中分组上面的那个分组
+    } else if (delta < 0) {
+        g_tabBar->setCurrentIndex(qMin(g_tabBar->count() - 1, g_tabBar->currentIndex() + 1)); // 设置选中分组为 当前选中分组下面的那个分组
+    }
+    gundongFenzuMianban(); // 滚轮翻组和左右方向键翻组共用同一套安全区规则：翻到离面板上下边缘还剩几个分组时，面板才开始滚动。这里自己再滚一次，不指望分组切换的槽函数——那边只在面板已经显示、而且面板行数和分组栏对得上时才滚
+}
+
+// 主窗口左上角那个“箭头+当前分组名”的按钮。鼠标一移上去就在主窗口左边弹出分组面板，同时箭头顺时针转90度，转完尖端朝左，正好指着弹出来的面板
+class FenzuAnniu : public QPushButton {
   public:
-    using QTabBar::QTabBar; // 直接继承QTabBar构造函数
+    explicit FenzuAnniu(QWidget *parent) : QPushButton(parent) {
+        setObjectName("fenzuAnniu"); // 背景、边框、文字全靠g_quanjuQss里这个ID选择器画，这里只额外补一个箭头
+        setFocusPolicy(Qt::NoFocus); // 主窗口本来就不抢焦点，这个按钮更不该去要焦点
+        setCursor(Qt::PointingHandCursor);
+        donghua_ = new QVariantAnimation(this);
+        donghua_->setDuration(150); // 【【【注：改这个数字就能改箭头转过去要花多久，单位毫秒】】】
+        QObject::connect(donghua_, &QVariantAnimation::valueChanged, this,
+            [this](const QVariant &zhi) {
+                jiaodu_ = zhi.toReal();
+                update(); // 每帧只重画这个按钮，一个十几像素的小三角形，转多少次都不用担心性能
+            });
+    }
+    void zhuandao(qreal mubiao) { // 让箭头转到指定角度：0度朝下（面板收着），90度朝左（面板弹出来了）
+        if (qFuzzyCompare(jiaodu_ + 1.0, mubiao + 1.0)) return; // 加1.0是因为qFuzzyCompare比不了0
+        donghua_->stop();
+        donghua_->setStartValue(jiaodu_);
+        donghua_->setEndValue(mubiao);
+        donghua_->start();
+    }
+
   protected:
+    void enterEvent(QEnterEvent *event) override {
+        xianshiFenzuMianban(); // 鼠标一移上来就弹面板。收起来则不靠leaveEvent，见qidongXuantingLunxun里的注释
+        QPushButton::enterEvent(event);
+    }
     void wheelEvent(QWheelEvent *event) override {
-        int delta = event->angleDelta().y(); // 获取鼠标滚轮的y方向角度增量。正值为向上滚，负值为向下滚
-        if (delta > 0) {
-            setCurrentIndex(qMax(0, currentIndex() - 1)); // 设置选中分组为 当前选中分组左边的那个分组
-        } else if (delta < 0) {
-            setCurrentIndex(qMin(count() - 1, currentIndex() + 1)); // 设置选中分组为 当前选中分组右边的那个分组
-        }
+        gundongQiehuanFenzu(event);
         event->accept(); // 标记事件已处理，防止继续传递
     }
+    void paintEvent(QPaintEvent *event) override {
+        QPushButton::paintEvent(event); // 背景、边框、文字交给样式表画完，再在左边补上箭头
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.translate(11, height() / 2.0); // 【【【注：改这个11就能左右挪箭头，要跟样式表里#fenzuAnniu的padding-left对得上】】】
+        painter.rotate(jiaodu_); // Qt里正角度就是顺时针转
+        QPen bi(QColor("#323130")); // 箭头颜色，和样式表里#fenzuAnniu的字体颜色保持一致。鼠标悬停也不变色
+        bi.setWidthF(1.0); // 【【【注：改这个数字就能改箭头的粗细】】】
+        bi.setCapStyle(Qt::RoundCap); // 两端和拐角都磨圆，不然放大看是两个方茬口
+        bi.setJoinStyle(Qt::RoundJoin);
+        painter.setPen(bi);
+        painter.setBrush(Qt::NoBrush); // 只描线，不填充：要的是一个倒着的^，不是实心三角
+        QPolygonF jiantouXian;
+        jiantouXian << QPointF(-5, -2.5) << QPointF(0, 2.5) << QPointF(5, -2.5); // 默认是个倒着的^（朝下），顺时针转90度之后开口朝右、尖端朝左。【【【注：这三个点整体等比放大缩小就能改箭头大小】】】
+        painter.drawPolyline(jiantouXian);
+    }
+
+  private:
+    QVariantAnimation *donghua_ = nullptr; // 箭头旋转动画
+    qreal jiaodu_ = 0; // 箭头当前转到了多少度
 };
+
+// 贴在主窗口左边的分组面板。它是一个独立的顶层窗口，而且必须是普通窗口，绝不能是弹出窗口（Qt::Popup）：
+// 一旦是弹出窗口，hasQuickSayBlockingWindow()就会返回true，键盘钩子整个放行，方向键、角标键、Esc就全都不管用了
+class FenzuMianban : public QListWidget {
+  public:
+    FenzuMianban() : QListWidget(nullptr) {
+        setWindowFlags(Qt::Tool | Qt::FramelessWindowHint); // Qt::Tool是为了不在任务栏里多出一个窗口
+        setAttribute(Qt::WA_ShowWithoutActivating, true); // 弹出来时不抢焦点。和主窗口一个道理：抢了焦点，点一下分组前台程序就丢了焦点，短语再也粘不进去了
+        setFocusPolicy(Qt::NoFocus);
+        setObjectName("fenzuMianban");
+        setStyleSheet(QString(g_quanjuQss) + R"(
+            QListWidget#fenzuMianban{
+                border-radius: 0px;                     /*无边框的顶层窗口画不出圆角，四个角会露出桌面，所以这里改回直角*/
+                border: none;                           /*面板不画边框*/
+                padding: 0px;                           /*面板不留内边距。分组四周的留白全靠分组自己那2像素外边距*/
+            }
+            /*下面两条把面板里分组的字体颜色补成原来分组栏里分组的样子。背景、边框、圆角、外边距前面那份全局的QListWidget::item已经和QTabBar::tab一模一样了，不用再写一遍*/
+            QListWidget#fenzuMianban::item{
+                color: #323130;                         /*分组字体颜色：深灰色*/
+            }
+            QListWidget#fenzuMianban::item:selected{
+                color: #005a9e;                         /*选中分组字体颜色：深蓝色*/
+            }
+        )"); // 它没有父对象，样式表得自己挂上；ID选择器压过前面那份全局的QListWidget样式
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setVerticalScrollMode(QAbstractItemView::ScrollPerPixel); // 安全区滚动按像素计算滚动距离，所以这里也必须使用像素级滚动，不能把几十像素误当成几十个分组
+        setTextElideMode(Qt::ElideRight); // 分组名太长就在末尾省略
+        setDragDropMode(QAbstractItemView::InternalMove); // 在面板里上下拖动分组就能改分组顺序，接替原来在分组栏上左右拖动分组的那套
+        setDefaultDropAction(Qt::MoveAction);
+    }
+
+  protected:
+    void wheelEvent(QWheelEvent *event) override {
+        gundongQiehuanFenzu(event); // 面板上滚轮也是切分组，不是滚列表。分组多到一屏放不下时，面板按安全区规则跟着滚，和左右方向键翻组一模一样
+        event->accept();
+    }
+};
+
+void shuaxinFenzuAnniu() { // 把按钮上的文字刷成当前分组名
+    if (!g_fenzuAnniu || !g_tabBar) return;
+    QString mingzi = g_tabBar->currentIndex() >= 0 ? g_tabBar->tabText(g_tabBar->currentIndex()) : QString();
+    int keyongKuandu = g_fenzuAnniu->width() - 24; // 减掉的是左边箭头和右边留白占掉的宽度（对应样式表里那个padding：左20右2）
+    if (keyongKuandu <= 0) { // 按钮宽度还没定下来（adjustAllWindows还没跑），先原样放上去，等adjustAllWindows里再截一次
+        g_fenzuAnniu->setText(mingzi);
+        return;
+    }
+    g_fenzuAnniu->setText(QFontMetrics(g_fenzuAnniu->font()).elidedText(mingzi, Qt::ElideRight, keyongKuandu));
+}
+
+void gundongFenzuMianban() { // 把面板里当前分组标成选中，并且按安全区规则滚动面板：翻到离面板上下边缘还剩几个分组时才滚动，和短语列表用上下方向键浏览是同一套规则
+    if (!g_fenzuMianban || !g_tabBar) return;
+    int hang = g_tabBar->currentIndex();
+    if (hang < 0 || hang >= g_fenzuMianban->count()) return;
+    int fangxiang = (hang >= g_fenzuMianban->currentRow()) ? 1 : -1; // 往后翻组当成↓、往前翻组当成↑。面板刚重建过时currentRow是-1，按↓算
+    anAnquanquXuanzhong(g_fenzuMianban, g_fenzuMianban->item(hang), fangxiang);
+}
+
+void chongjianFenzuMianban() { // 按g_tabBar重建面板里的分组列表。分组顺序、名称一律以tabBar为准，面板只是照着它画一遍
+    if (!g_fenzuMianban || !g_tabBar) return;
+    if (g_fenzuPaixuZhong) return; // 用户正拖着分组改顺序，这时候把列表整个换掉会把拖动打断
+    bool yiyang = g_fenzuMianban->count() == g_tabBar->count(); // 先看看列表内容是不是压根就没变
+    for (int i = 0; yiyang && i < g_tabBar->count(); i++) {
+        if (g_fenzuMianban->item(i)->text() != g_tabBar->tabText(i)) yiyang = false;
+    }
+    if (!yiyang) { // 内容真的变了才重建。重建会delete掉列表里所有的QListWidgetItem，能不删就不删——用左右键连着翻组时这个函数每翻一次就要走一遍
+        g_fenzuMianban->clear();
+        for (int i = 0; i < g_tabBar->count(); i++) {
+            QListWidgetItem *xiang = new QListWidgetItem(g_tabBar->tabText(i), g_fenzuMianban);
+            xiang->setTextAlignment(Qt::AlignCenter);
+            xiang->setSizeHint(QSize(0, 40)); // 【【【注：改这个数字就能改面板里每个分组有多高】】】40是照着原来的分组栏来的：分组栏高40，分组上下各让出2像素外边距，分组本身就是36高
+        }
+    }
+    gundongFenzuMianban();
+}
+
+QTimer *g_xuantingLunxun = nullptr; // 面板显示期间每隔一小会儿查一次鼠标在不在按钮或面板上
+QTimer *g_fenzuYincangJishi = nullptr; // 鼠标移开后延时收起面板的计时器
+
+void qidongXuantingLunxun() { // 启动上面那两个计时器。面板一显示就开始转，一收起来就停
+    if (!g_fenzuYincangJishi) {
+        g_fenzuYincangJishi = new QTimer(qApp);
+        g_fenzuYincangJishi->setSingleShot(true);
+        QObject::connect(g_fenzuYincangJishi, &QTimer::timeout, [] { jianchaYincangFenzuMianban(); });
+    }
+    if (!g_xuantingLunxun) {
+        g_xuantingLunxun = new QTimer(qApp);
+        g_xuantingLunxun->setInterval(120); // 【【【注：改这个数字就能改多久查一次鼠标位置，单位毫秒】】】
+        QObject::connect(g_xuantingLunxun, &QTimer::timeout, [] {
+            // 为什么用轮询光标坐标，而不用enterEvent/leaveEvent：按钮和面板是两个不同的顶层窗口，面板里面还套着列表自己的视口，
+            // 鼠标从按钮挪到面板这一路要跨窗口、跨子控件，Enter/Leave事件根本对不齐（进子控件就会给父控件发Leave）。
+            // 直接拿光标坐标去比两个矩形，最省事也最准，代价不过是面板显示期间每120毫秒做两次矩形判断
+            QPoint guangbiao = QCursor::pos();
+            bool zaiAnniuShang = g_fenzuAnniu && g_fenzuAnniu->isVisible() &&
+                QRect(g_fenzuAnniu->mapToGlobal(QPoint(0, 0)), g_fenzuAnniu->size()).contains(guangbiao);
+            bool zaiMianbanShang = g_fenzuMianban && g_fenzuMianban->isVisible() &&
+                g_fenzuMianban->frameGeometry().contains(guangbiao);
+            g_fenzuMianbanXuanting = zaiAnniuShang || zaiMianbanShang;
+            if (g_fenzuMianbanXuanting) {
+                g_fenzuYincangJishi->stop(); // 鼠标又回来了，把收起面板的计时取消掉
+            } else if (!g_fenzuYincangJishi->isActive()) {
+                g_fenzuYincangJishi->start(config["fenzu_yanshi"].toInt(1500)); // 鼠标移开多久后收起面板，在设置窗口“主窗口设置-分组”里改。和翻组惯性用的是同一个时长
+            }
+        });
+    }
+    g_fenzuMianbanXuanting = true; // 面板刚弹出来，先当成鼠标就在上面，免得还没轮询到就被收走。下一次轮询会立刻纠正过来
+    g_fenzuYincangJishi->stop();
+    g_xuantingLunxun->start();
+}
+
+void xianshiFenzuMianban() { // 弹出分组面板
+    if (!g_fenzuMianban || !g_fenzuAnniu || !g_tabBar || !pchuangkou) return;
+    if (!pchuangkou->isVisible()) return; // 主窗口都不在了，别自己弹一条出来
+    chongjianFenzuMianban();
+
+    const int kuandu = g_fenzuXiangKuandu + 4; // 面板宽度是从分组宽度倒推出来的：面板没有内边距也没有边框，只剩分组左右外边距2*2，一共4。分组多到要出竖直滚动条时，分组会被那条8像素宽的滚动条挤窄8像素
+    const int gaodu = pchuangkou->height() * 2 / 3; // 【【【注：改这里的2/3就能改分组面板有多高】】】高度是定死的，分组再少也不缩、再多也不长，装不下的部分在面板里滚动
+    g_fenzuMianban->setFixedSize(kuandu, gaodu);
+
+    QRect zhukuang = pchuangkou->frameGeometry(); // 用带边框的几何，这样面板才是真正贴着主窗口的外沿
+    int x = zhukuang.left() - kuandu;
+    int y = g_fenzuAnniu->mapToGlobal(QPoint(0, 0)).y() - 2; // 面板顶端比分组按钮再高2像素，这样看着才和按钮齐平
+    QScreen *pingmu = QGuiApplication::screenAt(zhukuang.center());
+    if (!pingmu) pingmu = QGuiApplication::primaryScreen();
+    if (pingmu) {
+        QRect keyong = pingmu->availableGeometry();
+        if (x < keyong.left()) x = zhukuang.right() + 1; // 主窗口已经贴着屏幕左边了，左边放不下，那就退到主窗口右边去
+        y = qBound(keyong.top(), y, qMax(keyong.top(), keyong.bottom() - gaodu)); // 别让面板下半截跑到屏幕外面去
+    }
+    g_fenzuMianban->move(x, y);
+
+    if (!g_fenzuMianban->isVisible()) g_fenzuMianban->show();
+    HWND hwnd = (HWND)g_fenzuMianban->winId();
+    LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_NOACTIVATE); // 和主窗口一样：能点，但点了不抢前台
+    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    HWND insertAfter = config["zhiding"].toBool() ? HWND_TOPMOST : (HWND)pchuangkou->winId(); // 主窗口置顶时面板也置顶；没置顶就把面板插在主窗口正上面一层，跟着主窗口一起沉浮
+    SetWindowPos(hwnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
+    gundongFenzuMianban(); // 面板显示出来、尺寸也定下来之后再滚一次：面板藏着的时候量不到视口高度，安全区算不出来
+    g_fenzuAnniu->zhuandao(90); // 箭头顺时针转90度，转完尖端朝左，正好指着弹出来的面板
+    if (!config["fenzu_changxian"].toBool(false)) qidongXuantingLunxun(); // 常显时面板反正不会收，就别再每120毫秒去查一次鼠标在哪了
+}
+
+void yingyongFenzuChangxian() { // 让面板跟上“始终显示分组面板”这个开关。开着就把面板摆出来，关掉就交回给悬停那套逻辑去收
+    if (config["fenzu_changxian"].toBool(false)) {
+        if (!g_searchMode && pchuangkou && pchuangkou->isVisible()) xianshiFenzuMianban();
+    } else {
+        jianchaYincangFenzuMianban();
+    }
+}
+
+void yincangFenzuMianban() { // 收起分组面板
+    if (!g_fenzuMianban) return;
+    if (g_xuantingLunxun) g_xuantingLunxun->stop();
+    if (g_fenzuYincangJishi) g_fenzuYincangJishi->stop();
+    g_fenzuMianbanXuanting = false;
+    g_fenzuMianban->hide();
+    if (g_fenzuAnniu) g_fenzuAnniu->zhuandao(0); // 箭头转回朝下
+}
+
+void jianchaYincangFenzuMianban() { // 判断现在该不该收起面板。面板该不该显示，就看这两条：鼠标悬在上面，或者翻组惯性还没过，有一条成立就留着
+    if (!g_fenzuMianban || !g_fenzuMianban->isVisible()) return;
+    if (config["fenzu_changxian"].toBool(false)) return; // 开着“始终显示分组面板”就一直摆着，鼠标移不移开都不收
+    if (g_fenzuMianbanXuanting || g_zuoyouZhiqiehuanFenzu) return;
+    if (QApplication::activePopupWidget() || QApplication::mouseButtons() != Qt::NoButton) return; // 右键菜单开着、或者正按着鼠标在面板里拖分组，这时候收起来就是打断用户。轮询发现计时器停了会重新计时，过会儿再判断
+    yincangFenzuMianban();
+}
 
 //====================检查更新====================
 // 向GitHub Releases API要最新的一个release，拿它的tag_name和本地版本号比大小。
@@ -3764,17 +4053,37 @@ int main(int argc, char *argv[]) {
             }
             shuchu(item, &chuangkou);
         });
-    // 分组栏
-    MyTabBar tabBar(&chuangkou);
+    // 分组栏。它不再显示出来，只当分组数据的存放处和切换分组的总入口：分组名、每个分组的tabData、分组顺序、落盘、切换分组的槽函数全在它身上，
+    // 露在外面的是下面那个分组按钮和分组面板，它们所有切分组的动作最后都落到tabBar.setCurrentIndex()上
+    QTabBar tabBar(&chuangkou);
     g_tabBar = &tabBar;
+    tabBar.hide();
     QString tabPath = QCoreApplication::applicationDirPath() + "/tab.json"; // 定义tab.json文件路径
     loadTabFromJson(tabBar, tabPath); // 程序启动时调用loadTabFromJson函数
     saveTabToJson(tabBar, tabPath); // 然后调用saveTabToJson函数，兼容旧版本
-    tabBar.setExpanding(false); // 始终根据分组内容长度来确定分组宽度，而不是在短语较少时根据分组栏宽度强制拉伸分组宽度
-    tabBar.setUsesScrollButtons(false); // 不显示左右按钮
-    tabBar.setDrawBase(false); // 不绘制基座
-    tabBar.setMovable(true); // 允许通过拖动改变分组顺序
     liebiao.viewport()->installEventFilter(new PhraseListResizeFilter(&liebiao, &tabBar, &liebiao)); // 列表可视区宽度一变就重算网格每格宽度，保证一行正好放得下设定的短语数。装在这里是因为它要用到tabBar，得等tabBar建好
+    // 分组按钮和分组面板
+    FenzuAnniu fenzuAnniu(&chuangkou);
+    g_fenzuAnniu = &fenzuAnniu;
+    FenzuMianban fenzuMianban;
+    g_fenzuMianban = &fenzuMianban;
+    shuaxinFenzuAnniu(); // 先把当前分组名放上去，等adjustAllWindows定下按钮宽度后还会再刷一次
+    // 点面板里的某个分组就切到那个分组
+    QObject::connect(&fenzuMianban, &QListWidget::itemClicked,
+        [&](QListWidgetItem *xiang) {
+            int hang = fenzuMianban.row(xiang);
+            if (hang >= 0 && hang < tabBar.count()) tabBar.setCurrentIndex(hang);
+        });
+    // 用户在面板里上下拖动分组完成后触发：把拖动结果转达给tabBar，分组顺序仍然以tabBar为准
+    QObject::connect(fenzuMianban.model(), &QAbstractItemModel::rowsMoved,
+        [&](const QModelIndex &, int start, int, const QModelIndex &, int row) {
+            int mudi = (row > start) ? row - 1 : row; // Qt给的row是“插到第几行前面”，往下拖时要减掉自己原来占的那一行
+            if (start == mudi) return;
+            g_fenzuPaixuZhong = true; // 挡住chongjianFenzuMianban：下面moveTab会触发currentChanged，那里会重建面板列表，而列表这会儿已经是拖好的样子了，再重建一次纯属多余
+            tabBar.moveTab(start, mudi); // moveTab会触发tabMoved，分组顺序就在那里落盘
+            g_fenzuPaixuZhong = false;
+            fenzuMianban.setCurrentRow(tabBar.currentIndex()); // 顺序变了，选中的那一行也跟着挪了位置，重新标一下
+        });
     // 搜索框
     QLineEdit search(&chuangkou);
     g_search = &search;
@@ -3825,108 +4134,122 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
-        });
-    tabBar.setContextMenuPolicy(Qt::CustomContextMenu); // 为tabBar设置自定义右键菜单
-    // 当右键tabBar时，执行lambda表达式
-    QObject::connect(&tabBar, &QWidget::customContextMenuRequested,
-        [&](const QPoint &pos) {
-            int index = tabBar.tabAt(pos); // 根据点击位置，返回该位置处分组的索引（如果点到空白区域则返回-1）
-            if (index < 0) { // 如果点到空白区域，那么弹出菜单，上面有新建分组一个选项 //虽然它返回的是-1，但因为C++标准库很多函数“未找到”时返回的都是负数，而不仅仅是-1，所以这里还是填<0更让我放心一点
-                QMenu menu2;
-                menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
-                QAction tianjia("新建分组", &menu2);
-                menu2.addAction(&tianjia);
-                QAction *selectedAction = menu2.exec(tabBar.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
-                if (selectedAction == &tianjia) { // 如果用户选了“新建分组”
-                    QString tabName = "";
-                    int itemHeight = config["default_item_height"].toInt(); // 取出config里的默认短语项高度，用作弹窗输入框里的默认值
-                    int columns = 1; // 新建分组默认每行1个短语，用作弹窗输入框里的默认值
-                    bool ok = showTabDialog(chuangkou, "新建分组", tabName, itemHeight, columns); // 调用我们自定义的showTabDialog函数，于是tabName、itemHeight、columns里面存储的就是用户输入的数据
-                    if (ok && !tabName.isEmpty()) { // 如果用户选了“确认”并且输入的分组名称不为空
-                        if (!isTabNameDuplicate(tabBar, tabName)) { // 如果用户输入的分组名称不重复
-                            tabBar.addTab(tabName); // 在分组栏末尾新建分组
-                            setTabData(tabBar, tabBar.count() - 1, itemHeight, columns); // 把用户输入的短语项高度和每行短语数存到该分组的tabData中。必须赶在setCurrentIndex前面，因为分组切换的槽函数要读它
-                            tabBar.setCurrentIndex(tabBar.count() - 1); // 设置选中分组为该分组
-                            saveTabToJson(tabBar, tabPath);
-                        } else { // 如果用户输入的分组名称重复
-                            QMessageBox::warning(&chuangkou, "分组名重复", "该分组名已存在，请使用其他名称  ");
-                            return; // 结束当前这个槽函数的执行
-                        }
-                    }
-                }
-            } else { // 如果点到某个分组，那么弹出菜单，上面有在当前分组后新建分组、修改分组、删除分组三个选项
-                QMenu menu2;
-                menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
-                QAction tianjia("在当前分组后新建分组", &menu2);
-                menu2.addAction(&tianjia);
-                QAction xiugai("修改分组", &menu2);
-                menu2.addAction(&xiugai);
-                QAction shanchu("删除分组", &menu2);
-                menu2.addAction(&shanchu);
-                QAction *selectedAction = menu2.exec(tabBar.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
-                if (selectedAction == &tianjia) { // 如果用户选了“在当前分组后新建分组”
-                    QString tabName = "";
-                    int itemHeight = config["default_item_height"].toInt(); // 取出config里的默认短语项高度，用作弹窗输入框里的默认值
-                    int columns = 1; // 新建分组默认每行1个短语，用作弹窗输入框里的默认值
-                    bool ok = showTabDialog(chuangkou, "新建分组", tabName, itemHeight, columns); // 调用我们自定义的showTabDialog函数，于是tabName、itemHeight、columns里面存储的就是用户输入的数据
-                    if (ok && !tabName.isEmpty()) { // 如果用户选了“确认”并且输入的分组名称不为空
-                        if (!isTabNameDuplicate(tabBar, tabName)) { // 如果用户输入的分组名称不重复
-                            tabBar.insertTab(index + 1, tabName); // 在当前分组后新建分组
-                            setTabData(tabBar, index + 1, itemHeight, columns); // 把用户输入的短语项高度和每行短语数存到该分组的tabData中。必须赶在setCurrentIndex前面，因为分组切换的槽函数要读它
-                            tabBar.setCurrentIndex(index + 1); // 设置选中分组为该分组
-                            saveTabToJson(tabBar, tabPath);
-                        } else { // 如果用户输入的分组名称重复
-                            QMessageBox::warning(&chuangkou, "分组名重复", "该分组名已存在，请使用其他名称  ");
-                            return; // 结束当前这个槽函数的执行
-                        }
-                    }
-                } else if (selectedAction == &xiugai) { // 如果用户选了“修改分组”
-                    QString oldName = tabBar.tabText(index); // 记录修改前的分组名称
-                    QString newName = oldName; // 这个newName将会用作弹窗输入框里的默认文本
-                    int itemHeight = tabItemHeight(tabBar, index); // 取出当前分组的短语项高度，用作弹窗输入框里的默认值
-                    int columns = tabColumns(tabBar, index); // 取出当前分组的每行短语数，用作弹窗输入框里的默认值
-                    bool ok = showTabDialog(chuangkou, "修改分组", newName, itemHeight, columns); // 调用我们自定义的showTabDialog函数，于是newName、itemHeight、columns里面存储的就是用户输入的数据
-                    if (ok && !newName.isEmpty()) { // 如果用户选了“确认”并且输入的分组名称不为空
-                        if (!isTabNameDuplicate(tabBar, newName) || newName == oldName) { // 如果用户输入的分组名称不重复，或者和oldName一样
-                            tabBar.setTabText(index, newName); // 设置索引为index处的分组名称
-                            setTabData(tabBar, index, itemHeight, columns); // 把用户输入的短语项高度和每行短语数存到该分组的tabData中
-                            if (index == tabBar.currentIndex()) { // 如果修改的分组是当前正在显示的分组
-                                applyPhraseListLayout(liebiao, itemHeight, columns); // 那么立刻应用短语项高度、内边距和每行短语数
-                            }
-                            for (int i = 0; i < liebiao.count(); i++) { // 遍历列表中的所有项
-                                if (liebiao.item(i)->data(Qt::UserRole + 2).toString() == oldName) { // 如果该短语项的分组名称等于修改前的分组名称，那么把该短语项的分组名称改为修改后的分组名称
-                                    liebiao.item(i)->setData(Qt::UserRole + 2, newName); // 把新分组名称存到当前项的Qt::UserRole+2
-                                }
-                            }
-                            saveTabToJson(tabBar, tabPath);
-                            saveListToJson(liebiao, dataPath);
-                            filterListByTab(liebiao, tabBar.tabText(tabBar.currentIndex()), search.text()); // 修改后根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
-                        } else { // 如果用户给出的分组名称重复
-                            QMessageBox::warning(&chuangkou, "分组名重复", "该分组名已存在，请使用其他名称  ");
-                            return; // 结束当前这个槽函数的执行
-                        }
-                    }
-                } else if (selectedAction == &shanchu) { // 如果用户选了“删除分组”
-                    if (tabBar.count() <= 1) {
-                        QMessageBox::warning(&chuangkou, "提示", "至少需要保留一个分组  ");
-                        return;
-                    }
-                    QString deletedTabName = tabBar.tabText(index); // 记录待删除的分组名称
-                    int ret = QMessageBox::question(&chuangkou, "确认删除", "确定要删除分组吗？该分组下所有短语也会被删除  "); // 弹出询问弹窗，并获取用户点击的选项
-                    if (ret == QMessageBox::Yes) {
-                        tabBar.removeTab(index); // 删除索引为index处的分组
-                        for (int i = liebiao.count() - 1; i >= 0; i--) { // 倒序遍历列表中的所有项，避免删除时索引错乱
-                            if (liebiao.item(i)->data(Qt::UserRole + 2).toString() == deletedTabName) { // 如果该短语项的分组名称等于待删除的分组名称，那么把该短语项删除
-                                delete liebiao.item(i);
-                            }
-                        }
-                        saveTabToJson(tabBar, tabPath);
-                        saveListToJson(liebiao, dataPath);
-                        rebuildItemHotkeys(liebiao, itemHotkeys, &a); // 删除后为liebiao中的短语项注册快捷键
-                        filterListByTab(liebiao, tabBar.tabText(tabBar.currentIndex()), search.text()); // 删除后根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
-                    }
-                }
+            shuaxinFenzuAnniu(); // 分组换了，左上角按钮上显示的分组名也要跟着换
+            // 面板正开着（用左右键翻组、或者鼠标悬着的时候），把选中的那一行标记挪过去。
+            // 这里只挪标记不重建列表：重建会delete掉列表里所有的QListWidgetItem，而点面板切分组正是从itemClicked里一路调到这儿的，
+            // 把发信号的那个item当场删掉，回到Qt的信号发射处就踩空了。分组增删改名换顺序时会另外显式调chongjianFenzuMianban
+            if (g_fenzuMianban && g_fenzuMianban->isVisible() && g_fenzuMianban->count() == tabBar.count()) {
+                gundongFenzuMianban(); // 它只挪选中的那一行、按安全区滚一下面板，不会重建列表
             }
+        });
+
+    // 新建/修改/删除分组这三件事，原来是写在分组栏的右键菜单里的。现在分组栏藏起来了，改分组的入口有两个（分组按钮和分组面板），
+    // 所以把这三件事抽成下面三个函数，两个入口都调它们，免得同一段逻辑抄两遍
+    auto xinjianFenzu = [&](int weizhi) { // weizhi<0表示加在末尾，否则插到weizhi这个位置上
+        QString tabName = "";
+        int itemHeight = config["default_item_height"].toInt(); // 取出config里的默认短语项高度，用作弹窗输入框里的默认值
+        int columns = 1; // 新建分组默认每行1个短语，用作弹窗输入框里的默认值
+        bool ok = showTabDialog(chuangkou, "新建分组", tabName, itemHeight, columns); // 调用我们自定义的showTabDialog函数，于是tabName、itemHeight、columns里面存储的就是用户输入的数据
+        if (!ok || tabName.isEmpty()) return; // 用户点了取消，或者输入的分组名称为空
+        if (isTabNameDuplicate(tabBar, tabName)) { // 如果用户输入的分组名称重复
+            QMessageBox::warning(&chuangkou, "分组名重复", "该分组名已存在，请使用其他名称  ");
+            return;
+        }
+        int index = (weizhi < 0) ? tabBar.count() : weizhi;
+        tabBar.insertTab(index, tabName); // 新建分组。索引等于count()时insertTab就是加在末尾
+        setTabData(tabBar, index, itemHeight, columns); // 把用户输入的短语项高度和每行短语数存到该分组的tabData中。必须赶在setCurrentIndex前面，因为分组切换的槽函数要读它
+        tabBar.setCurrentIndex(index); // 设置选中分组为该分组
+        saveTabToJson(tabBar, tabPath);
+        chongjianFenzuMianban(); // 分组多了一个，面板列表得重建
+    };
+    auto xiugaiFenzu = [&](int index) {
+        QString oldName = tabBar.tabText(index); // 记录修改前的分组名称
+        QString newName = oldName; // 这个newName将会用作弹窗输入框里的默认文本
+        int itemHeight = tabItemHeight(tabBar, index); // 取出当前分组的短语项高度，用作弹窗输入框里的默认值
+        int columns = tabColumns(tabBar, index); // 取出当前分组的每行短语数，用作弹窗输入框里的默认值
+        bool ok = showTabDialog(chuangkou, "修改分组", newName, itemHeight, columns); // 调用我们自定义的showTabDialog函数，于是newName、itemHeight、columns里面存储的就是用户输入的数据
+        if (!ok || newName.isEmpty()) return; // 用户点了取消，或者输入的分组名称为空
+        if (isTabNameDuplicate(tabBar, newName) && newName != oldName) { // 如果用户给出的分组名称重复（和自己原来的名字一样不算重复）
+            QMessageBox::warning(&chuangkou, "分组名重复", "该分组名已存在，请使用其他名称  ");
+            return;
+        }
+        tabBar.setTabText(index, newName); // 设置索引为index处的分组名称
+        setTabData(tabBar, index, itemHeight, columns); // 把用户输入的短语项高度和每行短语数存到该分组的tabData中
+        if (index == tabBar.currentIndex()) { // 如果修改的分组是当前正在显示的分组
+            applyPhraseListLayout(liebiao, itemHeight, columns); // 那么立刻应用短语项高度、内边距和每行短语数
+        }
+        for (int i = 0; i < liebiao.count(); i++) { // 遍历列表中的所有项
+            if (liebiao.item(i)->data(Qt::UserRole + 2).toString() == oldName) { // 如果该短语项的分组名称等于修改前的分组名称，那么把该短语项的分组名称改为修改后的分组名称
+                liebiao.item(i)->setData(Qt::UserRole + 2, newName); // 把新分组名称存到当前项的Qt::UserRole+2
+            }
+        }
+        saveTabToJson(tabBar, tabPath);
+        saveListToJson(liebiao, dataPath);
+        filterListByTab(liebiao, tabBar.tabText(tabBar.currentIndex()), search.text()); // 修改后根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
+        shuaxinFenzuAnniu(); // 改的可能就是当前分组，按钮上的分组名得跟着改
+        chongjianFenzuMianban();
+    };
+    auto shanchuFenzu = [&](int index) {
+        if (tabBar.count() <= 1) {
+            QMessageBox::warning(&chuangkou, "提示", "至少需要保留一个分组  ");
+            return;
+        }
+        QString deletedTabName = tabBar.tabText(index); // 记录待删除的分组名称
+        int ret = QMessageBox::question(&chuangkou, "确认删除", "确定要删除分组吗？该分组下所有短语也会被删除  "); // 弹出询问弹窗，并获取用户点击的选项
+        if (ret != QMessageBox::Yes) return;
+        tabBar.removeTab(index); // 删除索引为index处的分组
+        for (int i = liebiao.count() - 1; i >= 0; i--) { // 倒序遍历列表中的所有项，避免删除时索引错乱
+            if (liebiao.item(i)->data(Qt::UserRole + 2).toString() == deletedTabName) { // 如果该短语项的分组名称等于待删除的分组名称，那么把该短语项删除
+                delete liebiao.item(i);
+            }
+        }
+        saveTabToJson(tabBar, tabPath);
+        saveListToJson(liebiao, dataPath);
+        rebuildItemHotkeys(liebiao, itemHotkeys, &a); // 删除后为liebiao中的短语项注册快捷键
+        filterListByTab(liebiao, tabBar.tabText(tabBar.currentIndex()), search.text()); // 删除后根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
+        shuaxinFenzuAnniu();
+        chongjianFenzuMianban();
+    };
+
+    fenzuAnniu.setContextMenuPolicy(Qt::CustomContextMenu); // 为分组按钮设置自定义右键菜单
+    // 右键分组按钮：和右键分组面板里的分组一样是三项菜单。按钮上显示的就是当前分组，所以修改/删除就作用在当前分组上
+    QObject::connect(&fenzuAnniu, &QWidget::customContextMenuRequested,
+        [&](const QPoint &pos) {
+            int index = tabBar.currentIndex(); // 按钮上没有“点到哪一项”这回事，作用对象固定是当前分组
+            QMenu menu2;
+            menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
+            QAction tianjia("新建分组", &menu2);
+            QAction xiugai("修改分组", &menu2);
+            QAction shanchu("删除分组", &menu2);
+            if (index >= 0) menu2.addAction(&xiugai); // 一个分组都没选中的时候修改/删除这两项没有作用对象，就不放上去了
+            menu2.addAction(&tianjia); // 菜单顺序固定是：修改分组、新建分组、删除分组
+            if (index >= 0) menu2.addAction(&shanchu);
+            QAction *selectedAction = menu2.exec(fenzuAnniu.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
+            if (selectedAction == &tianjia) xinjianFenzu(-1); // 加在所有分组的末尾
+            else if (selectedAction == &xiugai) xiugaiFenzu(index);
+            else if (selectedAction == &shanchu) shanchuFenzu(index);
+            jianchaYincangFenzuMianban(); // 菜单弹出来的时候分组面板可能正开着，菜单关掉后鼠标早就不在上面了，立刻判断一次该不该收起面板
+        });
+
+    fenzuMianban.setContextMenuPolicy(Qt::CustomContextMenu); // 为分组面板设置自定义右键菜单
+    // 右键分组面板：点到某个分组就是三项菜单，点到空白处就只有新建分组。接替原来右键分组栏的那两个菜单
+    QObject::connect(&fenzuMianban, &QWidget::customContextMenuRequested,
+        [&](const QPoint &pos) {
+            QListWidgetItem *dianzhongde = fenzuMianban.itemAt(pos); // 根据点击位置取出该位置处的分组（如果点到空白区域则返回nullptr）
+            int index = dianzhongde ? fenzuMianban.row(dianzhongde) : -1;
+            QMenu menu2;
+            menu2.setStyleSheet(g_quanjuQss); // 这个菜单没有父对象，得自己把样式表挂上
+            QAction tianjia(index < 0 ? "新建分组" : "在当前分组后新建分组", &menu2);
+            QAction xiugai("修改分组", &menu2);
+            QAction shanchu("删除分组", &menu2);
+            if (index >= 0) menu2.addAction(&xiugai); // 点到空白区域时修改/删除这两项没有作用对象，就不放上去了
+            menu2.addAction(&tianjia); // 菜单顺序固定是：修改分组、在当前分组后新建分组、删除分组
+            if (index >= 0) menu2.addAction(&shanchu);
+            QAction *selectedAction = menu2.exec(fenzuMianban.mapToGlobal(pos)); // 在鼠标点击的位置弹出菜单，等待用户选择一个QAction
+            if (selectedAction == &tianjia) xinjianFenzu(index < 0 ? -1 : index + 1);
+            else if (selectedAction == &xiugai) xiugaiFenzu(index);
+            else if (selectedAction == &shanchu) shanchuFenzu(index);
+            jianchaYincangFenzuMianban(); // 菜单关掉了，鼠标这时候可能早就不在面板上了，立刻判断一次该不该收起面板
         });
 
     // 创建设置窗口。它是非模态的普通窗口：打开着也能接着用主窗口和其他窗口；重复打开只是把它拉到前台，不会重置还没应用的修改
@@ -3958,11 +4281,13 @@ int main(int argc, char *argv[]) {
         shuzi->installEventFilter(gunlunLvqi);
         return shuzi;
     };
-    // 往分组框里加一行“说明文字 + 控件”
-    auto jiaHang = [](QGridLayout *gezi, const QString &wenzi, QWidget *kongjian) {
+    // 往分组框里加一行“说明文字 + 控件”。把前面那个文字标签还回去，需要整行藏起来时得靠它
+    auto jiaHang = [](QGridLayout *gezi, const QString &wenzi, QWidget *kongjian) -> QLabel * {
         int hang = gezi->rowCount();
-        gezi->addWidget(new QLabel(wenzi), hang, 0);
+        QLabel *biaoqian = new QLabel(wenzi);
+        gezi->addWidget(biaoqian, hang, 0);
         gezi->addWidget(kongjian, hang, 1);
+        return biaoqian;
     };
     // 往分组框里加一行复选框。复选框自带文字，横跨整行
     auto jiaGouxuan = [](QGridLayout *gezi, QCheckBox *gouxuan) {
@@ -3983,12 +4308,13 @@ int main(int argc, char *argv[]) {
         return hang; // 把这一行还回去。填值时父复选框的信号是屏蔽的，得靠它手动摆正显隐
     };
 
-    // 往分组框里加一行灰色说明文字，横跨整行
-    auto jiaShuoming = [](QGridLayout *gezi, const QString &wenzi) {
+    // 往分组框里加一行灰色说明文字，横跨整行。同样把标签还回去，需要跟着上面那行一起藏起来时用
+    auto jiaShuoming = [](QGridLayout *gezi, const QString &wenzi) -> QLabel * {
         QLabel *biaoqian = new QLabel(wenzi);
         biaoqian->setObjectName("shezhiShuoming"); // 样式表靠这个ID把它染成灰色
         biaoqian->setWordWrap(true);
         gezi->addWidget(biaoqian, gezi->rowCount(), 0, 1, 3);
+        return biaoqian;
     };
 
     //--------------------页签1：主窗口设置--------------------
@@ -4019,9 +4345,25 @@ int main(int argc, char *argv[]) {
     jiaGouxuan(zu_duanyuxiang, jiaobiaoCheck);
     jiaShuoming(zu_duanyuxiang, "角标位置改完后，鼠标移到主窗口上才会生效。");
 
+    QGridLayout *zu_fenzu = jianFenzukuang("分组", yemian1Layout);
+    QCheckBox *fenzuChangxianCheck = new QCheckBox("始终显示分组面板");
+    jiaGouxuan(zu_fenzu, fenzuChangxianCheck);
+    QSpinBox *fenzuYanshiSpin = jianShuziKuang(0, 5000, 70); // 收起分组面板的延时，同时也是翻组惯性的持续时间
+    QLabel *fenzuYanshiBiaoqian = jiaHang(zu_fenzu, "鼠标移开或停止翻组多久后收起分组面板（毫秒）", fenzuYanshiSpin);
+    // 开着“始终显示分组面板”时面板根本不收起，这个延时就没什么可说的了，整行连同说明一起藏起来
+    auto genxinFenzuYanshiXianshi = [fenzuChangxianCheck, fenzuYanshiBiaoqian, fenzuYanshiSpin]() {
+        bool xianshi = !fenzuChangxianCheck->isChecked();
+        fenzuYanshiBiaoqian->setVisible(xianshi);
+        fenzuYanshiSpin->setVisible(xianshi);
+    };
+    QObject::connect(fenzuChangxianCheck, &QCheckBox::toggled, fenzuYanshiSpin, genxinFenzuYanshiXianshi);
+    genxinFenzuYanshiXianshi();
+
     QGridLayout *zu_gundong = jianFenzukuang("滚动", yemian1Layout);
     QSpinBox *gundongSpin = jianShuziKuang(1, 100, 59); // 滚动条滚动速度
     jiaHang(zu_gundong, "滚动条滚动速度", gundongSpin);
+    QSpinBox *anquanquSpin = jianShuziKuang(0, 10, 59); // 方向键浏览时上下各留出几行安全区
+    jiaHang(zu_gundong, "浏览时上下各留出的行数", anquanquSpin);
     yemian1Layout->addStretch(); // 让分组框都往上挤，别被拉长
 
     //--------------------页签2：输入设置--------------------
@@ -4035,19 +4377,18 @@ int main(int argc, char *argv[]) {
     jiaShuoming(zu_gaojishuru, "高级输入里每两个动作之间等待的时间。目标程序反应慢时可以调大一些。");
 
     QGridLayout *zu_jianpan = jianFenzukuang("键盘操作", yemian2Layout);
-    QCheckBox *badgeKeyPassthroughCheck = new QCheckBox("钉住窗口时，按下短语项对应角标按键不输入短语");
+    QCheckBox *badgeKeyPassthroughCheck = new QCheckBox("钉住窗口时，不允许按下短语项对应角标按键输入短语");
     jiaGouxuan(zu_jianpan, badgeKeyPassthroughCheck);
     QCheckBox *badgeKeyCtrlCheck = new QCheckBox("钉住窗口时，允许按下Ctrl+角标按键输入短语");
     QWidget *badgeKeyCtrlHang = jiaZiGouxuan(zu_jianpan, badgeKeyPassthroughCheck, badgeKeyCtrlCheck);
-    QCheckBox *enterKeyPassthroughCheck = new QCheckBox("钉住窗口时，按下回车键不输入短语");
+    QCheckBox *enterKeyPassthroughCheck = new QCheckBox("钉住窗口时，不允许按下回车键输入短语");
     jiaGouxuan(zu_jianpan, enterKeyPassthroughCheck);
     QCheckBox *enterKeyCtrlCheck = new QCheckBox("钉住窗口时，允许按下Ctrl+回车键输入短语");
     QWidget *enterKeyCtrlHang = jiaZiGouxuan(zu_jianpan, enterKeyPassthroughCheck, enterKeyCtrlCheck);
-    QCheckBox *arrowKeyPassthroughCheck = new QCheckBox("钉住窗口时，按下方向键不切换短语或分组");
+    QCheckBox *arrowKeyPassthroughCheck = new QCheckBox("钉住窗口时，不允许按下方向键切换短语或分组");
     jiaGouxuan(zu_jianpan, arrowKeyPassthroughCheck);
     QCheckBox *arrowKeyCtrlCheck = new QCheckBox("钉住窗口时，允许按下Ctrl+方向键切换短语或分组");
     QWidget *arrowKeyCtrlHang = jiaZiGouxuan(zu_jianpan, arrowKeyPassthroughCheck, arrowKeyCtrlCheck);
-    jiaShuoming(zu_jianpan, "勾上Ctrl+角标按键那一项后，Ctrl+C、Ctrl+V这类组合键会被QuickSay吃掉，不会再传给前台程序。");
     yemian2Layout->addStretch();
 
     //--------------------页签3：常规设置--------------------
@@ -4099,7 +4440,7 @@ int main(int argc, char *argv[]) {
     beifenLayout->addWidget(importBackupButton);
     beifenLayout->addStretch();
     zu_beifen->addWidget(beifenWidget, zu_beifen->rowCount(), 0, 1, 3);
-    jiaShuoming(zu_beifen, "备份包含全部设置、分组和短语。导入会完全覆盖现有内容，并立即重启QuickSay。这两个按钮点了就直接执行，不受“应用”“取消”影响。");
+    jiaShuoming(zu_beifen, "备份包含全部设置、分组和短语。导入会完全覆盖现有内容，并立即重启QuickSay。");
     yemian3Layout->addStretch();
 
     //--------------------页签4：关于--------------------
@@ -4148,6 +4489,9 @@ int main(int argc, char *argv[]) {
         if (itemPaddingHorizontalSpin->value() != config["phrase_item_padding_horizontal"].toInt()) return true;
         if (itemPaddingVerticalSpin->value() != config["phrase_item_padding_vertical"].toInt()) return true;
         if (gundongSpin->value() != config["gundong"].toInt()) return true;
+        if (anquanquSpin->value() != config["anquanqu_hangshu"].toInt()) return true;
+        if (fenzuYanshiSpin->value() != config["fenzu_yanshi"].toInt()) return true;
+        if (fenzuChangxianCheck->isChecked() != config["fenzu_changxian"].toBool()) return true;
         if (jiaobiaoCheck->isChecked() != config["jiaobiao"].toBool()) return true;
         if (delaySpin->value() != config["delay"].toInt()) return true;
         if (badgeKeyPassthroughCheck->isChecked() != config["badge_key_passthrough_when_pinned"].toBool()) return true;
@@ -4164,7 +4508,7 @@ int main(int argc, char *argv[]) {
     auto gengxinYingyongButton = [&]() { yingyongButton->setEnabled(youWeiYingyongXiugai()); }; // 没有修改时“应用”是灰的
 
     // 把config里的设置填回所有控件。打开窗口、点“取消”、关掉窗口时都调它，效果就是丢弃还没应用的修改
-    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, jiaobiaoCheck, delaySpin, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
+    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, anquanquSpin, fenzuYanshiSpin, fenzuChangxianCheck, jiaobiaoCheck, delaySpin, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
     auto zairuShezhi = [&]() {
         for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(true); // 程序自己填值时不能触发下面那些信号，否则又要跑一遍“有没有修改”的判断
         hotkeyEdit->setKeySequence(QKeySequence(config["hotkey"].toString()));
@@ -4175,6 +4519,10 @@ int main(int argc, char *argv[]) {
         itemPaddingHorizontalSpin->setValue(config["phrase_item_padding_horizontal"].toInt());
         itemPaddingVerticalSpin->setValue(config["phrase_item_padding_vertical"].toInt());
         gundongSpin->setValue(config["gundong"].toInt());
+        anquanquSpin->setValue(config["anquanqu_hangshu"].toInt());
+        fenzuYanshiSpin->setValue(config["fenzu_yanshi"].toInt());
+        fenzuChangxianCheck->setChecked(config["fenzu_changxian"].toBool());
+        genxinFenzuYanshiXianshi(); // 上面填值时信号是屏蔽的，延时那行的显隐不会自己跟上，这里手动摆正
         jiaobiaoCheck->setChecked(config["jiaobiao"].toBool());
         delaySpin->setValue(config["delay"].toInt());
         badgeKeyPassthroughCheck->setChecked(config["badge_key_passthrough_when_pinned"].toBool());
@@ -4196,10 +4544,10 @@ int main(int argc, char *argv[]) {
 
     // 任何一个控件被改动都要重算“应用”按钮的可用状态
     QObject::connect(hotkeyEdit, &QKeySequenceEdit::keySequenceChanged, [&]() { gengxinYingyongButton(); });
-    for (QCheckBox *gouxuan : {zhidingCheck, jiaobiaoCheck, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
+    for (QCheckBox *gouxuan : {zhidingCheck, fenzuChangxianCheck, jiaobiaoCheck, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
         QObject::connect(gouxuan, &QCheckBox::toggled, [&]() { gengxinYingyongButton(); });
     }
-    for (QSpinBox *shuzi : {widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, delaySpin}) {
+    for (QSpinBox *shuzi : {widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, anquanquSpin, fenzuYanshiSpin, delaySpin}) {
         QObject::connect(shuzi, QOverload<int>::of(&QSpinBox::valueChanged), [&]() { gengxinYingyongButton(); });
     }
 
@@ -4242,6 +4590,9 @@ int main(int argc, char *argv[]) {
         config["phrase_item_padding_horizontal"] = itemPaddingHorizontalSpin->value();
         config["phrase_item_padding_vertical"] = itemPaddingVerticalSpin->value();
         config["gundong"] = gundongSpin->value();
+        config["anquanqu_hangshu"] = anquanquSpin->value(); // 每次按方向键都是现读config，改完立刻生效，不用额外通知谁
+        config["fenzu_yanshi"] = fenzuYanshiSpin->value(); // 收起面板和取消翻组惯性这两个计时器每次都是现读config，改完立刻生效，不用额外通知谁
+        config["fenzu_changxian"] = fenzuChangxianCheck->isChecked();
         config["jiaobiao"] = jiaobiaoCheck->isChecked();
         config["delay"] = delaySpin->value();
         config["badge_key_passthrough_when_pinned"] = badgeKeyPassthroughCheck->isChecked();
@@ -4256,6 +4607,7 @@ int main(int argc, char *argv[]) {
         liebiao.verticalScrollBar()->setSingleStep(config["gundong"].toInt()); // 滚动速度立刻同步到正在使用的滚动条，不用重启软件才能生效
         if (neibianjuBianle) applyPhraseListLayout(liebiao, tabItemHeight(tabBar, tabBar.currentIndex()), tabColumns(tabBar, tabBar.currentIndex())); // 内边距变了行高也会跟着变，所以要连网格一起重设
         if (daxiaoBianle && yingyongZhuchuangkouDaxiao) yingyongZhuchuangkouDaxiao(); // 调整主窗口大小和主窗口控件
+        yingyongFenzuChangxian(); // 常显开关可能刚被改动；主窗口高度也可能刚改过，面板高度是按它算的，这里一并重摆
         if (zhidingBianle) { // 在不改变其他窗口属性的前提下，给主窗口添加/删除始终置顶属性
             if (config["zhiding"].toBool()) chuangkou.setWindowFlags(chuangkou.windowFlags() | Qt::WindowStaysOnTopHint);
             else chuangkou.setWindowFlags(chuangkou.windowFlags() & ~Qt::WindowStaysOnTopHint);
@@ -4675,13 +5027,13 @@ int main(int argc, char *argv[]) {
 
     // 从全局对象config读取主窗口大小；其他窗口及其控件始终使用默认的500*500
     adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
-        chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
+        chuangkou, liebiao, fenzuAnniu, search, shezhi, tianjia, tuding,
         tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
         xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
     // 设置窗口里“主窗口宽度/高度”真正生效的地方。之所以放在这里，是因为adjustAllWindows要用的那一堆控件到这时候才全都创建好了
     yingyongZhuchuangkouDaxiao = [&]() {
         adjustAllWindows(config["width"].toInt(), config["height"].toInt(),
-            chuangkou, liebiao, tabBar, search, shezhi, tianjia, tuding,
+            chuangkou, liebiao, fenzuAnniu, search, shezhi, tianjia, tuding,
             tianjiachuangkou, tianjiakuang, tianjia_gaojishuru, tianjia_beizhuwenben, tianjia_beizhukuang, tianjia_kjjwenben, tianjia_kjjkuang, tianjia_kjjqingkong, tianjiaquxiao, tianjiaqueding,
             xiugaichuangkou, xiugaikuang, xiugai_gaojishuru, xiugai_beizhuwenben, xiugai_beizhukuang, xiugai_kjjwenben, xiugai_kjjkuang, xiugai_kjjqingkong, xiugaiquxiao, xiugaiqueding);
     };
