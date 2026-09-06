@@ -1,19 +1,6 @@
-﻿// 版本：2.0.0
+﻿// 版本：2.0.1
 // 更新内容：
-// 1. 修改分组页面新增“每行短语数”选项。
-// 2. 新增以“管理员权限启动”设置选项。勾选后就能允许QuickSay在任何地方输入。
-// 3. 修复在设置里调整滚动条滚动速度后不能立即生效的问题。
-// 4. 新增高级输入停止机制：锁屏、注销、会话断开、睡眠或休眠立即停止；某个输入动作失败也会停止。
-// 5. 新增导入导出备份功能。
-// 6. “窗口大小”更名为“主窗口大小”，该设置不再影响其他窗口。
-// 7. 重新设计设置窗口，新增分页布局以及“确定”“取消”“应用”操作。
-// 8. 重新设计托盘右键菜单。
-// 9. 优化方向键浏览短语时的滚动体验。
-// 10. 新增检查更新功能。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证QuickSay新版本只会比旧版本更好用。
-// 11. 优化短语鼠标悬停提示：正文显示在上方、备注显示在下方，并为备注预留固定显示空间。
-// 12. 新增了几个钉住窗口时的键盘操作设置。
-// 13. 重新设计主窗口分组，改用分组按钮和悬浮分组面板。同时新增了几个对应设置。
-// 14. 新增批量编辑短语功能，可通过记事本一次修改同一分组下的全部短语正文。
+// 1. 设置选项新增“切换分组后始终选中第一条短语”。
 
 #include <QApplication>
 #include <QWidget>
@@ -97,7 +84,7 @@
 #pragma comment(lib, "user32.lib")
 
 QJsonObject config; // 全局对象，用于保存程序的设置
-static const QString g_quickSayVersion = "2.0.0"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
+static const QString g_quickSayVersion = "2.0.1"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
 static const QString g_backupFormatVersion = "1.0.0"; // 备份格式版本只在文件结构发生不兼容变化时才修改，不能跟着QuickSay版本一起改
 bool g_zhengzaiDaoruChongqi = false; // 导入成功后直到旧进程退出都保持true，挡住旧设置窗口、焦点事件和窗口移动事件再次覆盖刚写入的备份
 
@@ -177,6 +164,7 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
             if (!config.contains("shezhichuangkou_w")) config["shezhichuangkou_w"] = 620; // 如果config里没有shezhichuangkou_w，那么默认设置窗口外框宽度620（和TrafficMonitor中文设置窗口一致）
             if (!config.contains("shezhichuangkou_h")) config["shezhichuangkou_h"] = 576; // 如果config里没有shezhichuangkou_h，那么默认设置窗口外框高度576
             if (!config.contains("fenzu_yanshi")) config["fenzu_yanshi"] = 1500; // 如果config里没有fenzu_yanshi，那么默认停手1500毫秒后收起分组面板、同时取消翻组惯性
+            if (!config.contains("fenzu_shouxuan_diyitiao")) config["fenzu_shouxuan_diyitiao"] = true; // 旧配置默认勾选切换分组后始终选中第一条短语
             if (!config.contains("fenzu_changxian")) config["fenzu_changxian"] = false; // 如果config里没有fenzu_changxian，那么默认不始终显示分组面板，还是鼠标移上去才弹出
             if (!config.contains("anquanqu_hangshu")) config["anquanqu_hangshu"] = 1; // 如果config里没有anquanqu_hangshu，那么默认方向键浏览时上下各留出1行的安全区
             if (!config.contains("qidong_jiancha_gengxin")) config["qidong_jiancha_gengxin"] = true; // 如果config里没有qidong_jiancha_gengxin，那么默认启动时检查更新
@@ -195,6 +183,7 @@ void loadConfig(const QString &configPath) { // 读取config.json到程序设置
         config["phrase_item_padding_vertical"] = 12; // 默认短语项上下内边距12
         config["gundong"] = 10; // 默认滚动条滚动速度10
         config["fenzu_yanshi"] = 1500; // 默认停手1500毫秒后收起分组面板、同时取消翻组惯性
+        config["fenzu_shouxuan_diyitiao"] = true; // 默认切换分组后始终选中第一条短语
         config["fenzu_changxian"] = false; // 默认不始终显示分组面板，还是鼠标移上去才弹出
         config["anquanqu_hangshu"] = 1; // 默认方向键浏览时上下各留出1行的安全区
         config["jiaobiao"] = false; // 默认角标放在右上角
@@ -975,6 +964,7 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     if (!settings.contains("badge_key_ctrl_when_pinned")) settings["badge_key_ctrl_when_pinned"] = false; // 旧版备份里没有这三个Ctrl子开关，同样按新版默认值补齐后再校验
     if (!settings.contains("enter_key_ctrl_when_pinned")) settings["enter_key_ctrl_when_pinned"] = false; // 同上
     if (!settings.contains("arrow_key_ctrl_when_pinned")) settings["arrow_key_ctrl_when_pinned"] = false; // 同上
+    if (!settings.contains("fenzu_shouxuan_diyitiao")) settings["fenzu_shouxuan_diyitiao"] = true; // 旧版备份没有切组首选项开关，按默认勾选补齐后再校验
     if (!settings.contains("fenzu_changxian")) settings["fenzu_changxian"] = false; // 旧版备份里没有“始终显示分组面板”，按新版默认值补齐后再校验
     if (!settings.contains("fenzu_yanshi")) settings["fenzu_yanshi"] = 1500; // 旧版备份里没有面板收起延时和翻组惯性时长，按新版默认的1500毫秒补齐
     if (!settings.contains("anquanqu_hangshu")) settings["anquanqu_hangshu"] = 1; // 旧版备份里没有方向键浏览安全区行数，按新版默认的上下各1行补齐
@@ -987,7 +977,7 @@ bool parseQuickSayBackupFile(const QByteArray &fileData, QuickSayBackupData &bac
     auto booleanField = [&](const char *key) -> bool {
         return settings.value(key).isBool();
     };
-    const char *boolKeys[] = {"zhiding", "jiaobiao", "badge_key_passthrough_when_pinned", "enter_key_passthrough_when_pinned", "arrow_key_passthrough_when_pinned", "badge_key_ctrl_when_pinned", "enter_key_ctrl_when_pinned", "arrow_key_ctrl_when_pinned", "ziqidong", "guanliyuan", "tudingflag", "fenzu_changxian"};
+    const char *boolKeys[] = {"zhiding", "jiaobiao", "badge_key_passthrough_when_pinned", "enter_key_passthrough_when_pinned", "arrow_key_passthrough_when_pinned", "badge_key_ctrl_when_pinned", "enter_key_ctrl_when_pinned", "arrow_key_ctrl_when_pinned", "ziqidong", "guanliyuan", "tudingflag", "fenzu_changxian", "fenzu_shouxuan_diyitiao"};
     for (const char *key : boolKeys) {
         if (!booleanField(key)) {
             error = QString("设置字段 %1 无效").arg(key);
@@ -2134,7 +2124,7 @@ void switchTabAndSelect(int direction) { // 在行首按←/在行尾按→时�
     qingchuJishi->start(config["fenzu_yanshi"].toInt(1500)); // 每切一次分组都重新计时。时长在设置窗口“主窗口设置-分组”里改
     g_tabBar->setCurrentIndex(index); // 切换分组。分组切换的槽函数里会顺手把新分组的第一项选中，这正是往右切要的结果
     xianshiFenzuMianban(); // 用左右键翻组的同时把分组面板弹出来，让用户看见自己翻到哪儿了。惯性标记一失效，面板就会立刻收回去
-    if (direction < 0) { // 往左切过来的，改成选中新分组第一行最后一个实际存在的短语，这样光标看起来是从右边接着走的
+    if (direction < 0 && !config["fenzu_shouxuan_diyitiao"].toBool(true)) { // 只有关闭“始终选中第一条”时才沿用向左切组的旧行为：选中第一行最后一个短语；开启时保留切组槽函数选中的首条可见短语
         QVector<QListWidgetItem *> items = visiblePhraseItems();
         if (items.isEmpty()) return; // 空分组，不选中短语
         selectVisibleItemAt(qMin(currentTabColumns(), items.size()) - 1);
@@ -4523,6 +4513,8 @@ int main(int argc, char *argv[]) {
     };
     QObject::connect(fenzuChangxianCheck, &QCheckBox::toggled, fenzuYanshiSpin, genxinFenzuYanshiXianshi);
     genxinFenzuYanshiXianshi();
+    QCheckBox *fenzuShouxuanDiyitiaoCheck = new QCheckBox("切换分组后始终选中第一条短语");
+    jiaGouxuan(zu_fenzu, fenzuShouxuanDiyitiaoCheck); // 跟其他分组选项一样横跨整行，由设置页的滚动布局安排位置
 
     QGridLayout *zu_gundong = jianFenzukuang("滚动", yemian1Layout);
     QSpinBox *gundongSpin = jianShuziKuang(1, 100, 59); // 滚动条滚动速度
@@ -4658,6 +4650,7 @@ int main(int argc, char *argv[]) {
         if (anquanquSpin->value() != config["anquanqu_hangshu"].toInt()) return true;
         if (fenzuYanshiSpin->value() != config["fenzu_yanshi"].toInt()) return true;
         if (fenzuChangxianCheck->isChecked() != config["fenzu_changxian"].toBool()) return true;
+        if (fenzuShouxuanDiyitiaoCheck->isChecked() != config["fenzu_shouxuan_diyitiao"].toBool(true)) return true;
         if (jiaobiaoCheck->isChecked() != config["jiaobiao"].toBool()) return true;
         if (delaySpin->value() != config["delay"].toInt()) return true;
         if (badgeKeyPassthroughCheck->isChecked() != config["badge_key_passthrough_when_pinned"].toBool()) return true;
@@ -4674,7 +4667,7 @@ int main(int argc, char *argv[]) {
     auto gengxinYingyongButton = [&]() { yingyongButton->setEnabled(youWeiYingyongXiugai()); }; // 没有修改时“应用”是灰的
 
     // 把config里的设置填回所有控件。打开窗口、点“取消”、关掉窗口时都调它，效果就是丢弃还没应用的修改
-    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, anquanquSpin, fenzuYanshiSpin, fenzuChangxianCheck, jiaobiaoCheck, delaySpin, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
+    QVector<QObject *> shezhiKongjian = {hotkeyEdit, zhidingCheck, widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, anquanquSpin, fenzuYanshiSpin, fenzuChangxianCheck, fenzuShouxuanDiyitiaoCheck, jiaobiaoCheck, delaySpin, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck};
     auto zairuShezhi = [&]() {
         for (QObject *kongjian : shezhiKongjian) kongjian->blockSignals(true); // 程序自己填值时不能触发下面那些信号，否则又要跑一遍“有没有修改”的判断
         hotkeyEdit->setKeySequence(QKeySequence(config["hotkey"].toString()));
@@ -4688,6 +4681,7 @@ int main(int argc, char *argv[]) {
         anquanquSpin->setValue(config["anquanqu_hangshu"].toInt());
         fenzuYanshiSpin->setValue(config["fenzu_yanshi"].toInt());
         fenzuChangxianCheck->setChecked(config["fenzu_changxian"].toBool());
+        fenzuShouxuanDiyitiaoCheck->setChecked(config["fenzu_shouxuan_diyitiao"].toBool(true));
         genxinFenzuYanshiXianshi(); // 上面填值时信号是屏蔽的，延时那行的显隐不会自己跟上，这里手动摆正
         jiaobiaoCheck->setChecked(config["jiaobiao"].toBool());
         delaySpin->setValue(config["delay"].toInt());
@@ -4710,7 +4704,7 @@ int main(int argc, char *argv[]) {
 
     // 任何一个控件被改动都要重算“应用”按钮的可用状态
     QObject::connect(hotkeyEdit, &QKeySequenceEdit::keySequenceChanged, [&]() { gengxinYingyongButton(); });
-    for (QCheckBox *gouxuan : {zhidingCheck, fenzuChangxianCheck, jiaobiaoCheck, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
+    for (QCheckBox *gouxuan : {zhidingCheck, fenzuChangxianCheck, fenzuShouxuanDiyitiaoCheck, jiaobiaoCheck, badgeKeyPassthroughCheck, enterKeyPassthroughCheck, arrowKeyPassthroughCheck, badgeKeyCtrlCheck, enterKeyCtrlCheck, arrowKeyCtrlCheck, autostartupCheck, guanliyuanCheck, gengxinCheck}) {
         QObject::connect(gouxuan, &QCheckBox::toggled, [&]() { gengxinYingyongButton(); });
     }
     for (QSpinBox *shuzi : {widthSpin, heightSpin, itemHeightSpin, itemPaddingHorizontalSpin, itemPaddingVerticalSpin, gundongSpin, anquanquSpin, fenzuYanshiSpin, delaySpin}) {
@@ -4759,6 +4753,7 @@ int main(int argc, char *argv[]) {
         config["anquanqu_hangshu"] = anquanquSpin->value(); // 每次按方向键都是现读config，改完立刻生效，不用额外通知谁
         config["fenzu_yanshi"] = fenzuYanshiSpin->value(); // 收起面板和取消翻组惯性这两个计时器每次都是现读config，改完立刻生效，不用额外通知谁
         config["fenzu_changxian"] = fenzuChangxianCheck->isChecked();
+        config["fenzu_shouxuan_diyitiao"] = fenzuShouxuanDiyitiaoCheck->isChecked(); // 切组时现读config，点“应用”或“确定”后立即生效，不改变当前选中项
         config["jiaobiao"] = jiaobiaoCheck->isChecked();
         config["delay"] = delaySpin->value();
         config["badge_key_passthrough_when_pinned"] = badgeKeyPassthroughCheck->isChecked();
