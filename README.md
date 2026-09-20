@@ -25,7 +25,7 @@
 
 ## 如何下载
 #### 方法一：
-点进右边的 Releases（发行版）下载。
+点进右边的 Releases（发行版）下载。  
 #### 方法二：
 点进这个蓝奏云链接下载：https://wwlt.lanzoum.com/b014wmlo5g 密码：star  
 
@@ -33,11 +33,11 @@
 ## 如何更新
 直接用 新QuickSay.exe **替换**掉 旧QuickSay.exe。  
 
-如果您是 v1.x.x 用户，可以在保留 config.json、data.json、tab.json 的基础上，把 QuickSay 文件夹里的其它文件都删掉，然后放入 新QuickSay.exe。
+如果您是 v1.x.x 用户，可以在保留 config.json、data.json、tab.json 的基础上，把 QuickSay 文件夹里的其它文件都删掉，然后放入 新QuickSay.exe。  
 
 
 ## 许可证
-本项目采用 MIT 许可证。详情见 `LICENSE` 文件。也就是说您可以自由使用我的软件和代码，甚至商用。只要保留许可证和版权声明就行  
+本项目采用 MIT 许可证。  
 
 
 # 感谢使用QuickSay！如果觉得好用记得点个Star！砍刀会感谢您的！
