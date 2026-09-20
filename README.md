@@ -43,3 +43,9 @@
 # 感谢使用 QuickSay！如果觉得好用记得点个 Star！砍刀会感谢您的！
 如有反馈或建议，欢迎在 GitHub Issues 中提交。因为这样我会收到邮件通知，肯定能及时回复。  
 <img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
+
+
+# 一些碎碎念
+其实 QuickSay 最开始是在吾爱论坛火起来的。感谢吾爱论坛能带给 QuickSay 这么多用户！
+https://www.52pojie.cn/thread-2129139-1-1.html
+https://www.52pojie.cn/thread-2061920-1-1.html
