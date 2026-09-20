@@ -27,7 +27,7 @@
 #### 方法一：
 点进右边的 Releases（发行版）下载。  
 #### 方法二：
-点进这个蓝奏云链接下载：https://wwlt.lanzoum.com/b014wmlo5g 密码：star  
+点进这个蓝奏云链接下载：https://wwlt.lanzoum.com/b014wmlo5g 密码:star  
 
 
 ## 如何更新
