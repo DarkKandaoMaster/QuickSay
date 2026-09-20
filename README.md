@@ -13,14 +13,14 @@
 ### 欢迎来测~ヾ(≧▽≦*)o
 
 
-## QuickSay是干什么的？
-如果您经常把常用短语（<strong title="输入Prompt很好用">AI 提示词</strong>、命令行、固定的话术）保存在一个文本文件里，并在需要时打开这个文件复制粘贴。  
+## QuickSay 是干什么的？
+如果您经常把常用短语（<strong title="输入 Prompt 很好用">AI 提示词</strong>、命令行、固定的话术）保存在一个文本文件里，并在需要时打开这个文件复制粘贴。  
 那么您就可以试用一下 QuickSay。把常用短语保存在 QuickSay 里，并在需要时使用 QuickSay 输入。  
 
 软件窗口截图↓  
 <img src="./README_Pictures/软件窗口的全家福.png" alt="[图片不见了...]"><br>
 
-###### 该软件目前只支持Windows 10/11，不打算支持macOS/Linux/Windows 7
+###### 该软件目前只支持 Windows 10/11，不打算支持 macOS/Linux/Windows 7
 
 
 ## 如何下载
@@ -40,6 +40,6 @@
 本项目采用 MIT 许可证。  
 
 
-# 感谢使用QuickSay！如果觉得好用记得点个Star！砍刀会感谢您的！
-如有反馈或建议，欢迎直接在GitHub Issues中提交。因为这样我会收到邮件通知，肯定能及时回复。  
+# 感谢使用 QuickSay！如果觉得好用记得点个 Star！砍刀会感谢您的！
+如有反馈或建议，欢迎在 GitHub Issues 中提交。因为这样我会收到邮件通知，肯定能及时回复。  
 <img src="https://api.star-history.com/svg?repos=DarkKandaoMaster/QuickSay&type=Date" alt="[图片不见了...]"><br>
