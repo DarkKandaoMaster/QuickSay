@@ -45,6 +45,13 @@ MainWindow::MainWindow(GroupModel &groups, HotkeyRegistry &hotkeys) : QWidget(nu
     });
 
     groups_.load();
+    // 短语按分组名挂靠，分组表里没有的名字对应的短语永远显示不出来。改分组名时 tab.json 和 data.json 是先后两次写盘，
+    // 中间进程被杀就会这样；手改坏了 tab.json 也会。所以缺哪个分组就按短语里的名字补回来，一条短语都不丢
+    for (int i = 0; i < list_->count(); ++i) {
+        const QString name = PhraseItem::group(list_->item(i));
+        if (!name.isEmpty() && !groups_.contains(name)) groups_.insert(groups_.count(), {name, Settings::defaultItemHeight(), 1});
+    }
+    if (groups_.count() == 0) groups_.insert(0, {"短语1", Settings::defaultItemHeight(), 1}); // 至少要有一个分组，界面才转得起来
     groups_.save();
 
     navigator_ = new PhraseNavigator(list_, groups_, this);
