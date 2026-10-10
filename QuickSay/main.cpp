@@ -76,6 +76,7 @@
 #include <QFontDatabase>
 #include <climits>
 #include <windows.h>
+#include <dwmapi.h>
 #include <sddl.h>
 #include <shellapi.h>
 #include <shldisp.h>
@@ -127,6 +128,7 @@ void xianshiFenzuMianban(); // 弹出分组面板（顺带重建列表内容、�
 void yincangFenzuMianban(); // 收起分组面板（顺带把箭头转回来）
 void jianchaYincangFenzuMianban(); // 判断现在该不该收起面板：鼠标还悬着、或者翻组惯性还没过，都不收
 void chongjianFenzuMianban(); // 按g_tabBar重建面板里的分组列表
+HWND fenzuMianbanHwnd(); // 分组面板的窗口句柄，面板还没真正建出系统窗口时返回nullptr
 void gundongFenzuMianban(); // 把面板里当前分组标成选中，并按安全区规则滚动面板
 void shuaxinFenzuAnniu(); // 把按钮上的文字刷成当前分组名
 void yingyongFenzuChangxian(); // 让面板跟上“始终显示分组面板”这个开关
@@ -2543,6 +2545,15 @@ class NoActivateNativeFilter : public QAbstractNativeEventFilter {
             stopQuickSayOutput();
         }
         if (!pchuangkou) return false;
+        if (msg->message == WM_SHOWWINDOW && msg->lParam == 0) { // 窗口马上要显示/隐藏时系统先发这条消息（lParam非0是父窗口最小化之类连带的，不管）
+            HWND hwnd = msg->hwnd;
+            if (hwnd == (HWND)pchuangkou->winId() || hwnd == fenzuMianbanHwnd()) {
+                // 主窗口和分组面板：呼出时不要系统那段弹出动画，一按就立刻出现；收起时保留淡出动画。
+                // 做法是赶在可见状态真正变化之前切换DWM的“禁用过渡动画”开关：要显示了就禁用，要隐藏了就恢复
+                BOOL jinyong = msg->wParam ? TRUE : FALSE;
+                DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &jinyong, sizeof(jinyong));
+            }
+        }
         if (msg->message == WM_MOUSEACTIVATE) {
             if (g_searchMode) return false;
             HWND mainHwnd = (HWND)pchuangkou->winId();
@@ -3669,6 +3680,15 @@ class FenzuMianban : public QListWidget {
     }
 
   protected:
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override {
+        MSG *msg = reinterpret_cast<MSG *>(message);
+        if (msg->message == WM_NCCALCSIZE) { // 系统问“窗口里多大地方算客户区”：直接回答“整个窗口都是”，xianshiFenzuMianban里偷偷加上的那条标题栏就没地方画了
+            *result = 0;
+            return true;
+        }
+        return QListWidget::nativeEvent(eventType, message, result);
+    }
+
     void wheelEvent(QWheelEvent *event) override {
         gundongQiehuanFenzu(event); // 面板上滚轮也是切分组，不是滚列表。分组多到一屏放不下时，面板按安全区规则跟着滚，和左右方向键翻组一模一样
         event->accept();
@@ -3692,6 +3712,10 @@ void gundongFenzuMianban() { // 把面板里当前分组标成选中，并且按
     if (hang < 0 || hang >= g_fenzuMianban->count()) return;
     int fangxiang = (hang >= g_fenzuMianban->currentRow()) ? 1 : -1; // 往后翻组当成↓、往前翻组当成↑。面板刚重建过时currentRow是-1，按↓算
     anAnquanquXuanzhong(g_fenzuMianban, g_fenzuMianban->item(hang), fangxiang);
+}
+
+HWND fenzuMianbanHwnd() { // 写在FenzuMianban类后面，前面那些只见过类名的地方（比如原生事件过滤器）也能借这个函数拿到句柄
+    return g_fenzuMianban ? (HWND)g_fenzuMianban->internalWinId() : nullptr; // 用internalWinId而不是winId：只查不建，免得在事件过滤器里顺手把面板的系统窗口提前建出来
 }
 
 void chongjianFenzuMianban() { // 按g_tabBar重建面板里的分组列表。分组顺序、名称一律以tabBar为准，面板只是照着它画一遍
@@ -3767,8 +3791,21 @@ void xianshiFenzuMianban() { // 弹出分组面板
     }
     g_fenzuMianban->move(x, y);
 
+    HWND hwnd = (HWND)g_fenzuMianban->winId(); // 先把系统窗口建出来，下面要赶在它第一次显示之前改窗口样式
+    LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+    if ((style & (WS_CAPTION | WS_SYSMENU)) != (WS_CAPTION | WS_SYSMENU)) { // 只在头一回补，之后样式一直在
+        // 无边框窗口收起时系统不给放关闭动画，只有带标题栏样式的窗口才有。所以偷偷给面板加上标题栏样式，
+        // 再在FenzuMianban::nativeEvent里把标题栏占的地方吃掉，面板看起来还是原来那样，收起时却能享受系统原生的关闭动画（照抄Tauri的做法）
+        SetWindowLongPtr(hwnd, GWL_STYLE, style | WS_CAPTION | WS_SYSMENU);
+        // 光有标题栏还不够：Qt::Tool会给窗口挂上WS_EX_TOOLWINDOW，系统不给工具窗口放开关动画，得摘掉（主窗口就没有它，所以主窗口一直有关闭动画）。
+        // 摘掉以后面板也不会跑到任务栏上去，因为同时挂了WS_EX_NOACTIVATE，系统不给这种窗口建任务栏按钮——前提是它在显示之前就挂上，所以这里一并挂了
+        LONG_PTR kuozhanYangshi = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, (kuozhanYangshi & ~WS_EX_TOOLWINDOW) | WS_EX_NOACTIVATE);
+        DWORD buYuanjiao = 1; // DWMWCP_DONOTROUND。带标题栏的窗口在Win11上会被系统自动切成圆角，这里要求保持直角，和原来一样。MinGW的头文件太旧，没有这两个常量，只好直接写数字
+        DwmSetWindowAttribute(hwnd, 33, &buYuanjiao, sizeof(buYuanjiao)); // 33是DWMWA_WINDOW_CORNER_PREFERENCE。Win10上没有这个属性，调用会失败，但Win10本来就不切圆角，失败了也无所谓
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED); // 改完样式必须带SWP_FRAMECHANGED通知系统重新算一遍边框，nativeEvent才会收到WM_NCCALCSIZE
+    }
     if (!g_fenzuMianban->isVisible()) g_fenzuMianban->show();
-    HWND hwnd = (HWND)g_fenzuMianban->winId();
     LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
     SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_NOACTIVATE); // 和主窗口一样：能点，但点了不抢前台
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
