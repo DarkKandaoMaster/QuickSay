@@ -2821,8 +2821,8 @@ static const char *g_quanjuQss = R"(
     }
     QScrollBar::handle:vertical{
         background-color: #c7c7c7;                  /*滑块颜色：浅灰色*/
-        border-radius: 4px;                         /*滑块圆角：4像素*/
-        min-height: 20px;                           /*滑块最小高度：20像素，确保可拖拽*/
+        border-radius: 3px;                         /*【【【注：改这个数字就能改竖滚动条滑块的圆角】】】滑块宽8-1-1=6像素，圆角不能超过宽度的一半，超了Qt就干脆不画圆角，所以最大只能写3*/
+        min-height: 20px;                          /*滑块最小高度：20像素，确保可拖拽*/
         margin: 2px 1px;                            /*滑块外边距：上下2像素，左右1像素*/
     }
     QScrollBar::handle:vertical:hover{
@@ -2846,8 +2846,8 @@ static const char *g_quanjuQss = R"(
     }
     QScrollBar::handle:horizontal{
         background-color: #c7c7c7;                  /*滑块颜色：浅灰色*/
-        border-radius: 4px;                         /*滑块圆角：4像素*/
-        min-width: 20px;                            /*滑块最小宽度：20像素，确保可拖拽*/
+        border-radius: 3px;                         /*【【【注：改这个数字就能改横滚动条滑块的圆角】】】滑块高8-1-1=6像素，圆角不能超过高度的一半，超了Qt就干脆不画圆角，所以最大只能写3*/
+        min-width: 20px;                           /*滑块最小宽度：20像素，确保可拖拽*/
         margin: 1px 2px;                            /*滑块边距：上下1像素，左右2像素*/
     }
     QScrollBar::handle:horizontal:hover{
