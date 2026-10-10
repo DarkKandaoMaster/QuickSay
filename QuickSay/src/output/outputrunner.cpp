@@ -7,6 +7,8 @@
 #include <QApplication>
 #include <QClipboard>
 
+#include <windows.h>
+
 OutputRunner *OutputRunner::current_ = nullptr;
 
 void OutputRunner::start(const QString &text) {
@@ -65,7 +67,21 @@ void OutputRunner::finishAction() {
     waitFor(Settings::outputDelayMs(), Step::NextAction);
 }
 
+// 比进程而不是窗口：目标程序自己弹个对话框、换个子窗口不算切走
+bool OutputRunner::targetStillInFront() {
+    if (!Settings::stopOutputOnWindowSwitch()) return true;
+    DWORD process = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &process);
+    // 不在 start 时就记：从搜索框回车输出时，前台要等 leaveSearchMode 还给原来的程序后才对
+    if (targetProcess_ == 0) targetProcess_ = process;
+    return process == targetProcess_;
+}
+
 void OutputRunner::paste() {
+    if (!targetStillInFront()) {
+        finish();
+        return;
+    }
     if (KeyInjector::sendCtrlV()) finishAction();
     else finish();
 }
@@ -114,7 +130,7 @@ void OutputRunner::runCurrentAction() {
         waitFor(1000, Step::WriteFileClipboard);
         break;
     case OutputAction::Type::Press:
-        if (KeyInjector::sendCombo(action)) finishAction();
+        if (targetStillInFront() && KeyInjector::sendCombo(action)) finishAction();
         else finish();
         break;
     case OutputAction::Type::Sleep:

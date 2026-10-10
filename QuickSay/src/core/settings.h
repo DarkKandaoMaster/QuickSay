@@ -38,6 +38,7 @@ inline constexpr char SettingsWindowHeight[] = "shezhichuangkou_h";
 inline constexpr char ToolTipDelay[] = "tooltip_delay";
 inline constexpr char CaptureHotkey[] = "capture_hotkey";
 inline constexpr char SearchOnSummon[] = "search_on_summon";
+inline constexpr char StopOutputOnSwitch[] = "stop_output_on_window_switch";
 
 // 老版本用过的键，只在迁移时读一次
 inline constexpr char LegacyAutoStartAsAdmin[] = "ziqidong_guanliyuan";
@@ -133,6 +134,8 @@ class Settings {
     static void setCaptureHotkey(const QString &value);
     static bool searchOnSummon(); // 用户呼出主窗口（快捷键、托盘、再次启动）后直接进入搜索
     static void setSearchOnSummon(bool value);
+    static bool stopOutputOnWindowSwitch(); // 高级输入过程中前台换成了别的程序就停下
+    static void setStopOutputOnWindowSwitch(bool value);
     static int toolTipDelayMs(); // 鼠标停在短语项、分组上多久后显示悬停提示
     static void setToolTipDelayMs(int value);
 

@@ -65,6 +65,7 @@ void migrate(QJsonObject &c) {
     fill(ToolTipDelay, 0);
     fill(CaptureHotkey, "");
     fill(SearchOnSummon, false);
+    fill(StopOutputOnSwitch, true);
     c.remove(LegacyAutoStartAsAdmin);
 }
 
@@ -108,8 +109,9 @@ QJsonObject defaults() {
     c[CheckUpdatesOnStartup] = true;
     c[IgnoredVersion] = "";
     c[ToolTipDelay] = 0;
-    c[CaptureHotkey] = "";
-    c[SearchOnSummon] = false; // 默认不启用，免得占掉别的程序的快捷键
+    c[CaptureHotkey] = ""; // 默认不启用，免得占掉别的程序的快捷键
+    c[SearchOnSummon] = false;
+    c[StopOutputOnSwitch] = true; // 短语里用 <press Alt+Tab> 之类故意切窗口的人自己去设置里关掉
     c["tianjiachuangkou_x"] = besideX;
     c["tianjiachuangkou_y"] = centerY;
     c["xiugaichuangkou_x"] = besideX;
@@ -364,6 +366,12 @@ bool Settings::searchOnSummon() {
 }
 void Settings::setSearchOnSummon(bool value) {
     setValue(SettingsKey::SearchOnSummon, value);
+}
+bool Settings::stopOutputOnWindowSwitch() {
+    return boolValue(SettingsKey::StopOutputOnSwitch, true);
+}
+void Settings::setStopOutputOnWindowSwitch(bool value) {
+    setValue(SettingsKey::StopOutputOnSwitch, value);
 }
 int Settings::toolTipDelayMs() {
     return intValue(SettingsKey::ToolTipDelay, 0);

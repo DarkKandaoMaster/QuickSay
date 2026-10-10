@@ -303,6 +303,8 @@ void SettingsWindow::buildInputPage(QTabWidget *tabs) {
     outputDelaySpin_ = makeSpinBox(0, 2000, 70, wheelFilter_);
     addRow(advanced, "高级输入间隔（毫秒）", outputDelaySpin_);
     addHint(advanced, "高级输入里每两个动作之间等待的时间。目标程序反应慢时可以调大一些。");
+    stopOnSwitchCheck_ = new QCheckBox("高级输入过程中切换到了别的程序，就停止输入");
+    addCheckBox(advanced, stopOnSwitchCheck_);
 
     QGridLayout *keyboard = makeGroupBox("键盘操作", page);
     badgePassthroughCheck_ = new QCheckBox("钉住窗口时，不允许按下短语项对应角标按键输入短语");
@@ -340,7 +342,6 @@ void SettingsWindow::buildGeneralPage(QTabWidget *tabs) {
     captureHotkeyEdit_->setFixedSize(170, 24);
     captureHotkeyEdit_->setClearButtonEnabled(true); // 清空就是不启用
     addRow(hotkey, "把选中的文字存为新短语", captureHotkeyEdit_);
-    addHint(hotkey, "在任意程序里选中文字后按下这个快捷键，QuickSay会模拟Ctrl+C复制选中的文字，存为主窗口当前分组的最后一条短语。留空表示不启用。");
     auto *captureFilter = new HotkeyEditFilter(captureHotkeyEdit_, hotkeys_, hotkeys_.captureHotkey(), this);
     captureFilter->setFocusOutHandler([this]() {
         if (!validateCaptureHotkey(captureHotkeyEdit_->keySequence())) captureHotkeyEdit_->setKeySequence(QKeySequence(Settings::captureHotkey()));
@@ -398,7 +399,7 @@ void SettingsWindow::buildAboutPage(QTabWidget *tabs) {
 void SettingsWindow::connectChangeTracking() {
     connect(hotkeyEdit_, &QKeySequenceEdit::keySequenceChanged, this, &SettingsWindow::updateApplyButton);
     connect(captureHotkeyEdit_, &QKeySequenceEdit::keySequenceChanged, this, &SettingsWindow::updateApplyButton);
-    for (QCheckBox *check : {alwaysOnTopCheck_, searchOnSummonCheck_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
+    for (QCheckBox *check : {alwaysOnTopCheck_, searchOnSummonCheck_, stopOnSwitchCheck_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
              badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_}) {
         connect(check, &QCheckBox::toggled, this, &SettingsWindow::updateApplyButton);
     }
@@ -415,7 +416,7 @@ void SettingsWindow::updateGroupPanelDelayVisibility() {
 
 // 把设置填回所有控件，等于丢弃未应用的修改
 void SettingsWindow::loadValues() {
-    const QList<QWidget *> controls = {hotkeyEdit_, captureHotkeyEdit_, alwaysOnTopCheck_, searchOnSummonCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
+    const QList<QWidget *> controls = {hotkeyEdit_, captureHotkeyEdit_, alwaysOnTopCheck_, searchOnSummonCheck_, stopOnSwitchCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
         groupPanelDelaySpin_, groupPanelSafeAreaSpin_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, outputDelaySpin_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
         badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_};
     for (QWidget *control : controls)
@@ -425,6 +426,7 @@ void SettingsWindow::loadValues() {
     alwaysOnTopCheck_->setChecked(Settings::alwaysOnTop());
     toolTipDelaySpin_->setValue(Settings::toolTipDelayMs());
     searchOnSummonCheck_->setChecked(Settings::searchOnSummon());
+    stopOnSwitchCheck_->setChecked(Settings::stopOutputOnWindowSwitch());
     widthSpin_->setValue(Settings::mainWidth());
     heightSpin_->setValue(Settings::mainHeight());
     itemHeightSpin_->setValue(Settings::defaultItemHeight());
@@ -463,6 +465,7 @@ bool SettingsWindow::hasUnappliedChanges() const {
         alwaysOnTopCheck_->isChecked() != Settings::alwaysOnTop() ||
         toolTipDelaySpin_->value() != Settings::toolTipDelayMs() ||
         searchOnSummonCheck_->isChecked() != Settings::searchOnSummon() ||
+        stopOnSwitchCheck_->isChecked() != Settings::stopOutputOnWindowSwitch() ||
         widthSpin_->value() != Settings::mainWidth() ||
         heightSpin_->value() != Settings::mainHeight() ||
         itemHeightSpin_->value() != Settings::defaultItemHeight() ||
@@ -540,6 +543,7 @@ bool SettingsWindow::apply() {
     Settings::setAlwaysOnTop(alwaysOnTopCheck_->isChecked());
     Settings::setToolTipDelayMs(toolTipDelaySpin_->value());
     Settings::setSearchOnSummon(searchOnSummonCheck_->isChecked());
+    Settings::setStopOutputOnWindowSwitch(stopOnSwitchCheck_->isChecked());
     Settings::setDefaultItemHeight(itemHeightSpin_->value());
     Settings::setItemPaddingHorizontal(paddingHorizontalSpin_->value());
     Settings::setItemPaddingVertical(paddingVerticalSpin_->value());

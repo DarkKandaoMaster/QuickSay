@@ -73,6 +73,7 @@ class SettingsWindow : public QWidget {
     QSpinBox *scrollStepSpin_ = nullptr;
     QSpinBox *safeAreaSpin_ = nullptr;
     QSpinBox *outputDelaySpin_ = nullptr;
+    QCheckBox *stopOnSwitchCheck_ = nullptr;
     QCheckBox *badgePassthroughCheck_ = nullptr;
     QCheckBox *badgeCtrlCheck_ = nullptr;
     QWidget *badgeCtrlRow_ = nullptr;

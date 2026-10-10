@@ -304,6 +304,7 @@ const char *const kFullTutorial = R"(
       <tr><td><code>A</code>~<code>Z</code></td><td>无</td></tr>
       <tr><td><code>0</code>~<code>9</code></td><td>无</td></tr>
       <tr><td><code>F1</code>~<code>F24</code></td><td>无</td></tr>
+      <tr><td><code>=</code> <code>-</code> <code>[</code> <code>]</code> <code>;</code> <code>'</code> <code>,</code> <code>.</code> <code>/</code> <code>\</code> <code>`</code></td><td>不用按Shift就能打出来的标点键。例如<code>&lt;press Ctrl+Shift+=&gt;</code></td></tr>
       <tr><td>组合快捷键</td><td>例如<code>&lt;press Ctrl+Shift+A&gt;</code></td></tr>
       <tr><td>上面提到的可以简写的所有按键</td><td>例如<code>&lt;press Enter&gt;</code></td></tr>
     </table><br>

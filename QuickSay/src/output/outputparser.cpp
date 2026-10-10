@@ -50,6 +50,15 @@ bool virtualKeyFromName(const QString &name, WORD &vk) {
             vk = static_cast<WORD>(c);
             return true;
         }
+        // 标点键（<press Ctrl+Shift+=> 这种）。按当前键盘布局找出打出这个字符的键，
+        // 只认不用按 Shift 就能打出来的，否则 <press !> 实际按的是 1，和写的对不上
+        if (QStringLiteral("=-[];',./\\`").contains(QChar(c))) {
+            const SHORT scan = VkKeyScanW(static_cast<WCHAR>(c));
+            if (scan != -1 && (HIBYTE(scan) & 0x07) == 0) {
+                vk = LOBYTE(scan);
+                return true;
+            }
+        }
     }
     if (key.size() >= 2 && key.at(0) == 'f') {
         bool ok = false;

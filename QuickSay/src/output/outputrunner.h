@@ -35,6 +35,8 @@ class OutputRunner : public QObject {
     void runWaitingStep();
     void runCurrentAction();
     void paste();
+    // 设置里开了“切换窗口就停止”时，每次真正发按键前核对前台程序还是不是开始输出时那个
+    bool targetStillInFront();
 
     QVector<OutputAction> actions_;
     int index_ = 0;
@@ -42,6 +44,7 @@ class OutputRunner : public QObject {
     Step waitingStep_ = Step::None;
     OutputAction pendingFile_;
     bool ended_ = false;
+    unsigned long targetProcess_ = 0; // 第一次发按键时的前台进程 ID
 
     static OutputRunner *current_;
 };
