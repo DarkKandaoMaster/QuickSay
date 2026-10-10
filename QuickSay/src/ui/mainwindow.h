@@ -46,6 +46,8 @@ class MainWindow : public QWidget {
     // 关闭可能开着的右键菜单，再收起到托盘
     void closeToTray();
     void outputPhrase(QListWidgetItem *item);
+    // 输出一段文字（不一定是整条短语）；没钉住就先收起窗口
+    void outputText(const QString &text);
     void togglePinned();
 
     bool isSearchMode() const;
@@ -62,6 +64,8 @@ class MainWindow : public QWidget {
     void commitPhraseChanges();
     // 在当前分组末尾加一条只有正文的短语，返回分组名
     QString addPhraseToCurrentGroup(const QString &text);
+    // 改短语的分组，并挪到目标分组的末尾
+    void movePhraseToGroup(QListWidgetItem *item, const QString &group);
     void refreshFilter();
 
     // 设置窗口应用设置时用
@@ -107,6 +111,8 @@ class MainWindow : public QWidget {
     QMenu phraseMenu_;
     QAction *editAction_ = nullptr;
     QAction *addAfterAction_ = nullptr;
+    QAction *pickTextAction_ = nullptr;
+    QMenu *moveMenu_ = nullptr;
     QAction *deleteAction_ = nullptr;
     QList<QPointer<QWidget>> auxiliaryWindows_;
 

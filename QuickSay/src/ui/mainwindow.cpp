@@ -12,6 +12,7 @@
 #include "ui/grouppanel.h"
 #include "ui/phraseeditor.h"
 #include "ui/phraselist.h"
+#include "ui/popups.h"
 #include "ui/stylesheets.h"
 
 #include <QApplication>
@@ -81,8 +82,10 @@ MainWindow::MainWindow(GroupModel &groups, HotkeyRegistry &hotkeys) : QWidget(nu
     addAuxiliaryWindow(editWindow_);
 
     phraseMenu_.setStyleSheet(StyleSheets::kApp); // 没有父对象，样式表得自己挂
+    pickTextAction_ = phraseMenu_.addAction("选取文字");
     editAction_ = phraseMenu_.addAction("修改");
     addAfterAction_ = phraseMenu_.addAction("在当前短语后添加短语");
+    moveMenu_ = phraseMenu_.addMenu("移动到分组"); // 子菜单是 phraseMenu_ 的子对象，样式表跟着继承
     deleteAction_ = phraseMenu_.addAction("删除");
     list_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(list_, &QWidget::customContextMenuRequested, this, &MainWindow::showPhraseContextMenu);
@@ -198,6 +201,22 @@ void MainWindow::commitPhraseChanges() {
     refreshFilter();
 }
 
+void MainWindow::movePhraseToGroup(QListWidgetItem *item, const QString &group) {
+    if (!groups_.contains(group)) return;
+    // 放到目标分组的最后一条后面：分组内按列表顺序显示，这样它就是目标分组的最后一条
+    list_->takeItem(list_->row(item)); // 只是从列表里摘下来，条目对象还在，修改窗口手里的指针照样有效
+    int row = list_->count();
+    for (int i = list_->count() - 1; i >= 0; --i) {
+        if (PhraseItem::group(list_->item(i)) == group) {
+            row = i + 1;
+            break;
+        }
+    }
+    PhraseItem::setGroup(item, group);
+    list_->insertItem(row, item);
+    commitPhraseChanges(); // 行号变了，短语快捷键必须重建
+}
+
 QString MainWindow::addPhraseToCurrentGroup(const QString &text) {
     const QString group = groups_.currentName();
     // 分组按列表顺序显示，加在整个列表末尾就是这个分组的最后一条
@@ -282,8 +301,22 @@ void MainWindow::deleteGroup(int index) {
 void MainWindow::showPhraseContextMenu(const QPoint &pos) {
     QListWidgetItem *item = list_->itemAt(pos);
     if (!item) return;
+    // 子菜单每次现建：分组随时会增删改名。列出除本分组以外的所有分组
+    moveMenu_->clear();
+    for (int i = 0; i < groups_.count(); ++i) {
+        const QString name = groups_.name(i);
+        if (name != PhraseItem::group(item)) moveMenu_->addAction(QString(name).replace('&', "&&"))->setData(name); // & 在菜单里是助记符
+    }
+    moveMenu_->setEnabled(!moveMenu_->isEmpty());
     QAction *chosen = phraseMenu_.exec(list_->mapToGlobal(pos));
-    if (chosen == editAction_) {
+    if (chosen && chosen->parent() == moveMenu_) {
+        movePhraseToGroup(item, chosen->data().toString());
+    } else if (chosen == pickTextAction_) {
+        // 弹在右键的位置；选中一段、松开鼠标就输出那一段
+        SelectTextPopup::show(PhraseItem::text(item), list_->mapToGlobal(pos), [this](const QString &picked) {
+            outputText(picked);
+        });
+    } else if (chosen == editAction_) {
         editWindow_->openForEdit(item);
     } else if (chosen == addAfterAction_) {
         addWindow_->openForAdd(PhraseItem::group(item), list_->row(item));
@@ -305,7 +338,12 @@ void MainWindow::updatePinButton() {
 }
 
 void MainWindow::outputPhrase(QListWidgetItem *item) {
-    const QString text = PhraseItem::text(item);
+    outputText(PhraseItem::text(item));
+}
+
+void MainWindow::outputText(const QString &text) {
+    // 搜索模式下前台是 QuickSay 自己，不先把前台还回去就粘进搜索框了（右键“选取文字”就会走到这里）
+    if (searchMode_) leaveSearchMode();
     if (!Settings::pinned()) close();
     OutputRunner::start(text);
 }
