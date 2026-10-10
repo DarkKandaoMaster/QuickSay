@@ -64,7 +64,6 @@ class PhraseNavigator : public QObject {
 
   private:
     void switchGroup(int direction);
-    void selectVisibleAt(int index);
     void selectVisibleWithSafeArea(int index, int direction);
 
     PhraseList *list_;

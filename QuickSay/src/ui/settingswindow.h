@@ -46,7 +46,9 @@ class SettingsWindow : public QWidget {
 
     // 窗口外框（含标题栏和透明拖拽边）的逻辑像素尺寸
     QSize outerSize();
-    void fitToTargetSize();
+    // 按窗口样式和 DPI 算出来的外框比客户区多出的尺寸
+    QSize computedBorder();
+    void fitToTargetSize(const QSize &border);
 
     QuickSayApp *app_;
     MainWindow *mainWindow_;

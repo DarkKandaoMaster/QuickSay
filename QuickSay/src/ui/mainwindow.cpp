@@ -118,6 +118,9 @@ PhraseNavigator *MainWindow::navigator() const {
 QLineEdit *MainWindow::searchBox() const {
     return search_;
 }
+HotkeyRegistry &MainWindow::hotkeys() const {
+    return hotkeys_;
+}
 
 void MainWindow::createIconButtons() {
     auto makeButton = [this](const QString &icon, const QString &toolTip) {
@@ -416,7 +419,7 @@ bool MainWindow::handleKeyPress(QKeyEvent *event) {
     const int key = event->key();
     const bool isEnter = key == Qt::Key_Return || key == Qt::Key_Enter;
     // 只看 searchMode_，不能再加 search_->hasFocus()：搜索框被 winId() 变成原生子窗口后，系统键盘焦点在它的 HWND 上时
-    // Qt 按 HWND 把按键直接派给它，QApplication::focusWidget() 却未必是它，hasFocus() 为假就会掉进下面的浏览分支，←→ 被当成切短语/翻组吞掉
+    // Qt 按 HWND 把按键直接派给它，QApplication::focusWidget() 却未必是它，hasFocus() 为假就会掉进下面的浏览分支，Tab/Esc/回车被当成非搜索模式处理
     if (searchMode_) {
         if (!isActiveWindow() || QApplication::activePopupWidget()) return false; // 右键菜单、刚打开的修改窗口之类的按键别截
         if (key == Qt::Key_Escape) {
@@ -436,6 +439,11 @@ bool MainWindow::handleKeyPress(QKeyEvent *event) {
         }
         if (key == Qt::Key_Up || key == Qt::Key_Down) {
             navigator_->moveVertical(key == Qt::Key_Up ? -1 : 1);
+            return true;
+        }
+        // ←→ 也拿来切短语/翻组，不在搜索框里挪光标
+        if (key == Qt::Key_Left || key == Qt::Key_Right) {
+            navigator_->moveHorizontal(key == Qt::Key_Left ? -1 : 1);
             return true;
         }
         return false;
@@ -507,6 +515,11 @@ bool handleKey(DWORD vk) {
     const bool hasSystemModifier = ctrl || alt || win;
     const bool ctrlOnly = ctrl && !shift && !alt && !win; // 设置里三个“允许按下 Ctrl+…”认的就是这种组合
     const bool pinned = Settings::pinned();
+
+    // 用户自己设的全局快捷键优先：比如呼出快捷键设成 Ctrl+`，不放行的话窗口显示时会被下面当成反引号切换钉住吞掉，
+    // 窗口就关不掉了（RegisterHotKey 排在低级钩子后面，钩子吞掉的键它收不到）。
+    // 走 HotkeyHook 的方向键、回车快捷键不在此列，它们本来就设计成主窗口显示时让给键盘浏览
+    if (window->hotkeys().isSystemHotkey(vk, ctrl, shift, alt, win)) return false;
 
     const bool isArrow = vk == VK_LEFT || vk == VK_RIGHT || vk == VK_UP || vk == VK_DOWN;
     if (isArrow && pinned && Settings::arrowKeyPassthroughWhenPinned() && !(ctrlOnly && Settings::arrowKeyCtrlWhenPinned())) return false;

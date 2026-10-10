@@ -637,10 +637,12 @@ void SettingsWindow::showEvent(QShowEvent *event) {
     sizeInitialized_ = true;
     // 目标尺寸只取一次：校正时再读设置会读到上次四舍五入后存回去的值，越变越大
     targetOuterSize_ = Settings::settingsWindowSize();
-    fitToTargetSize(); // 先按现在问得到的边框摆一次，窗口一出来就接近正确大小
+    // 这时原生窗口已建好但还没显示，Qt 也还没把几何同步过去，GetWindowRect 拿到的是个无关的尺寸，
+    // 拿它算边框会让窗口先以错误大小露面再跳一下。所以这次按窗口样式直接算边框
+    fitToTargetSize(computedBorder());
     QTimer::singleShot(0, this, [this]() {
-        fitToTargetSize();
-    }); // 真正贴到屏幕上后边框才准，再校正一次
+        fitToTargetSize(outerSize() - size());
+    }); // 真正贴到屏幕上后按实际边框再校正一次（抹掉换算的四舍五入误差、跨 DPI 屏的偏差）
 }
 
 // 不用 frameGeometry()：它只算 DWM 那圈看得见的边，不含 Win10/11 外面那圈透明拖拽边
@@ -651,9 +653,17 @@ QSize SettingsWindow::outerSize() {
     return QSize(qRound((rect.right - rect.left) / ratio), qRound((rect.bottom - rect.top) / ratio));
 }
 
+// 和 GetWindowRect 一样含透明拖拽边，但不依赖窗口当前的实际几何
+QSize SettingsWindow::computedBorder() {
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    const qreal ratio = devicePixelRatioF();
+    RECT rect{0, 0, 0, 0};
+    if (!AdjustWindowRectExForDpi(&rect, GetWindowLongW(hwnd, GWL_STYLE), FALSE, GetWindowLongW(hwnd, GWL_EXSTYLE), qRound(ratio * 96))) return QSize();
+    return QSize(qRound((rect.right - rect.left) / ratio), qRound((rect.bottom - rect.top) / ratio));
+}
+
 // 把“外框 620*576”换算成客户区尺寸：最小外框和默认外框都和 TrafficMonitor 中文设置窗口一致
-void SettingsWindow::fitToTargetSize() {
-    const QSize border = outerSize() - size();
+void SettingsWindow::fitToTargetSize(const QSize &border) {
     if (border.isEmpty()) return; // 窗口还没真正建好，交给延迟的那次校正
     setMinimumSize(QSize(620, 576) - border);
     resize(targetOuterSize_ - border);

@@ -34,6 +34,7 @@ class MainWindow : public QWidget {
     GroupPanel *groupPanel() const;
     PhraseNavigator *navigator() const;
     QLineEdit *searchBox() const;
+    HotkeyRegistry &hotkeys() const;
 
     // 移到记住的位置并显示（不激活）
     void summon();

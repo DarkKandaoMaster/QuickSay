@@ -26,6 +26,8 @@ class GlobalHotkey : public QObject {
 
     // 钩子用：VK、扩展位和四个修饰键全部精确相等才算命中（RegisterHotKey 也是精确匹配）
     bool matches(quint32 vk, bool extended, bool ctrl, bool shift, bool alt, bool meta) const;
+    // 键盘浏览钩子用：走 RegisterHotKey 且已注册成功、VK 和四个修饰键全部相等
+    bool matchesSystemHotkey(quint32 vk, bool ctrl, bool shift, bool alt, bool meta) const;
 
   signals:
     void activated();
@@ -74,6 +76,9 @@ class HotkeyRegistry : public QObject {
 
     // 有没有别的短语已经用了这个快捷键（不查呼出快捷键）
     bool isUsedByPhrase(const QKeySequence &sequence, const GlobalHotkey *except) const;
+
+    // 这个按键组合是不是某个走 RegisterHotKey 的全局快捷键（呼出快捷键或短语快捷键）
+    bool isSystemHotkey(quint32 vk, bool ctrl, bool shift, bool alt, bool meta) const;
 
   private:
     GlobalHotkey *showHotkey_ = nullptr;

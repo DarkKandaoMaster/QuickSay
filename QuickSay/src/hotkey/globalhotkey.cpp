@@ -229,6 +229,13 @@ bool GlobalHotkey::matches(quint32 vk, bool extended, bool ctrl, bool shift, boo
     return usesHook_ && vk == vk_ && extended == extended_ && ctrl == ctrl_ && shift == shift_ && alt == alt_ && meta == meta_;
 }
 
+bool GlobalHotkey::matchesSystemHotkey(quint32 vk, bool ctrl, bool shift, bool alt, bool meta) const {
+    if (!qhotkey_ || !qhotkey_->isRegistered()) return false;
+    const QHotkey::NativeShortcut native = qhotkey_->currentNativeShortcut(); // modifier 里不含 MOD_NOREPEAT，注册时才加
+    if (!native.isValid() || native.key != vk) return false;
+    return bool(native.modifier & MOD_CONTROL) == ctrl && bool(native.modifier & MOD_SHIFT) == shift && bool(native.modifier & MOD_ALT) == alt && bool(native.modifier & MOD_WIN) == meta;
+}
+
 namespace HotkeyHook {
 
 void install() {
@@ -290,6 +297,14 @@ void HotkeyRegistry::setPhraseHotkeysRegistered(bool registered) {
 bool HotkeyRegistry::isUsedByPhrase(const QKeySequence &sequence, const GlobalHotkey *except) const {
     for (const GlobalHotkey *hotkey : phraseHotkeys_) {
         if (hotkey && hotkey != except && hotkey->shortcut() == sequence) return true;
+    }
+    return false;
+}
+
+bool HotkeyRegistry::isSystemHotkey(quint32 vk, bool ctrl, bool shift, bool alt, bool meta) const {
+    if (showHotkey_ && showHotkey_->matchesSystemHotkey(vk, ctrl, shift, alt, meta)) return true;
+    for (const GlobalHotkey *hotkey : phraseHotkeys_) {
+        if (hotkey && hotkey->matchesSystemHotkey(vk, ctrl, shift, alt, meta)) return true;
     }
     return false;
 }

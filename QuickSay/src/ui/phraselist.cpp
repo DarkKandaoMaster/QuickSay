@@ -180,10 +180,13 @@ void PhraseList::applyFilter(const QString &group, const QString &keyword) {
 }
 
 void PhraseList::applyLayout(int itemHeight, int columns) {
-    setStyleSheet(QString("QListWidget::item{ height: %1px; padding: %2px %3px; }")
-            .arg(itemHeight)
-            .arg(Settings::itemPaddingVertical())
-            .arg(Settings::itemPaddingHorizontal()));
+    const QString sheet = QString("QListWidget::item{ height: %1px; padding: %2px %3px; }")
+                              .arg(itemHeight)
+                              .arg(Settings::itemPaddingVertical())
+                              .arg(Settings::itemPaddingHorizontal());
+    // 用方向键翻组时这里是在低级键盘钩子的回调里同步跑的，回调太慢按键会漏给前台程序、钩子还可能被系统摘掉。
+    // setStyleSheet 会把整个列表重新 polish 一遍，行高内边距没变（大多数分组都一样）就别重设
+    if (styleSheet() != sheet) setStyleSheet(sheet);
     updateColumns(columns);
 }
 
@@ -292,13 +295,7 @@ void PhraseNavigator::clearGroupInertia() {
     if (panel_) panel_->hideIfIdle();
 }
 
-void PhraseNavigator::selectVisibleAt(int index) {
-    const QVector<QListWidgetItem *> items = list_->visibleItems();
-    if (index < 0 || index >= items.size()) return;
-    list_->setCurrentItem(items[index]);
-    list_->scrollToItem(items[index], QAbstractItemView::PositionAtCenter);
-}
-
+// 方向键浏览一律走安全区规则。左右键以前用 PositionAtCenter，同一行里挪一格也会把这一行硬拽到正中间
 void PhraseNavigator::selectVisibleWithSafeArea(int index, int direction) {
     const QVector<QListWidgetItem *> items = list_->visibleItems();
     if (index < 0 || index >= items.size()) return;
@@ -319,8 +316,11 @@ void PhraseNavigator::moveVertical(int direction) {
         selectVisibleWithSafeArea(target, direction);
         return;
     }
-    // 已经在第一行，或者最后一行这一列排不满：↑ 跳到第一个，↓ 跳到最后一个（本来就在那儿就不动）
-    selectVisibleWithSafeArea(direction > 0 ? items.size() - 1 : 0, direction);
+    // 已经在第一行/最后一行：不动。以前多列时会顺势横着滑到第一个/最后一个，看着像按了←→
+    const int columns = groups_.currentColumns();
+    if (direction < 0 || current / columns == (items.size() - 1) / columns) return;
+    // 下面还有一行、只是这一列排不满（3 列 “1 2 3 / 4 5” 在 3 上按 ↓）：落到最后一个，也就是视觉上正下方最近的那个
+    selectVisibleWithSafeArea(items.size() - 1, direction);
 }
 
 void PhraseNavigator::moveHorizontal(int direction) {
@@ -339,18 +339,18 @@ void PhraseNavigator::moveHorizontal(int direction) {
     const int columns = groups_.currentColumns();
     const int column = current % columns;
     if (direction < 0 && column > 0) {
-        selectVisibleAt(current - 1);
+        selectVisibleWithSafeArea(current - 1, direction);
         return;
     }
     if (direction > 0 && column < columns - 1) {
         if (current + 1 < items.size()) {
-            selectVisibleAt(current + 1);
+            selectVisibleWithSafeArea(current + 1, direction);
             return;
         }
         // 右边一格是空的（最后一行没排满）：跳到上一行同列，也就是视觉上正右方最近的那个。
         // 比如 3 列 “1 2 3 / 4 5” 在 5 上按 → 跳到 3，而不是切分组
         if (current + 1 - columns >= 0) {
-            selectVisibleAt(current + 1 - columns);
+            selectVisibleWithSafeArea(current + 1 - columns, -1); // 实际是往上挪了一行
             return;
         }
     }
@@ -368,7 +368,7 @@ void PhraseNavigator::switchGroup(int direction) {
     if (direction < 0 && !Settings::selectFirstOnGroupSwitch()) {
         const QVector<QListWidgetItem *> items = list_->visibleItems();
         if (items.isEmpty()) return;
-        selectVisibleAt(qMin(groups_.currentColumns(), int(items.size())) - 1);
+        selectVisibleWithSafeArea(qMin(groups_.currentColumns(), int(items.size())) - 1, -1);
     }
 }
 
