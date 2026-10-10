@@ -53,6 +53,7 @@ void upgradeSettings(QJsonObject &settings) {
     settings.remove(LegacyScrollSafeRows);
     fill(GroupPanelSafePixels, 50);
     fill(ToolTipDelay, 0);
+    fill(CaptureHotkey, "");
 }
 
 bool validateSettings(const QJsonObject &settings, QString &error) {
@@ -73,6 +74,11 @@ bool validateSettings(const QJsonObject &settings, QString &error) {
     }
 
     const QJsonValue hotkey = settings.value(Hotkey);
+    const QJsonValue captureHotkey = settings.value(CaptureHotkey);
+    if (!captureHotkey.isString() || captureHotkey.toString().size() > 128) {
+        error = QString("设置字段 %1 无效").arg(CaptureHotkey);
+        return false;
+    }
     if (!hotkey.isString() || hotkey.toString().isEmpty() || hotkey.toString().size() > 128 ||
         !integerInRange(MainWidth, 250, 2000) || !integerInRange(MainHeight, 250, 2000) ||
         !integerInRange(DefaultItemHeight, 10, 100) || !integerInRange(ItemPaddingHorizontal, 0, 100) ||

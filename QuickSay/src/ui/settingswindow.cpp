@@ -334,6 +334,17 @@ void SettingsWindow::buildGeneralPage(QTabWidget *tabs) {
     });
     hotkeyEdit_->installEventFilter(filter);
 
+    captureHotkeyEdit_ = new QKeySequenceEdit(QKeySequence(Settings::captureHotkey()));
+    captureHotkeyEdit_->setFixedSize(170, 24);
+    captureHotkeyEdit_->setClearButtonEnabled(true); // 清空就是不启用
+    addRow(hotkey, "把选中的文字存为新短语", captureHotkeyEdit_);
+    addHint(hotkey, "在任意程序里选中文字后按下这个快捷键，QuickSay会模拟Ctrl+C复制选中的文字，存为主窗口当前分组的最后一条短语。留空表示不启用。");
+    auto *captureFilter = new HotkeyEditFilter(captureHotkeyEdit_, hotkeys_, hotkeys_.captureHotkey(), this);
+    captureFilter->setFocusOutHandler([this]() {
+        if (!validateCaptureHotkey(captureHotkeyEdit_->keySequence())) captureHotkeyEdit_->setKeySequence(QKeySequence(Settings::captureHotkey()));
+    });
+    captureHotkeyEdit_->installEventFilter(captureFilter);
+
     // 两个开关互相独立：只开管理员的话开机不自启、手动启动时自己提权；都开的话开机由计划任务直接以管理员权限启动
     QGridLayout *startup = makeGroupBox("启动", page);
     autoStartCheck_ = new QCheckBox("开机自启动");
@@ -384,6 +395,7 @@ void SettingsWindow::buildAboutPage(QTabWidget *tabs) {
 
 void SettingsWindow::connectChangeTracking() {
     connect(hotkeyEdit_, &QKeySequenceEdit::keySequenceChanged, this, &SettingsWindow::updateApplyButton);
+    connect(captureHotkeyEdit_, &QKeySequenceEdit::keySequenceChanged, this, &SettingsWindow::updateApplyButton);
     for (QCheckBox *check : {alwaysOnTopCheck_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
              badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_}) {
         connect(check, &QCheckBox::toggled, this, &SettingsWindow::updateApplyButton);
@@ -401,12 +413,13 @@ void SettingsWindow::updateGroupPanelDelayVisibility() {
 
 // 把设置填回所有控件，等于丢弃未应用的修改
 void SettingsWindow::loadValues() {
-    const QList<QWidget *> controls = {hotkeyEdit_, alwaysOnTopCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
+    const QList<QWidget *> controls = {hotkeyEdit_, captureHotkeyEdit_, alwaysOnTopCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
         groupPanelDelaySpin_, groupPanelSafeAreaSpin_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, outputDelaySpin_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
         badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_};
     for (QWidget *control : controls)
         control->blockSignals(true);
     hotkeyEdit_->setKeySequence(QKeySequence(Settings::hotkey()));
+    captureHotkeyEdit_->setKeySequence(QKeySequence(Settings::captureHotkey()));
     alwaysOnTopCheck_->setChecked(Settings::alwaysOnTop());
     toolTipDelaySpin_->setValue(Settings::toolTipDelayMs());
     widthSpin_->setValue(Settings::mainWidth());
@@ -443,6 +456,7 @@ void SettingsWindow::loadValues() {
 
 bool SettingsWindow::hasUnappliedChanges() const {
     return hotkeyEdit_->keySequence().toString() != Settings::hotkey() ||
+        captureHotkeyEdit_->keySequence().toString() != Settings::captureHotkey() ||
         alwaysOnTopCheck_->isChecked() != Settings::alwaysOnTop() ||
         toolTipDelaySpin_->value() != Settings::toolTipDelayMs() ||
         widthSpin_->value() != Settings::mainWidth() ||
@@ -483,8 +497,31 @@ bool SettingsWindow::apply() {
             updateApplyButton();
             return false;
         }
+        if (newHotkey == captureHotkeyEdit_->keySequence()) {
+            QMessageBox::warning(hotkeyEdit_, "快捷键不合规", "不能和“把选中的文字存为新短语”的快捷键相同  ");
+            hotkeyEdit_->setKeySequence(QKeySequence(Settings::hotkey()));
+            updateApplyButton();
+            return false;
+        }
         hotkeys_.showHotkey()->setShortcut(newHotkey, true);
         Settings::setHotkey(newHotkey.toString());
+    }
+    const QKeySequence newCaptureHotkey = captureHotkeyEdit_->keySequence();
+    if (newCaptureHotkey.toString() != Settings::captureHotkey()) {
+        if (!validateCaptureHotkey(newCaptureHotkey)) {
+            captureHotkeyEdit_->setKeySequence(QKeySequence(Settings::captureHotkey()));
+            updateApplyButton();
+            return false;
+        }
+        const bool enabled = !newCaptureHotkey.isEmpty();
+        if (!hotkeys_.captureHotkey()->setShortcut(newCaptureHotkey, enabled) && enabled) {
+            QMessageBox::warning(captureHotkeyEdit_, "快捷键不可用", "该快捷键可能已被其他程序占用，请换一个  ");
+            hotkeys_.captureHotkey()->setShortcut(QKeySequence(Settings::captureHotkey()), !Settings::captureHotkey().isEmpty());
+            captureHotkeyEdit_->setKeySequence(QKeySequence(Settings::captureHotkey()));
+            updateApplyButton();
+            return false;
+        }
+        Settings::setCaptureHotkey(newCaptureHotkey.toString());
     }
 
     const bool itemHeightChanged = itemHeightSpin_->value() != Settings::defaultItemHeight();
@@ -661,6 +698,17 @@ QSize SettingsWindow::outerSize() {
     if (!GetWindowRect(reinterpret_cast<HWND>(winId()), &rect)) return frameGeometry().size();
     const qreal ratio = devicePixelRatioF(); // GetWindowRect 给的是物理像素
     return QSize(qRound((rect.right - rect.left) / ratio), qRound((rect.bottom - rect.top) / ratio));
+}
+
+bool SettingsWindow::validateCaptureHotkey(const QKeySequence &sequence) {
+    if (sequence.isEmpty()) return true;
+    if (!validateHotkey(sequence, hotkeys_, captureHotkeyEdit_)) return false;
+    // validateHotkey 只和短语快捷键查重，呼出快捷键要自己比
+    if (sequence == hotkeyEdit_->keySequence() || sequence.toString() == Settings::hotkey()) {
+        QMessageBox::warning(captureHotkeyEdit_, "快捷键不合规", "不能和呼出主窗口的快捷键相同  ");
+        return false;
+    }
+    return true;
 }
 
 // 和 GetWindowRect 一样含透明拖拽边，但不依赖窗口当前的实际几何

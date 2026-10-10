@@ -4,12 +4,14 @@
 #include "core/files.h"
 #include "core/settings.h"
 #include "hotkey/globalhotkey.h"
+#include "output/keyinjector.h"
 #include "output/outputrunner.h"
 #include "platform/nativeui.h"
 #include "platform/startup.h"
 #include "ui/batchedit.h"
 #include "ui/grouppanel.h"
 #include "ui/mainwindow.h"
+#include "ui/popups.h"
 #include "ui/settingswindow.h"
 
 #include <QAbstractNativeEventFilter>
@@ -71,6 +73,10 @@ QuickSayApp::QuickSayApp(bool autostarted) {
     auto *showHotkey = new GlobalHotkey(QKeySequence(Settings::hotkey()), true, &hotkeys_);
     connect(showHotkey, &GlobalHotkey::activated, mainWindow_.get(), &MainWindow::toggleFromHotkey);
     hotkeys_.setShowHotkey(showHotkey);
+    const QKeySequence captureSequence(Settings::captureHotkey());
+    auto *captureHotkey = new GlobalHotkey(captureSequence, !captureSequence.isEmpty(), &hotkeys_); // 空的不注册，QHotkey 注册空快捷键会报警告
+    connect(captureHotkey, &GlobalHotkey::activated, this, &QuickSayApp::captureSelection);
+    hotkeys_.setCaptureHotkey(captureHotkey);
 
     settingsWindow_ = std::make_unique<SettingsWindow>(this, mainWindow_.get(), hotkeys_);
     mainWindow_->addAuxiliaryWindow(settingsWindow_.get());
@@ -120,10 +126,27 @@ void QuickSayApp::createTrayIcon() {
     trayIcon_->setToolTip("QuickSay"); // 必须在 show() 之后
 }
 
+void QuickSayApp::captureSelection() {
+    // 记事本批量编辑期间短语都锁着；导入备份后不许再落盘
+    if (BatchEdit::isActive() || Settings::writesFrozen()) return;
+    SelectionCapture::start([this](const QString &text) {
+        if (BatchEdit::isActive() || Settings::writesFrozen()) return; // 等剪贴板的这一秒里状态可能变了
+        if (text.trimmed().isEmpty()) {
+            trayIcon_->showMessage("QuickSay", "没有复制到文字，请先选中要保存的文字。", QSystemTrayIcon::Warning, 3000);
+            return;
+        }
+        const QString group = mainWindow_->addPhraseToCurrentGroup(text);
+        // 成功了不发托盘通知：Windows 通知会排队，连存十条就要一条条弹上半分钟，还都堆进通知中心
+        showCursorHint(QString("已存入分组“%1”").arg(group));
+    });
+}
+
 void QuickSayApp::setHotkeysRegistered(bool registered) {
     // 先让出快捷键：新实例起来得比这份退得快的话，会撞上还没释放的快捷键
     if (!registered) hotkeys_.setPhraseHotkeysRegistered(false);
     if (GlobalHotkey *showHotkey = hotkeys_.showHotkey()) showHotkey->setRegistered(registered);
+    GlobalHotkey *captureHotkey = hotkeys_.captureHotkey();
+    if (captureHotkey && !captureHotkey->shortcut().isEmpty()) captureHotkey->setRegistered(registered);
     if (registered) hotkeys_.setPhraseHotkeysRegistered(true);
 }
 

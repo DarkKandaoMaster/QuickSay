@@ -197,6 +197,14 @@ void MainWindow::commitPhraseChanges() {
     refreshFilter();
 }
 
+QString MainWindow::addPhraseToCurrentGroup(const QString &text) {
+    const QString group = groups_.currentName();
+    // 分组按列表顺序显示，加在整个列表末尾就是这个分组的最后一条
+    list_->addItem(PhraseItem::create(text, QString(), group, QString()));
+    commitPhraseChanges();
+    return group;
+}
+
 void MainWindow::onCurrentGroupChanged(int index) {
     if (index >= 0 && index < groups_.count()) {
         list_->applyFilter(groups_.name(index), search_->text());

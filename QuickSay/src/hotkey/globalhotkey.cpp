@@ -260,6 +260,14 @@ GlobalHotkey *HotkeyRegistry::showHotkey() const {
     return showHotkey_;
 }
 
+void HotkeyRegistry::setCaptureHotkey(GlobalHotkey *hotkey) {
+    captureHotkey_ = hotkey;
+}
+
+GlobalHotkey *HotkeyRegistry::captureHotkey() const {
+    return captureHotkey_;
+}
+
 void HotkeyRegistry::rebuildPhraseHotkeys(QListWidget &list) {
     for (GlobalHotkey *hotkey : std::as_const(phraseHotkeys_)) {
         if (!hotkey) continue;
@@ -303,6 +311,7 @@ bool HotkeyRegistry::isUsedByPhrase(const QKeySequence &sequence, const GlobalHo
 
 bool HotkeyRegistry::isSystemHotkey(quint32 vk, bool ctrl, bool shift, bool alt, bool meta) const {
     if (showHotkey_ && showHotkey_->matchesSystemHotkey(vk, ctrl, shift, alt, meta)) return true;
+    if (captureHotkey_ && captureHotkey_->matchesSystemHotkey(vk, ctrl, shift, alt, meta)) return true;
     for (const GlobalHotkey *hotkey : phraseHotkeys_) {
         if (hotkey && hotkey->matchesSystemHotkey(vk, ctrl, shift, alt, meta)) return true;
     }

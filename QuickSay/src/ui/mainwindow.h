@@ -58,6 +58,8 @@ class MainWindow : public QWidget {
 
     // 增删改短语之后统一收尾：落盘、重建短语快捷键、重新过滤
     void commitPhraseChanges();
+    // 在当前分组末尾加一条只有正文的短语，返回分组名
+    QString addPhraseToCurrentGroup(const QString &text);
     void refreshFilter();
 
     // 设置窗口应用设置时用

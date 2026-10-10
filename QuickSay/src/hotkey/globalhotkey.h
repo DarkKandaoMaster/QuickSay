@@ -61,7 +61,7 @@ class GlobalHotkey;
 class QKeySequence;
 class QListWidget;
 
-// 呼出主窗口的全局快捷键 + 每条短语自己的快捷键。
+// 呼出主窗口的全局快捷键 + “把选中的文字存为新短语”的快捷键 + 每条短语自己的快捷键。
 // 短语快捷键和列表行号一一对应（没设快捷键的行是 nullptr），所以任何增删改、拖动排序之后都要 rebuild。
 class HotkeyRegistry : public QObject {
   public:
@@ -69,6 +69,9 @@ class HotkeyRegistry : public QObject {
 
     void setShowHotkey(GlobalHotkey *hotkey);
     GlobalHotkey *showHotkey() const;
+    // “把选中的文字存为新短语”。没启用时对象也在，只是快捷键为空、没注册
+    void setCaptureHotkey(GlobalHotkey *hotkey);
+    GlobalHotkey *captureHotkey() const;
 
     void rebuildPhraseHotkeys(QListWidget &list);
     GlobalHotkey *phraseHotkeyAt(int row) const;
@@ -77,10 +80,11 @@ class HotkeyRegistry : public QObject {
     // 有没有别的短语已经用了这个快捷键（不查呼出快捷键）
     bool isUsedByPhrase(const QKeySequence &sequence, const GlobalHotkey *except) const;
 
-    // 这个按键组合是不是某个走 RegisterHotKey 的全局快捷键（呼出快捷键或短语快捷键）
+    // 这个按键组合是不是某个走 RegisterHotKey 的全局快捷键（呼出、存短语、短语快捷键）
     bool isSystemHotkey(quint32 vk, bool ctrl, bool shift, bool alt, bool meta) const;
 
   private:
     GlobalHotkey *showHotkey_ = nullptr;
+    GlobalHotkey *captureHotkey_ = nullptr;
     QVector<GlobalHotkey *> phraseHotkeys_;
 };

@@ -33,6 +33,8 @@ class QuickSayApp : public QObject {
 
   private:
     void setHotkeysRegistered(bool registered);
+    // “把选中的文字存为新短语”快捷键：复制前台程序的选区，存进主窗口当前分组末尾
+    void captureSelection();
     void releaseSingleInstance();
     void createTrayIcon();
 

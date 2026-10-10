@@ -3,6 +3,8 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <functional>
+
 struct OutputAction;
 
 // SendInput 相关。所有函数都按 SendInput 实际插入的事件数判断成败；
@@ -10,6 +12,7 @@ struct OutputAction;
 namespace KeyInjector {
 
 bool sendCtrlV();
+bool sendCtrlC(); // “把选中的文字存为新短语”用来复制前台程序里的选区
 bool sendCombo(const OutputAction &action);
 
 // 抬起用户此刻按着的修饰键（通常就是触发短语的快捷键里的那个）。
@@ -19,6 +22,9 @@ bool releasePressedModifiers();
 // 钩子吞掉 Alt+←、Win+← 里的主键后，补一对无用途的按键（VK 0xE8），
 // 免得松开 Alt/Win 时前台程序激活菜单栏或弹出开始菜单。AutoHotkey 的 #MenuMaskKey 也是这么做的。
 void sendMenuMaskKey();
+// 用户此刻是不是按着 Alt 或 Win。是的话抬起修饰键之前要先补一次 sendMenuMaskKey()：
+// 快捷键的主键被 RegisterHotKey 吃掉了，前台程序只看到 Alt 按下又抬起，会去激活菜单栏
+bool isAltOrWinPressed();
 
 // 以 CF_HDROP 格式把一个文件放进剪贴板
 bool setClipboardFile(const QString &filePath);
@@ -29,3 +35,13 @@ bool setClipboardFile(const QString &filePath);
 bool isOwnInjection(quint32 flags, quintptr extraInfo);
 
 } // namespace KeyInjector
+
+// “把选中的文字存为新短语”：模拟 Ctrl+C 复制前台程序里选中的文字，等剪贴板真的变了再读出来。
+// 和系统复制一样，复制到的文字会留在剪贴板里。
+namespace SelectionCapture {
+
+// 结果异步回调：复制到了就是那段文字；前台程序没响应 Ctrl+C（没选中东西、不支持复制）就是空串。
+// 上一次还没结束时直接忽略这次请求，不回调
+void start(std::function<void(const QString &text)> onFinished);
+
+} // namespace SelectionCapture

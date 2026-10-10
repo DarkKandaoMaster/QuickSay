@@ -36,6 +36,7 @@ inline constexpr char IgnoredVersion[] = "hulve_banben";
 inline constexpr char SettingsWindowWidth[] = "shezhichuangkou_w";
 inline constexpr char SettingsWindowHeight[] = "shezhichuangkou_h";
 inline constexpr char ToolTipDelay[] = "tooltip_delay";
+inline constexpr char CaptureHotkey[] = "capture_hotkey";
 
 // 老版本用过的键，只在迁移时读一次
 inline constexpr char LegacyAutoStartAsAdmin[] = "ziqidong_guanliyuan";
@@ -127,6 +128,8 @@ class Settings {
     static void setIgnoredVersion(const QString &value);
     static QSize settingsWindowSize(); // 设置窗口外框尺寸（含标题栏和边框）
     static void setSettingsWindowSize(const QSize &value);
+    static QString captureHotkey(); // “把选中的文字存为新短语”的全局快捷键，空串表示不启用
+    static void setCaptureHotkey(const QString &value);
     static int toolTipDelayMs(); // 鼠标停在短语项、分组上多久后显示悬停提示
     static void setToolTipDelayMs(int value);
 

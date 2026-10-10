@@ -73,7 +73,7 @@ bool HotkeyEditFilter::eventFilter(QObject *watched, QEvent *event) {
     case QEvent::FocusOut:
         registry_.setPhraseHotkeysRegistered(true);
         if (focusOutHandler_) focusOutHandler_();
-        if (alsoSuspend_) alsoSuspend_->setRegistered(true);
+        if (alsoSuspend_ && !alsoSuspend_->shortcut().isEmpty()) alsoSuspend_->setRegistered(true); // 没启用的快捷键别去注册
         return false;
     default:
         return QObject::eventFilter(watched, event);

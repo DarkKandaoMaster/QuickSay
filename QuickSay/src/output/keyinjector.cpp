@@ -2,9 +2,14 @@
 
 #include "output/outputparser.h"
 
+#include <QApplication>
+#include <QClipboard>
 #include <QDir>
 #include <QFileInfo>
+#include <QTimer>
 #include <QVector>
+
+#include <memory>
 
 #include <windows.h>
 
@@ -56,17 +61,25 @@ bool send(QVector<INPUT> &inputs) {
     return SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT)) == static_cast<UINT>(inputs.size());
 }
 
+bool sendCtrlPlus(WORD key) {
+    QVector<INPUT> inputs = {keyInput(VK_LCONTROL, false, false), keyInput(key, false, false), keyInput(key, true, false), keyInput(VK_LCONTROL, true, false)};
+    if (send(inputs)) return true;
+    // 失败后的尽力清理；调用方随即停止，不做猜测性重试
+    QVector<INPUT> releases = {keyInput(key, true, false), keyInput(VK_LCONTROL, true, false)};
+    send(releases);
+    return false;
+}
+
 } // namespace
 
 namespace KeyInjector {
 
 bool sendCtrlV() {
-    QVector<INPUT> inputs = {keyInput(VK_LCONTROL, false, false), keyInput('V', false, false), keyInput('V', true, false), keyInput(VK_LCONTROL, true, false)};
-    if (send(inputs)) return true;
-    // 失败后的尽力清理；调用方随即停止整段输出，不做猜测性重试
-    QVector<INPUT> releases = {keyInput('V', true, false), keyInput(VK_LCONTROL, true, false)};
-    send(releases);
-    return false;
+    return sendCtrlPlus('V');
+}
+
+bool sendCtrlC() {
+    return sendCtrlPlus('C');
 }
 
 bool sendCombo(const OutputAction &action) {
@@ -88,6 +101,10 @@ bool sendCombo(const OutputAction &action) {
         releases.append(keyInput(action.modifiers.at(i), true, true));
     send(releases);
     return false;
+}
+
+bool isAltOrWinPressed() {
+    return (GetAsyncKeyState(VK_MENU) & 0x8000) || (GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000);
 }
 
 bool releasePressedModifiers() {
@@ -148,3 +165,51 @@ bool isOwnInjection(quint32 flags, quintptr extraInfo) {
 }
 
 } // namespace KeyInjector
+
+namespace {
+
+const int kPollIntervalMs = 20;
+const int kTimeoutMs = 1000; // 前台程序没选中任何东西时 Ctrl+C 什么也不做，剪贴板不会变，等这么久就放弃
+
+bool g_running = false;
+
+} // namespace
+
+namespace SelectionCapture {
+
+void start(std::function<void(const QString &text)> onFinished) {
+    if (g_running) return;
+    g_running = true;
+
+    // 用户这会儿多半还按着快捷键里的修饰键，不先抬起，发出去的 Ctrl+C 会变成 Ctrl+Alt+C 之类
+    if (KeyInjector::isAltOrWinPressed()) KeyInjector::sendMenuMaskKey();
+    // 先记下序号再发 Ctrl+C：只认这之后剪贴板发生的变化，免得把复制之前就在剪贴板里的旧内容当成选区
+    const DWORD sequence = GetClipboardSequenceNumber();
+    if (!KeyInjector::releasePressedModifiers() || !KeyInjector::sendCtrlC()) {
+        g_running = false;
+        onFinished(QString());
+        return;
+    }
+
+    auto *timer = new QTimer(qApp);
+    timer->setInterval(kPollIntervalMs);
+    auto elapsed = std::make_shared<int>(0);
+    auto changedSeen = std::make_shared<bool>(false);
+    QObject::connect(timer, &QTimer::timeout, timer, [timer, sequence, elapsed, changedSeen, onFinished]() {
+        *elapsed += kPollIntervalMs;
+        const bool changed = GetClipboardSequenceNumber() != sequence;
+        // 序号一变就读的话，有的程序分几次往剪贴板里写格式，可能刚好读到写了一半的内容，所以变了之后再多等一轮
+        if (changed && !*changedSeen) {
+            *changedSeen = true;
+            return;
+        }
+        if (!changed && *elapsed < kTimeoutMs) return;
+        timer->stop();
+        timer->deleteLater();
+        g_running = false;
+        onFinished(changed ? QApplication::clipboard()->text() : QString());
+    });
+    timer->start();
+}
+
+} // namespace SelectionCapture

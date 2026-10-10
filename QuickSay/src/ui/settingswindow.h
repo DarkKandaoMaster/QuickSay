@@ -48,6 +48,8 @@ class SettingsWindow : public QWidget {
     QSize outerSize();
     // 按窗口样式和 DPI 算出来的外框比客户区多出的尺寸
     QSize computedBorder();
+    // “把选中的文字存为新短语”快捷键能不能用：空的表示不启用，算合规；不合规时已经弹过警告
+    bool validateCaptureHotkey(const QKeySequence &sequence);
     void fitToTargetSize(const QSize &border);
 
     QuickSayApp *app_;
@@ -80,6 +82,7 @@ class SettingsWindow : public QWidget {
     QCheckBox *arrowCtrlCheck_ = nullptr;
     QWidget *arrowCtrlRow_ = nullptr;
     QKeySequenceEdit *hotkeyEdit_ = nullptr;
+    QKeySequenceEdit *captureHotkeyEdit_ = nullptr;
     QCheckBox *autoStartCheck_ = nullptr;
     QCheckBox *runAsAdminCheck_ = nullptr;
     QCheckBox *checkUpdatesCheck_ = nullptr;
