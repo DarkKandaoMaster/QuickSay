@@ -1,6 +1,7 @@
-﻿// 版本：2.0.1
+﻿// 版本：2.0.2
 // 更新内容：
-// 1. 设置选项新增“切换分组后始终选中第一条短语”。
+// 1. 快捷键支持小键盘按键，并区分主键盘方向键与小键盘方向键（小键盘上的键显示为 Num+…，比如 Ctrl+Num+4、Num+Left；小键盘回车仍显示为 Enter，主键盘回车显示为 Return）。
+// 2. 行为变化：旧数据里的 Ctrl+Left、Ins 这类快捷键，以前主键盘和小键盘都能触发，升级后只认主键盘那一个；需要用小键盘触发的请重新录入。
 
 #include <QApplication>
 #include <QWidget>
@@ -28,6 +29,7 @@
 #include <QScreen>
 #include <QSet>
 #include <QKeyEvent>
+#include <functional> // std::function：用户快捷键包装类QuickSayKuaijiejian用它保存“按下快捷键后要做的事”
 #include <QFormLayout>
 #include <QKeySequenceEdit>
 #include <QHBoxLayout>
@@ -84,7 +86,7 @@
 #pragma comment(lib, "user32.lib")
 
 QJsonObject config; // 全局对象，用于保存程序的设置
-static const QString g_quickSayVersion = "2.0.1"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
+static const QString g_quickSayVersion = "2.0.2"; // 当前QuickSay版本。备份元数据和设置里的版本显示都从这里读取，避免两处忘记同步
 static const QString g_backupFormatVersion = "1.0.0"; // 备份格式版本只在文件结构发生不兼容变化时才修改，不能跟着QuickSay版本一起改
 bool g_zhengzaiDaoruChongqi = false; // 导入成功后直到旧进程退出都保持true，挡住旧设置窗口、焦点事件和窗口移动事件再次覆盖刚写入的备份
 
@@ -100,6 +102,7 @@ QTabBar *g_tabBar = nullptr;
 QLineEdit *g_search = nullptr;
 QPushButton *g_tuding = nullptr; // 指向主窗口右上角的图钉按钮，用于让键盘钩子能触发“切换钉住”
 HHOOK g_keyboardHook = nullptr;
+HHOOK g_kuaijiejianGouzi = nullptr; // 用户快捷键专用的低级键盘钩子，和上面只管主窗口键盘浏览的g_keyboardHook是两回事。RegisterHotKey分不清主键盘方向键和小键盘方向键，这一族快捷键靠它来认。程序启动时装一次，整个生命周期都不卸
 int g_quickSayPressBlockCount = 0;
 int g_phraseCellWidth = 0; // 多列排列时每个短语项该有的宽度，由updatePhraseListColumns算出来、由BadgeDelegate::sizeHint报给列表。0表示单列，此时短语项宽度交给列表自己撑满
 bool g_quickSayIsOutputting = false;
@@ -1911,11 +1914,214 @@ void shuchu(const QListWidgetItem *item, QWidget *chuangkou) {
     startQuickSayOutput(text);
 }
 
-void rebuildItemHotkeys(QListWidget &liebiao, QVector<QHotkey *> &itemHotkeys, QApplication *a) { // 先禁用当前已注册的QHotkey *对象，然后遍历列表中的所有项，为它们注册快捷键
-    for (auto hk : itemHotkeys) { // 遍历动态数组中所有短语项对应的QHotkey *对象
-        if (hk) { // 如果该QHotkey *对象不是空指针
-            hk->setRegistered(false); // 禁用当前已注册的这个QHotkey *对象
-            delete hk; // 释放这个QHotkey *对象的内存
+// ===================== 用户快捷键：区分主键盘和小键盘 =====================
+// 背景：QHotkey底层是RegisterHotKey，它只认VK码。可主键盘上那一小块独立的方向键和小键盘上的方向键（NumLock关着时的小键盘4/6/8/2等）VK码一模一样，
+// 都是VK_LEFT之类，只差按键消息里的扩展位（LLKHF_EXTENDED）；Home/End/PgUp/PgDn/Ins/Del、主键盘回车和小键盘回车也是一样。
+// RegisterHotKey(VK_LEFT)会把两种←一起吞掉，所以这一族快捷键只能走低级键盘钩子，自己核对扩展位。
+// 另外QHotkey把Key_0~9一律映射成主键盘上的'0'~'9'，完全不看Qt::KeypadModifier，所以小键盘数字/运算键要自己换成小键盘专用的VK码再交给RegisterHotKey。
+// 快捷键字符串沿用QKeySequence的PortableText：小键盘上的键带Qt自带的“Num”修饰名，比如“Ctrl+Num+4”“Num+Left”“Alt+Num+*”（小键盘回车例外，不带Num，见luruXiaojianpanKuaijiejian）
+// （qkeysequence.cpp里Qt::KeypadModifier和“Num”双向都有编解码）。老数据不带Num，含义不变，不用迁移
+
+enum class KuaijiejianLujing { // 一个快捷键该走哪条路注册
+    Putong, // 普通快捷键：原样交给QHotkey，和以前完全一样
+    XiaojianpanVk, // 小键盘数字/运算键：换成小键盘专用的VK码之后交给QHotkey，底层还是RegisterHotKey
+    Gouzi // 方向键那一族：走低级键盘钩子，自己核对扩展位
+};
+
+KuaijiejianLujing panduanKuaijiejianLujing(const QKeySequence &seq, DWORD &vk, bool &kuozhan) { // 判断seq该走哪条路。走钩子或小键盘VK时，顺便把VK码和钩子要核对的扩展位填出来
+    vk = 0;
+    kuozhan = false;
+    if (seq.isEmpty()) return KuaijiejianLujing::Putong; // 空快捷键交给QHotkey，保持原来的行为（它自己会注册失败）
+    Qt::Key key = seq[0].key(); // 只看第一个组合键，和QHotkey的做法一样（多个组合键在isValidHotkey里就被拦下了）
+    bool num = seq[0].keyboardModifiers() & Qt::KeypadModifier; // 带不带“Num”，也就是这个键是不是小键盘上的
+    switch (key) { // 先看方向键那一族：不管带不带Num，整族都走钩子。否则主键盘←的快捷键会用RegisterHotKey(VK_LEFT)注册，小键盘←也会被它吞掉，照样区分不了
+    case Qt::Key_Left: vk = VK_LEFT; break;
+    case Qt::Key_Right: vk = VK_RIGHT; break;
+    case Qt::Key_Up: vk = VK_UP; break;
+    case Qt::Key_Down: vk = VK_DOWN; break;
+    case Qt::Key_Home: vk = VK_HOME; break;
+    case Qt::Key_End: vk = VK_END; break;
+    case Qt::Key_PageUp: vk = VK_PRIOR; break;
+    case Qt::Key_PageDown: vk = VK_NEXT; break;
+    case Qt::Key_Insert: vk = VK_INSERT; break;
+    case Qt::Key_Delete: vk = VK_DELETE; break;
+    case Qt::Key_Return: // 主键盘回车：不带扩展位
+        vk = VK_RETURN;
+        kuozhan = false;
+        return KuaijiejianLujing::Gouzi;
+    case Qt::Key_Enter: // 小键盘回车：VK码也是VK_RETURN，但带扩展位。Qt只在扩展位为1时才把回车认成Key_Enter（qwindowskeymapper.cpp），所以不管带不带Num都按小键盘回车处理
+        vk = VK_RETURN;
+        kuozhan = true;
+        return KuaijiejianLujing::Gouzi;
+    default: break;
+    }
+    if (vk != 0) { // 是方向键那一族（回车已经在上面返回了）
+        kuozhan = !num; // 主键盘上那一小块独立的方向键区是扩展键；小键盘上的（NumLock关着时）不是扩展键
+        return KuaijiejianLujing::Gouzi;
+    }
+    if (!num) return KuaijiejianLujing::Putong; // 不是小键盘上的键，原样交给QHotkey
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) { // 小键盘数字（NumLock开着时）
+        vk = VK_NUMPAD0 + (key - Qt::Key_0); // VK_NUMPAD0~VK_NUMPAD9是连续的
+        return KuaijiejianLujing::XiaojianpanVk;
+    }
+    switch (key) { // 小键盘运算键：这几个键在主键盘上也有同名的，QHotkey会映射成主键盘的VK，所以要自己换
+    case Qt::Key_Asterisk: vk = VK_MULTIPLY; break; // 小键盘*
+    case Qt::Key_Plus: vk = VK_ADD; break; // 小键盘+
+    case Qt::Key_Minus: vk = VK_SUBTRACT; break; // 小键盘-
+    case Qt::Key_Slash: vk = VK_DIVIDE; break; // 小键盘/
+    case Qt::Key_Period: // 小键盘.（NumLock开着时）
+    case Qt::Key_Comma: vk = VK_DECIMAL; break; // 有些键盘布局下小键盘的点是逗号，VK码还是VK_DECIMAL
+    case Qt::Key_Clear: vk = VK_CLEAR; break; // NumLock关着时的小键盘5
+    default: return KuaijiejianLujing::Putong; // 其他带Num的键（比如NumLock自己）不认识，还是原样交给QHotkey，和以前一样
+    }
+    return KuaijiejianLujing::XiaojianpanVk;
+}
+
+class QuickSayKuaijiejian;
+QVector<QuickSayKuaijiejian *> g_gouziKuaijiejianBiao; // 当前已注册、走钩子那条路的快捷键。setRegistered(true)时加进来，setRegistered(false)或析构时删掉。钩子只在这张表里找
+QHash<quint32, DWORD> g_kuaijiejianYiAnxia; // 已经被钩子当成快捷键吞掉、还没松开的按键（键：VK码 | 扩展位放在第16位；值：最后一次收到它按下消息的时间）。按住不放时Windows会不停发自动重复的按下消息，靠它认出来，不让快捷键连发
+const DWORD g_kuaijiejianCanliuHaomiao = 1500; //【【【注：距离上一次按下超过这么多毫秒还没收到松开，就当它是残留、按新按下处理。必须比系统“重复延迟”最长的1000毫秒还长，否则按住不放时会误判成新按下而连发】】】
+
+class QuickSayKuaijiejian : public QObject { // 用户快捷键的包装类，替代原来的裸QHotkey *。对外接口照抄QHotkey（shortcut/setRegistered/setShortcut），调用的地方语义不变
+  private:
+    QKeySequence seq_; // 用户录入的原样快捷键（小键盘键带Num）
+    QHotkey *qhotkey_ = nullptr; // 走RegisterHotKey（普通、小键盘VK）那两条路时用的QHotkey，走钩子时是nullptr。它是this的子对象，跟着this一起释放
+    bool gouzi_ = false; // 是不是走钩子那条路
+    DWORD vk_ = 0; // 钩子要核对的VK码
+    bool kuozhan_ = false; // 钩子要核对的扩展位
+    bool ctrl_ = false, shift_ = false, alt_ = false, meta_ = false; // 钩子要核对的四个修饰键，要求和按下时的状态完全一致（RegisterHotKey也是精确匹配）
+    std::function<void()> huidiao_; // 按下快捷键后要做的事。不用Qt信号是因为那得给main.cpp上moc，这里一个回调就够了
+
+  public:
+    QuickSayKuaijiejian(const QKeySequence &seq, bool autoRegister, QObject *parent = nullptr) : QObject(parent) {
+        setShortcut(seq, autoRegister); // autoRegister为true时，构造完就已经注册好了，和QHotkey的构造函数一样
+    }
+    ~QuickSayKuaijiejian() override {
+        if (gouzi_) g_gouziKuaijiejianBiao.removeAll(this); // 钩子那条路的必须从全局表里摘掉，否则钩子会拿着野指针去比对；QHotkey那条路由qhotkey_自己的析构注销
+    }
+
+    QKeySequence shortcut() const { return seq_; } // 返回用户录入的原样快捷键。isValidHotkey查重靠它；不能转发QHotkey::shortcut()，因为用NativeShortcut构造的QHotkey返回的是空序列
+
+    void setAnxiaHuidiao(std::function<void()> f) { huidiao_ = std::move(f); } // 设置按下快捷键后要做的事，相当于原来的connect(hk, &QHotkey::activated, ...)
+
+    void chufa() { // 触发一次快捷键
+        if (huidiao_) huidiao_();
+    }
+
+    bool setRegistered(bool zhuce) { // 注册/注销快捷键。返回是否成功
+        if (qhotkey_) return qhotkey_->setRegistered(zhuce); // RegisterHotKey那两条路交给QHotkey
+        if (!gouzi_) return false; // 既没有QHotkey也不走钩子，说明快捷键无效，注册不了
+        if (zhuce) {
+            if (!g_gouziKuaijiejianBiao.contains(this)) g_gouziKuaijiejianBiao.append(this); // 加进钩子的查找表。重复注册不重复加
+        } else {
+            g_gouziKuaijiejianBiao.removeAll(this); // 从钩子的查找表里摘掉，钩子就不再认它
+        }
+        return true; // 钩子那条路不会和别的程序冲突，总是成功
+    }
+
+    bool setShortcut(const QKeySequence &seq, bool autoRegister) { // 换一个快捷键。autoRegister为true时换完立即注册
+        setRegistered(false); // 先把旧的注销掉
+        delete qhotkey_; // 旧的QHotkey直接扔掉，按新快捷键该走哪条路重新建
+        qhotkey_ = nullptr;
+        gouzi_ = false;
+        seq_ = seq;
+        DWORD vk = 0;
+        bool kuozhan = false;
+        KuaijiejianLujing lujing = panduanKuaijiejianLujing(seq, vk, kuozhan); // 判断该走哪条路
+        Qt::KeyboardModifiers mods = seq.isEmpty() ? Qt::KeyboardModifiers() : seq[0].keyboardModifiers(); // 修饰键
+        if (lujing == KuaijiejianLujing::Gouzi) { // 走钩子：记下要核对的东西，交给quickSayKuaijiejianGouziProc去认
+            gouzi_ = true;
+            vk_ = vk;
+            kuozhan_ = kuozhan;
+            ctrl_ = mods & Qt::ControlModifier;
+            shift_ = mods & Qt::ShiftModifier;
+            alt_ = mods & Qt::AltModifier;
+            meta_ = mods & Qt::MetaModifier;
+            return autoRegister ? setRegistered(true) : true;
+        }
+        if (lujing == KuaijiejianLujing::XiaojianpanVk) { // 小键盘数字/运算键：自己拼好VK码和修饰键，用NativeShortcut交给QHotkey
+            quint32 mod = 0;
+            if (mods & Qt::ControlModifier) mod |= MOD_CONTROL;
+            if (mods & Qt::ShiftModifier) mod |= MOD_SHIFT;
+            if (mods & Qt::AltModifier) mod |= MOD_ALT;
+            if (mods & Qt::MetaModifier) mod |= MOD_WIN;
+            // 注意这里不要加MOD_NOREPEAT：qhotkey_win.cpp的registerShortcut注册时自己会“+ MOD_NOREPEAT”，这边再加一次就变成加两遍，修饰键就错了
+            qhotkey_ = new QHotkey(QHotkey::NativeShortcut(vk, mod), autoRegister, this);
+        } else { // 普通快捷键：和以前完全一样
+            qhotkey_ = new QHotkey(seq, autoRegister, this);
+        }
+        QObject::connect(qhotkey_, &QHotkey::activated, this, [this]() { chufa(); }); // QHotkey的activated信号转发成回调
+        return autoRegister ? qhotkey_->isRegistered() : true;
+    }
+
+    bool pipei(DWORD vk, bool kuozhan, bool ctrl, bool shift, bool alt, bool meta) const { // 钩子用：这次按键是不是这个快捷键。VK码、扩展位、四个修饰键全部精确相等才算
+        return gouzi_ && vk == vk_ && kuozhan == kuozhan_ && ctrl == ctrl_ && shift == shift_ && alt == alt_ && meta == meta_;
+    }
+};
+
+void fasongZhezhaoJian() { // 发一对“遮罩键”（VK 0xE8，系统里没分配用途的键）。钩子吞掉Alt+←、Win+←里的←之后，前台程序和资源管理器只看得到Alt/Win单独按下又松开：松开Alt会激活前台程序的菜单栏，松开Win会弹出开始菜单
+    // 在中间插一个没用的按键，它们就认为这次Alt/Win是和别的键一起按的，不再当成单按。RegisterHotKey那条路系统自己会处理，不需要这个。AutoHotkey的#MenuMaskKey也是这么做的
+    INPUT inputs[2] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = 0xE8; // 按下
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = 0xE8;
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP; // 松开
+    SendInput(2, inputs, sizeof(INPUT)); // 模拟出来的按键带LLKHF_INJECTED，下面这个钩子直接放行，不会绕回来再认一遍
+}
+
+LRESULT CALLBACK quickSayKuaijiejianGouziProc(int code, WPARAM wParam, LPARAM lParam) { // 用户快捷键专用钩子的回调。只处理g_gouziKuaijiejianBiao里那些RegisterHotKey分不清的快捷键
+    if (code == HC_ACTION) {
+        KBDLLHOOKSTRUCT *keyInfo = reinterpret_cast<KBDLLHOOKSTRUCT *>(lParam);
+        if (!(keyInfo->flags & LLKHF_INJECTED)) { // SendInput模拟出来的按键一律放行：自家输出短语时模拟的方向键、回车不能反过来触发快捷键
+            bool kuozhan = keyInfo->flags & LLKHF_EXTENDED; // 这次按键的扩展位：主键盘方向键区、小键盘回车是1，小键盘方向键（NumLock关）、主键盘回车是0
+            quint32 anjianId = keyInfo->vkCode | (kuozhan ? 0x10000u : 0u); // 把扩展位拼进去当“已按下集合”的键，主键盘回车和小键盘回车就不会互相搅
+            if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
+                g_kuaijiejianYiAnxia.remove(anjianId); // 松开了，下次再按就是新的一次。松开消息本身照常放行（RegisterHotKey也不吞松开）
+            } else if ((wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) && !g_gouziKuaijiejianBiao.isEmpty()) { // 按下（按着Alt时是WM_SYSKEYDOWN）。表是空的就什么都不用比
+                bool ctrl = GetAsyncKeyState(VK_CONTROL) & 0x8000; // 低级钩子里GetAsyncKeyState读到的是这次按键之前的状态，修饰键早就按下了，读得准
+                bool shift = GetAsyncKeyState(VK_SHIFT) & 0x8000;
+                bool alt = GetAsyncKeyState(VK_MENU) & 0x8000;
+                bool meta = (GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000); // Win键左右两个都算
+                bool mingzhong = false; // 有没有快捷键认领这次按键
+                bool zidongChongfu = false; // 这个键已经被当成快捷键吞过、还没松开，说明这是按住不放产生的自动重复
+                auto yiAnxia = g_kuaijiejianYiAnxia.constFind(anjianId);
+                if (yiAnxia != g_kuaijiejianYiAnxia.constEnd()) {
+                    // 按住快捷键时Win+L锁屏、切到UAC安全桌面之类的情况，钩子会收不到松开消息，这个键就一直留在集合里，下次真按下时会被当成自动重复白吞一次。所以要分辨“真在按住”和“残留”
+                    // 不能用GetAsyncKeyState(vk)判断它是不是还按着：钩子return 1吞掉的按下，系统根本不会写进键状态表，第一次吞掉之后它读出来永远是“没按着”，自动重复就会每次都被当成新按下而连发
+                    // 所以改看时间：自动重复每隔几十毫秒就来一次（第一次最多等1000毫秒的重复延迟），每来一次就刷新时间；隔了很久才又来的按下，只可能是松开消息丢了之后的新按下
+                    if (keyInfo->time - yiAnxia.value() <= g_kuaijiejianCanliuHaomiao) zidongChongfu = true; // time是毫秒计数，用无符号相减，计数器绕回0时也算得对
+                    else g_kuaijiejianYiAnxia.remove(anjianId); // 残留，清掉，按新按下处理
+                }
+                for (QuickSayKuaijiejian *hk : std::as_const(g_gouziKuaijiejianBiao)) {
+                    if (!hk->pipei(keyInfo->vkCode, kuozhan, ctrl, shift, alt, meta)) continue;
+                    mingzhong = true;
+                    if (!zidongChongfu) { // 自动重复不连发，和QHotkey注册时带的MOD_NOREPEAT一个意思
+                        QMetaObject::invokeMethod(hk, [hk]() { hk->chufa(); }, Qt::QueuedConnection); // 钩子回调必须马上返回，真正干活（输出短语、弹窗口）丢回事件循环去做。hk是上下文对象，万一它在这之前被删了，Qt会自动丢掉这次调用
+                    }
+                }
+                if (mingzhong) {
+                    if (!zidongChongfu && (alt || meta)) fasongZhezhaoJian(); // 按着Alt或Win时吞掉了主键，得补一个遮罩键，否则松开Alt/Win时会弹菜单栏/开始菜单。自动重复时第一次已经补过了
+                    g_kuaijiejianYiAnxia.insert(anjianId, keyInfo->time); // 记下来（自动重复时顺便刷新时间），后面的自动重复就认得出来了
+                    return 1; // 吞掉这次按下，不让前台程序收到（RegisterHotKey也是吞掉的）。自动重复也一起吞，免得按住快捷键时前台程序收到一串方向键
+                }
+            }
+        }
+    }
+    return CallNextHookEx(g_kuaijiejianGouzi, code, wParam, lParam);
+}
+
+void startQuickSayKuaijiejianGouzi() { // 装上用户快捷键专用钩子。只在main()里调一次
+    if (!g_kuaijiejianGouzi) {
+        g_kuaijiejianGouzi = SetWindowsHookExW(WH_KEYBOARD_LL, quickSayKuaijiejianGouziProc, GetModuleHandleW(nullptr), 0);
+    }
+}
+
+void rebuildItemHotkeys(QListWidget &liebiao, QVector<QuickSayKuaijiejian *> &itemHotkeys, QApplication *a) { // 先禁用当前已注册的快捷键对象，然后遍历列表中的所有项，为它们注册快捷键
+    for (auto hk : itemHotkeys) { // 遍历动态数组中所有短语项对应的快捷键对象
+        if (hk) { // 如果该快捷键对象不是空指针
+            hk->setRegistered(false); // 禁用当前已注册的这个快捷键对象
+            delete hk; // 释放这个快捷键对象的内存
         }
     }
     itemHotkeys.clear(); // 清空这个动态数组
@@ -1924,14 +2130,14 @@ void rebuildItemHotkeys(QListWidget &liebiao, QVector<QHotkey *> &itemHotkeys, Q
         QListWidgetItem *it = liebiao.item(i); // 取出该短语项的指针，赋值给it
         QString hkStr = it->data(Qt::UserRole + 3).toString(); // 返回保存在该短语项的Qt::UserRole+3里的快捷键字符串，用hkStr接收
         if (!hkStr.isEmpty()) { // 如果hkStr不为空字符串
-            QHotkey *hk = new QHotkey(QKeySequence(hkStr), true, a); // 定义一个QHotkey *对象，设置快捷键为hkStr，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号
+            QuickSayKuaijiejian *hk = new QuickSayKuaijiejian(QKeySequence(hkStr), true, a); // 定义一个快捷键对象，设置快捷键为hkStr，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会触发回调。带Num的小键盘快捷键由包装类自己分流
             // 设置按下快捷键后会怎样，即输出该短语项里的短语
-            QObject::connect(hk, &QHotkey::activated,
+            hk->setAnxiaHuidiao(
                 [it]() {
                     QString text = it->data(Qt::UserRole).toString(); // 获取该短语项里的短语
                     startQuickSayOutput(text);
                 });
-            itemHotkeys.append(hk); // 把QHotkey *对象hk添加到动态数组中
+            itemHotkeys.append(hk); // 把快捷键对象hk添加到动态数组中
         } else { // 如果hkStr为空字符串
             itemHotkeys.append(nullptr); // 那就把nullptr添加到动态数组中
         }
@@ -2284,6 +2490,22 @@ void startQuickSayKeyboardHook() {
     }
 }
 
+void chongzhuangKuaijiejianGouzi() { // 把用户快捷键专用钩子卸掉重装一遍，由main()里的定时器定期调用
+    // 为什么要重装：低级键盘钩子的回调要是超时没返回（主线程被UAC等待、COM建计划任务之类的长时间阻塞卡住），Windows会不声不响地把钩子摘掉，
+    // 句柄看着还在，程序完全察觉不到，之后方向键那一族快捷键就再也不灵了。定期卸掉重装一遍，最多失灵一个定时器间隔就能自己恢复
+    if (g_kuaijiejianGouzi) {
+        UnhookWindowsHookEx(g_kuaijiejianGouzi); // 钩子如果已经被系统摘掉了，这里会返回失败，无所谓
+        g_kuaijiejianGouzi = nullptr;
+    }
+    startQuickSayKuaijiejianGouzi();
+    // 为什么浏览钩子必须跟着重装：低级键盘钩子是后装的先执行。快捷键钩子刚重装，就排到了浏览钩子前面，
+    // 主窗口显示时方向键、回车会先被快捷键吞掉，键盘浏览就失灵了。所以浏览钩子也要卸掉重装，重新排回快捷键钩子前面
+    if (g_keyboardHook) { // 只有浏览钩子本来就装着才重装；本来没装（主窗口没显示、或者在搜索模式里）就保持不装
+        stopQuickSayKeyboardHook();
+        startQuickSayKeyboardHook(); // 它自己带着!g_searchMode的条件：浏览钩子装着时本来就不在搜索模式里，重装的条件语义不变
+    }
+}
+
 void showMainWindowNoActivate(QWidget &chuang) {
     g_searchMode = false;
     chuang.setAttribute(Qt::WA_ShowWithoutActivating, true);
@@ -2350,7 +2572,7 @@ void xianshi(QWidget &chuang) { // 如果窗口当前不可见，那么显示窗
     chuang.activateWindow(); // 把窗口拉到屏幕最前方，并获得焦点
 }
 
-bool isValidHotkey(const QKeySequence &seq, QVector<QHotkey *> &itemHotkeys_, QKeySequenceEdit *edit_, QHotkey *selfhk = nullptr) { // 检查快捷键是否合规，如果不合规那么弹出对应警告对话框。规则：1.包含至少一个修饰键（Ctrl/Alt/Shift/Meta），同时有且只能有一个主键；或者可以是一个单独的F1~F11、Insert；2.快捷键不能已经存在动态数组itemHotkeys里，也就是说不能已被短语项使用；3.其他情况，比如用户输入了全局快捷键or已经被其他软件占用的快捷键，那么快捷键输入框会直接失去焦点，导致输入不了最后一个主键，也就是输入为空。这些情况就不用考虑了
+bool isValidHotkey(const QKeySequence &seq, QVector<QuickSayKuaijiejian *> &itemHotkeys_, QKeySequenceEdit *edit_, QuickSayKuaijiejian *selfhk = nullptr) { // 检查快捷键是否合规，如果不合规那么弹出对应警告对话框。规则：1.包含至少一个修饰键（Ctrl/Alt/Shift/Meta），同时有且只能有一个主键；或者可以是一个单独的F1~F11、Insert；2.快捷键不能已经存在动态数组itemHotkeys里，也就是说不能已被短语项使用；3.其他情况，比如用户输入了全局快捷键or已经被其他软件占用的快捷键，那么快捷键输入框会直接失去焦点，导致输入不了最后一个主键，也就是输入为空。这些情况就不用考虑了
     if (seq.isEmpty()) { // 如果快捷键为空 //这个if就是以防万一用的，正常情况下不可能触发这个if
         QMessageBox::warning(edit_, "快捷键不合规", "快捷键不能为空  "); // 弹出警告对话框（多了两个空格是因为要留出空间，保持美观）
         return false;
@@ -2366,9 +2588,9 @@ bool isValidHotkey(const QKeySequence &seq, QVector<QHotkey *> &itemHotkeys_, QK
     bool hasPrimary = false;
     if (lastseqStr != "Ctrl" && lastseqStr != "Alt" && lastseqStr != "Shift" && lastseqStr != "Meta") hasPrimary = true; // 如果最后一个元素不是修饰键，那么判断为包含主键 //因为快捷键输入框的特殊性，所以就不用判断是否只有一个主键了。要我说其实判断是否包含主键这步都可以省略
     bool hasqita = false;
-    if (seqStr == "F1" || seqStr == "F2" || seqStr == "F3" || seqStr == "F4" || seqStr == "F5" || seqStr == "F6" || seqStr == "F7" || seqStr == "F8" || seqStr == "F9" || seqStr == "F10" || seqStr == "F11" || seqStr == "Ins") hasqita = true; // 判断是不是一个单独的F1~F11、Insert
+    if (seqStr == "F1" || seqStr == "F2" || seqStr == "F3" || seqStr == "F4" || seqStr == "F5" || seqStr == "F6" || seqStr == "F7" || seqStr == "F8" || seqStr == "F9" || seqStr == "F10" || seqStr == "F11" || seqStr == "Ins" || seqStr == "Num+Ins") hasqita = true; // 判断是不是一个单独的F1~F11、Insert。“Num+Ins”是NumLock关着时小键盘0录出来的Insert，和主键盘Insert同等对待
     if (hasModifier && hasPrimary || hasqita) { // 如果快捷键字符串满足要求
-        for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的QHotkey *对象 //这里使用的是引用遍历
+        for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的快捷键对象 //这里使用的是引用遍历
             if (hk) { // 如果hk不为空指针
                 if (hk == selfhk) continue; // 如果hk等于传入的selfhk，那么说明用户没有修改快捷键，需要跳过，否则就会自己和自己冲突
                 if (hk->shortcut() == seq) { // 返回hk对应的QKeySequence对象，如果它和seq完全相同，那么说明快捷键已被使用
@@ -3221,24 +3443,41 @@ class PhraseListResizeFilter : public QObject {
     }
 };
 
-// 为快捷键输入框tianjia_kjjkuang、xiugai_kjjkuang自定义一个事件过滤器类，用于拦截它们的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
+// 快捷键输入框录入小键盘按键。Qt 6.5.3的QKeySequenceEdit::keyPressEvent只保留Ctrl/Alt/Meta（Shift另走possibleKeys），会把Qt::KeypadModifier丢掉（见qkeysequenceedit.cpp的translateModifiers），
+// 小键盘4录进去就成了“4”，和主键盘4分不开。所以带KeypadModifier的按键由这里自己拼好快捷键塞进输入框，事件吞掉不再交给它。
+// 哪些按键会带KeypadModifier看qwindowskeymapper.cpp：扩展位为0的方向键/Home/End/PgUp/PgDn/Ins/Del（也就是NumLock关着时的小键盘）、VK不是主键盘'0'~'9'的数字（小键盘数字）、
+// 小键盘的* + - . , 以及小键盘5（VK_CLEAR）；扩展位为1的Enter（小键盘回车）和/。主键盘上那一小块方向键区是扩展键，不带KeypadModifier，照旧交给QKeySequenceEdit
+bool luruXiaojianpanKuaijiejian(QKeySequenceEdit *edit_, QKeyEvent *e) { // 返回true表示这次按键已经处理掉了，过滤器要吞掉它
+    int key = e->key();
+    if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt || key == Qt::Key_Meta || key == Qt::Key_AltGr || key == Qt::Key_unknown || key == Qt::Key_NumLock) return false; // 单独按修饰键（和NumLock本身）交给QKeySequenceEdit原样处理，不改变原来的行为
+    if (!(e->modifiers() & Qt::KeypadModifier)) return false; // 不是小键盘上的键，交给QKeySequenceEdit原样处理
+    Qt::KeyboardModifiers mods = e->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier | Qt::KeypadModifier); // 只留下这五个修饰键，GroupSwitch之类的去掉
+    if (key == Qt::Key_Enter) mods &= ~Qt::KeypadModifier; // 小键盘回车不带Num，仍录成“Ctrl+Enter”：Key_Enter本来就只有小键盘回车会产生（主键盘回车是Key_Return），带不带Num指的是同一个物理键。要是录成“Ctrl+Num+Enter”，就和老数据里的“Ctrl+Enter”成了两种写法，isValidHotkey按字符串查重认不出来，两条短语会被同一个键同时触发
+    edit_->setKeySequence(QKeySequence(QKeyCombination(mods, Qt::Key(key)))); // 带着Num塞进输入框，显示成“Ctrl+Num+4”这样
+    return true;
+}
+
+// 为快捷键输入框tianjia_kjjkuang、xiugai_kjjkuang自定义一个事件过滤器类，用于拦截它们的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的快捷键对象，失去焦点时恢复
 class KjjHotkeyEditFilter : public QObject {
   private:
     QKeySequenceEdit *edit_; // 指向快捷键输入框xiugai_kjjkuang
-    QVector<QHotkey *> &itemHotkeys_; // 引用动态数组itemHotkeys
+    QVector<QuickSayKuaijiejian *> &itemHotkeys_; // 引用动态数组itemHotkeys
   public:
-    KjjHotkeyEditFilter(QKeySequenceEdit *e, QVector<QHotkey *> &itemHotkeys, QObject *parent = nullptr) : edit_(e), itemHotkeys_(itemHotkeys), QObject(parent) {}
+    KjjHotkeyEditFilter(QKeySequenceEdit *e, QVector<QuickSayKuaijiejian *> &itemHotkeys, QObject *parent = nullptr) : edit_(e), itemHotkeys_(itemHotkeys), QObject(parent) {}
 
   protected:
     bool eventFilter(QObject *obj, QEvent *event) override { // 重写eventFilter()以拦截事件
+        if (obj == edit_ && event->type() == QEvent::KeyPress) { // 按下按键：小键盘上的键自己录，其余照旧交给输入框
+            return luruXiaojianpanKuaijiejian(edit_, static_cast<QKeyEvent *>(event));
+        }
         if (obj == edit_ && event->type() == QEvent::FocusIn) { // 当xiugai_kjjkuang获得焦点
-            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的QHotkey *对象 //这里使用的是引用遍历
+            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的快捷键对象 //这里使用的是引用遍历
                 if (hk) hk->setRegistered(false); // 如果hk不为空指针，那么禁用当前已注册的快捷键hk
             }
             return false; // 返回false，不拦截事件，让快捷键输入框继续正常处理焦点。此时用户可继续输入新快捷键
         }
         if (obj == edit_ && event->type() == QEvent::FocusOut) { // 当xiugai_kjjkuang失去焦点
-            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的QHotkey *对象
+            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的快捷键对象
                 if (hk) hk->setRegistered(true); // 如果hk不为空指针，那么恢复当前已注册的快捷键hk
             }
             return false; // 返回false，不拦截事件，让快捷键输入框继续正常处理焦点
@@ -3247,26 +3486,29 @@ class KjjHotkeyEditFilter : public QObject {
     }
 };
 
-// 为快捷键输入框hotkeyEdit单独自定义一个事件过滤器类，用于拦截它的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复；2.当输入框获得焦点时立即禁用当前已注册的全局快捷键；3.当输入框失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
+// 为快捷键输入框hotkeyEdit单独自定义一个事件过滤器类，用于拦截它的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的快捷键对象，失去焦点时恢复；2.当输入框获得焦点时立即禁用当前已注册的全局快捷键；3.当输入框失去焦点时判断用户输入的快捷键是否合规，合规的话就应用，不合规的话就恢复输入框为原始快捷键、弹出警告对话框
 class HotkeyEditFilter : public QObject {
   private:
     QKeySequenceEdit *edit_; // 指向快捷键输入框hotkeyEdit
-    QHotkey *hotkey_; // 指向hotkey，就是那个QHotkey *对象
-    QVector<QHotkey *> &itemHotkeys_; // 引用动态数组itemHotkeys
+    QuickSayKuaijiejian *hotkey_; // 指向hotkey，就是那个全局快捷键对象
+    QVector<QuickSayKuaijiejian *> &itemHotkeys_; // 引用动态数组itemHotkeys
   public:
-    HotkeyEditFilter(QKeySequenceEdit *e, QHotkey *h, QVector<QHotkey *> &itemHotkeys, QObject *parent = nullptr) : edit_(e), hotkey_(h), itemHotkeys_(itemHotkeys), QObject(parent) {}
+    HotkeyEditFilter(QKeySequenceEdit *e, QuickSayKuaijiejian *h, QVector<QuickSayKuaijiejian *> &itemHotkeys, QObject *parent = nullptr) : edit_(e), hotkey_(h), itemHotkeys_(itemHotkeys), QObject(parent) {}
 
   protected:
     bool eventFilter(QObject *obj, QEvent *event) override { // 重写eventFilter()以拦截事件
+        if (obj == edit_ && event->type() == QEvent::KeyPress) { // 按下按键：小键盘上的键自己录，其余照旧交给输入框
+            return luruXiaojianpanKuaijiejian(edit_, static_cast<QKeyEvent *>(event));
+        }
         if (obj == edit_ && event->type() == QEvent::FocusIn) { // 当hotkeyEdit获得焦点
-            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的QHotkey *对象
+            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的快捷键对象
                 if (hk) hk->setRegistered(false); // 如果hk不为空指针，那么禁用当前已注册的快捷键hk
             }
             if (hotkey_) hotkey_->setRegistered(false); // 如果hotkey_不为空指针，那么禁用当前已注册的全局快捷键
             return false; // 返回false，不拦截事件，让快捷键输入框继续正常处理焦点。此时用户可继续输入新快捷键
         }
         if (obj == edit_ && event->type() == QEvent::FocusOut) { // 当hotkeyEdit失去焦点
-            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的QHotkey *对象
+            for (auto &hk : itemHotkeys_) { // 遍历动态数组，也就是遍历所有短语项对应的快捷键对象
                 if (hk) hk->setRegistered(true); // 如果hk不为空指针，那么恢复当前已注册的快捷键hk
             }
             QKeySequence seq = edit_->keySequence(); // 取出用户在输入框里输入的快捷键
@@ -3987,6 +4229,14 @@ int main(int argc, char *argv[]) {
         tongzhiYiyouShili(); // 用户在UAC弹窗上点了“否”：把互斥体重新抢回来，以普通权限接着跑
     }
     QApplication a(argc, argv);
+    // 用户快捷键专用钩子必须在这里、抢在任何可能显示主窗口或装浏览钩子g_keyboardHook的代码之前装好，而且整个生命周期都不卸：
+    // 低级键盘钩子是后装的先执行，浏览钩子每次都在它之后装，所以永远先于它执行。主窗口显示时方向键、回车仍归键盘浏览逻辑，
+    // 和原来RegisterHotKey被浏览钩子return 1挡住的效果一样
+    startQuickSayKuaijiejianGouzi();
+    QTimer *gouziChongzhuangDingshiqi = new QTimer(&a); // 定期重装快捷键钩子（和跟在它后面的浏览钩子），防止钩子被Windows因为超时悄悄摘掉之后再也不灵。原因见chongzhuangKuaijiejianGouzi
+    gouziChongzhuangDingshiqi->setInterval(60 * 1000); //【【【注：重装钩子的间隔，单位毫秒。钩子被系统摘掉后最多失灵这么久】】】
+    QObject::connect(gouziChongzhuangDingshiqi, &QTimer::timeout, []() { chongzhuangKuaijiejianGouzi(); });
+    gouziChongzhuangDingshiqi->start();
     // QFontDatabase::addApplicationFont(QCoreApplication::applicationDirPath()+"/fonts/SourceHanSansSC-Regular-2.otf");//程序启动后注册 /fonts/SourceHanSansSC-Regular-2.otf
     // 当用户又启动了一次程序时，把已经在跑的这个实例的主窗口显示出来
     QWinEventNotifier danshiliTongzhi(g_danshiliEvent); // 监听那个命名事件：又有人启动了一次QuickSay时，后启动的那个实例会SetEvent然后自己退出，这边负责把主窗口显示出来
@@ -4033,7 +4283,7 @@ int main(int argc, char *argv[]) {
     liebiao.setMouseTracking(true);
     liebiao.viewport()->setMouseTracking(true);
     liebiao.viewport()->installEventFilter(new PhraseItemToolTipFilter(&liebiao, &liebiao));
-    QVector<QHotkey *> itemHotkeys; // 创建一个动态数组，保存所有短语项对应的QHotkey *对象，并且保证它们的下标（0~n-1）与短语项的行号一一对应。因此如果对应短语项的快捷键字符串为空字符串，那么对应QHotkey *对象为空指针
+    QVector<QuickSayKuaijiejian *> itemHotkeys; // 创建一个动态数组，保存所有短语项对应的快捷键对象，并且保证它们的下标（0~n-1）与短语项的行号一一对应。因此如果对应短语项的快捷键字符串为空字符串，那么对应快捷键对象为空指针
     rebuildItemHotkeys(liebiao, itemHotkeys, &a); // 程序启动时为liebiao中的短语项注册快捷键
     // 实现liebiao选项拖动排序
     liebiao.setDragEnabled(true); // 允许短语项被拖动
@@ -4557,9 +4807,9 @@ int main(int argc, char *argv[]) {
     QKeySequenceEdit *hotkeyEdit = new QKeySequenceEdit(QKeySequence(config["hotkey"].toString())); // 快捷键输入框，里面一开始就存放着config里的快捷键
     hotkeyEdit->setFixedSize(170, 24); // 和数字框一样高
     jiaHang(zu_kuaijiejian, "全局快捷键（呼出主窗口）", hotkeyEdit);
-    QHotkey *hotkey = new QHotkey(QKeySequence(config["hotkey"].toString()), true, &a); // 定义一个QHotkey *对象，设置快捷键为config里的快捷键，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号 //这句代码里已经把a作为父对象传给了hotkey，a会自动管理其内存，不需要手动释放内存
+    QuickSayKuaijiejian *hotkey = new QuickSayKuaijiejian(QKeySequence(config["hotkey"].toString()), true, &a); // 定义一个快捷键对象（包装类，小键盘键和方向键会自己分流），设置快捷键为config里的快捷键，全局可用。此时就成功注册快捷键了，也就是说按下快捷键会发出信号 //这句代码里已经把a作为父对象传给了hotkey，a会自动管理其内存，不需要手动释放内存
     // 设置按下全局快捷键后会怎样
-    QObject::connect(hotkey, &QHotkey::activated,
+    hotkey->setAnxiaHuidiao(
         [&]() {
             if (g_zhengzaiPiliangBianjiFenzu) return; // 外部记事本开着时QuickSay处于锁定状态，呼出快捷键不能把禁用的主窗口盖到记事本上面
             // 按下呼出快捷键时的切换逻辑：
@@ -4574,7 +4824,7 @@ int main(int argc, char *argv[]) {
                 xianshi(chuangkou); // 显示窗口并拉到屏幕最前
             }
         });
-    // 使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象和当前已注册的全局快捷键，让用户能自由地敲任何组合键；2.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，不合规就恢复成原来的快捷键，并把旧的全局快捷键重新注册回去。新快捷键只有点了“应用”或“确定”才会真的注册
+    // 使用自定义的事件过滤器类HotkeyEditFilter，用于拦截hotkeyEdit的焦点事件，实现：1.当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的快捷键对象和当前已注册的全局快捷键，让用户能自由地敲任何组合键；2.当hotkeyEdit失去焦点时判断用户输入的快捷键是否合规，不合规就恢复成原来的快捷键，并把旧的全局快捷键重新注册回去。新快捷键只有点了“应用”或“确定”才会真的注册
     hotkeyEdit->installEventFilter(new HotkeyEditFilter(hotkeyEdit, hotkey, itemHotkeys, &a)); // 创建事件过滤器对象，并把它安装到hotkeyEdit上
 
     QGridLayout *zu_qidong = jianFenzukuang("启动", yemian3Layout);
@@ -5003,7 +5253,7 @@ int main(int argc, char *argv[]) {
             }
             tianjiachuangkou.close();
         });
-    // 使用自定义的事件过滤器类KjjHotkeyEditFilter，用于拦截tianjia_kjjkuang的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
+    // 使用自定义的事件过滤器类KjjHotkeyEditFilter，用于拦截tianjia_kjjkuang的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的快捷键对象，失去焦点时恢复
     tianjia_kjjkuang.installEventFilter(new KjjHotkeyEditFilter(&tianjia_kjjkuang, itemHotkeys, &a)); // 创建事件过滤器对象，并把它安装到tianjia_kjjkuang上
 
     // 在chuangkou右上角放一个“添加”按钮
@@ -5094,7 +5344,7 @@ int main(int argc, char *argv[]) {
 
             QKeySequence seq = xiugai_kjjkuang.keySequence(); // 获取快捷键输入框里的快捷键
             if (!seq.isEmpty()) { // 如果快捷键不为空
-                if (!isValidHotkey(seq, itemHotkeys, &xiugai_kjjkuang, itemHotkeys[liebiao.row(currentEditingItem)])) { // 如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规） //这里需要传入selfhk参数，即最后一个参数，用来防止自己和自己冲突 //我来解释一下最后一个参数哈：它先是获取当前正在编辑的短语项的行号，然后取出itemHotkeys数组中对应行号的QHotkey *指针，如果该短语项没有快捷键，那么取出的就是nullptr
+                if (!isValidHotkey(seq, itemHotkeys, &xiugai_kjjkuang, itemHotkeys[liebiao.row(currentEditingItem)])) { // 如果快捷键不合规（调用isValidHotkey函数检查快捷键是否合规） //这里需要传入selfhk参数，即最后一个参数，用来防止自己和自己冲突 //我来解释一下最后一个参数哈：它先是获取当前正在编辑的短语项的行号，然后取出itemHotkeys数组中对应行号的快捷键对象指针，如果该短语项没有快捷键，那么取出的就是nullptr
                     xiugai_kjjkuang.setKeySequence(QKeySequence(currentEditingItem->data(Qt::UserRole + 3).toString())); // 把对应短语项的Qt::UserRole+3里的快捷键字符串重新放进输入框，也就是说恢复输入框为原始快捷键
                     return; // 结束当前这个槽函数的执行，但是不关闭xiugaichuangkou，于是用户可以重新在这个窗口输入快捷键
                 }
@@ -5114,7 +5364,7 @@ int main(int argc, char *argv[]) {
             filterListByTab(liebiao, tabBar.tabText(tabBar.currentIndex()), search.text()); // 修改后根据当前选中分组和搜索框文字过滤短语项，并且生成角标字符、存到对应短语项的Qt::UserRole+4
             xiugaichuangkou.close();
         });
-    // 使用自定义的事件过滤器类KjjHotkeyEditFilter，用于拦截xiugai_kjjkuang的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的QHotkey *对象，失去焦点时恢复
+    // 使用自定义的事件过滤器类KjjHotkeyEditFilter，用于拦截xiugai_kjjkuang的焦点事件，实现：当输入框获得焦点时立即禁用动态数组itemHotkeys中所有的快捷键对象，失去焦点时恢复
     xiugai_kjjkuang.installEventFilter(new KjjHotkeyEditFilter(&xiugai_kjjkuang, itemHotkeys, &a)); // 创建事件过滤器对象，并把它安装到xiugai_kjjkuang上
 
     // 右键liebiao中的某个选项时，弹出一个菜单，上面有修改、删除两个选项
