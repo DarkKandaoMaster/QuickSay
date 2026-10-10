@@ -66,6 +66,10 @@ class MainWindow : public QWidget {
     QString addPhraseToCurrentGroup(const QString &text);
     // 改短语的分组，并挪到目标分组的末尾
     void movePhraseToGroup(QListWidgetItem *item, const QString &group);
+    // 删掉一条短语（修改窗口要是正开着它，先让它放手），不落盘，调用方自己 commitPhraseChanges
+    void discardPhrase(QListWidgetItem *item);
+    // 批量添加短语：按顺序加在分组末尾，只有正文
+    void appendPhrasesToGroup(const QString &group, const QStringList &texts);
     void refreshFilter();
 
     // 设置窗口应用设置时用
@@ -93,6 +97,7 @@ class MainWindow : public QWidget {
     void deleteGroup(int index);
     void updatePinButton();
     bool handleKeyPress(QKeyEvent *event);
+    int rowAfterGroup(const QString &group) const;
 
     static MainWindow *instance_;
 

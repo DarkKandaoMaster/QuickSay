@@ -153,6 +153,9 @@ void MainWindow::connectGroupSignals() {
     connect(groupPanel_, &GroupPanel::batchEditRequested, this, [this](int index) {
         BatchEdit::start(this, index);
     });
+    connect(groupPanel_, &GroupPanel::batchAddRequested, this, [this](int index) {
+        BatchEdit::startAdd(this, index);
+    });
     connect(groupPanel_, &GroupPanel::deleteGroupRequested, this, &MainWindow::deleteGroup);
 }
 
@@ -201,26 +204,38 @@ void MainWindow::commitPhraseChanges() {
     refreshFilter();
 }
 
+// 分组内按列表顺序显示，插在这一行就是该分组的最后一条
+int MainWindow::rowAfterGroup(const QString &group) const {
+    for (int i = list_->count() - 1; i >= 0; --i) {
+        if (PhraseItem::group(list_->item(i)) == group) return i + 1;
+    }
+    return list_->count();
+}
+
 void MainWindow::movePhraseToGroup(QListWidgetItem *item, const QString &group) {
     if (!groups_.contains(group)) return;
-    // 放到目标分组的最后一条后面：分组内按列表顺序显示，这样它就是目标分组的最后一条
     list_->takeItem(list_->row(item)); // 只是从列表里摘下来，条目对象还在，修改窗口手里的指针照样有效
-    int row = list_->count();
-    for (int i = list_->count() - 1; i >= 0; --i) {
-        if (PhraseItem::group(list_->item(i)) == group) {
-            row = i + 1;
-            break;
-        }
-    }
     PhraseItem::setGroup(item, group);
-    list_->insertItem(row, item);
+    list_->insertItem(rowAfterGroup(group), item);
     commitPhraseChanges(); // 行号变了，短语快捷键必须重建
+}
+
+void MainWindow::discardPhrase(QListWidgetItem *item) {
+    editWindow_->forgetItem(item);
+    delete item;
+}
+
+void MainWindow::appendPhrasesToGroup(const QString &group, const QStringList &texts) {
+    if (!groups_.contains(group) || texts.isEmpty()) return;
+    int row = rowAfterGroup(group);
+    for (const QString &text : texts)
+        list_->insertItem(row++, PhraseItem::create(text, QString(), group, QString()));
+    commitPhraseChanges();
 }
 
 QString MainWindow::addPhraseToCurrentGroup(const QString &text) {
     const QString group = groups_.currentName();
-    // 分组按列表顺序显示，加在整个列表末尾就是这个分组的最后一条
-    list_->addItem(PhraseItem::create(text, QString(), group, QString()));
+    list_->insertItem(rowAfterGroup(group), PhraseItem::create(text, QString(), group, QString()));
     commitPhraseChanges();
     return group;
 }
@@ -289,8 +304,7 @@ void MainWindow::deleteGroup(int index) {
     for (int i = list_->count() - 1; i >= 0; --i) {
         QListWidgetItem *item = list_->item(i);
         if (PhraseItem::group(item) != name) continue;
-        editWindow_->forgetItem(item);
-        delete item;
+        discardPhrase(item);
     }
     groups_.save();
     commitPhraseChanges();
@@ -321,8 +335,7 @@ void MainWindow::showPhraseContextMenu(const QPoint &pos) {
     } else if (chosen == addAfterAction_) {
         addWindow_->openForAdd(PhraseItem::group(item), list_->row(item));
     } else if (chosen == deleteAction_) {
-        editWindow_->forgetItem(item);
-        delete item;
+        discardPhrase(item);
         commitPhraseChanges();
     }
 }
@@ -359,8 +372,9 @@ void MainWindow::summon() {
 }
 
 void MainWindow::summonByUser() {
+    if (BatchEdit::isActive()) return; // 别把锁住的主窗口盖到记事本上面
     summon();
-    if (Settings::searchOnSummon() && !BatchEdit::isActive()) enterSearchMode();
+    if (Settings::searchOnSummon()) enterSearchMode();
 }
 
 void MainWindow::showWithoutActivating() {

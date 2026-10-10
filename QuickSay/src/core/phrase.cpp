@@ -4,10 +4,12 @@
 #include "core/settings.h"
 
 #include <QColor>
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QSet>
 #include <QStringList>
 
 namespace {
@@ -141,3 +143,67 @@ QJsonArray toJson(const QListWidget &list) {
 }
 
 } // namespace PhraseStore
+
+namespace PhraseBatch {
+
+QString chooseSeparator(const QStringList &texts) {
+    QSet<int> taken;
+    for (const QString &text : texts) {
+        for (const QString &line : text.split('\n')) {
+            if (line.size() >= 5 && line.count('-') == line.size()) taken.insert(line.size());
+        }
+    }
+    int length = 5;
+    while (taken.contains(length))
+        ++length;
+    return QString(length, '-');
+}
+
+QString join(const QStringList &texts, const QString &separator) {
+    return texts.join("\n" + separator + "\n");
+}
+
+QStringList split(const QString &text, const QString &separator) {
+    QString normalized = text;
+    normalized.replace("\r\n", "\n");
+    normalized.replace('\r', '\n');
+    QStringList texts;
+    QStringList lines;
+    const auto flush = [&]() {
+        const QString segment = lines.join('\n');
+        if (!segment.trimmed().isEmpty()) texts.append(segment);
+        lines.clear();
+    };
+    for (const QString &line : normalized.split('\n')) {
+        if (line == separator) flush();
+        else lines.append(line);
+    }
+    flush();
+    return texts;
+}
+
+QStringList splitLines(const QString &text) {
+    QString normalized = text;
+    normalized.replace("\r\n", "\n");
+    normalized.replace('\r', '\n');
+    QStringList texts;
+    for (const QString &line : normalized.split('\n')) {
+        if (!line.trimmed().isEmpty()) texts.append(line);
+    }
+    return texts;
+}
+
+QVector<int> matchByText(const QStringList &oldTexts, const QStringList &newTexts) {
+    QHash<QString, QList<int>> unclaimed;
+    for (int i = 0; i < oldTexts.size(); ++i)
+        unclaimed[oldTexts[i]].append(i);
+    QVector<int> match;
+    match.reserve(newTexts.size());
+    for (const QString &text : newTexts) {
+        auto it = unclaimed.find(text);
+        match.append(it == unclaimed.end() || it->isEmpty() ? -1 : it->takeFirst());
+    }
+    return match;
+}
+
+} // namespace PhraseBatch

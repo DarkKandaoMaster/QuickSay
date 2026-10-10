@@ -6,9 +6,9 @@
 #include "ui/grouppanel.h"
 #include "ui/mainwindow.h"
 #include "ui/phraselist.h"
+#include "ui/popups.h"
 
 #include <QApplication>
-#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QMessageBox>
@@ -18,7 +18,6 @@
 
 namespace {
 
-bool g_active = false;
 const QByteArray kUtf8Bom = QByteArray::fromHex("EFBBBF");
 
 // Yes 在右、No 在左（交换了按钮角色），回车默认 Yes，Esc 是 No
@@ -40,81 +39,162 @@ QVector<QListWidgetItem *> itemsInGroup(PhraseList *list, const QString &group) 
     return items;
 }
 
-// 跟着 QProcess 一起销毁
+QString describe(const QListWidgetItem *item) {
+    QString name = PhraseItem::remark(item);
+    if (name.isEmpty()) name = PhraseItem::text(item).section('\n', 0, 0);
+    if (name.size() > 30) name = name.left(30) + "…";
+    if (!PhraseItem::hotkey(item).isEmpty()) name += "（快捷键 " + PhraseItem::hotkey(item) + "）";
+    return name;
+}
+
+// 实测（Win11 记事本 11.2405）：不管设成在新窗口还是新标签页打开，启动的那个进程都一直活到这个文件的标签被关掉，
+// 切标签、保存都不会让它退出，所以等它退出就是等用户改完
 struct Session {
-    MainWindow *mainWindow;
+    MainWindow *mainWindow = nullptr;
     QString group;
+    bool adding = false; // true：批量添加（空文件、每行一条、加在分组末尾），false：批量编辑
     QString separator;
-    QTemporaryDir *tempDir;
+    QByteArray written;
+    QTemporaryDir *tempDir = nullptr;
     QString filePath;
-    QProcess *process;
-    bool finished = false; // 启动失败和进程退出两条路共用资源，只能清理一次
+    QProcess *process = nullptr;
 };
 
+Session *g_session = nullptr;
+
 // 内容读回内存后立刻删掉整个临时目录，不在临时文件夹里留下短语正文
-void releaseResources(Session *session) {
+void endSession() {
+    Session *session = g_session;
+    if (!session) return;
+    g_session = nullptr;
     delete session->tempDir;
-    session->tempDir = nullptr;
+    session->process->disconnect();
     session->process->deleteLater();
+    session->mainWindow->setAllWindowsEnabled(true);
+    delete session;
 }
 
-void unlock(Session &session) {
-    g_active = false;
-    session.mainWindow->setAllWindowsEnabled(true);
-}
-
-void applyEditedText(MainWindow *mainWindow, const QString &group, const QStringList &texts) {
-    for (const QString &text : texts) {
-        if (text.isEmpty()) {
-            QMessageBox::warning(mainWindow, "短语结构无效", "编辑结果中出现了空短语，可能是分隔线被移动或连续放置。为避免破坏数据，本次修改没有应用。  ");
-            return;
+// 按正文原样对回原来的短语：没改过的原条目放回去，备注和快捷键自然都在；
+// 改过正文或删掉的旧条目连同备注、快捷键一起丢掉，新正文建成新短语
+void applyTexts(MainWindow *mainWindow, const QString &group, const QStringList &texts, const QVector<int> &match, const QVector<QListWidgetItem *> &oldItems) {
+    PhraseList *list = mainWindow->phraseList();
+    // 旧条目按列表顺序排，第一条的行号最小，摘掉其余的不会挪动它
+    const int row = oldItems.isEmpty() ? list->count() : list->row(oldItems.first());
+    for (QListWidgetItem *item : oldItems)
+        list->takeItem(list->row(item));
+    QVector<bool> kept(oldItems.size(), false);
+    for (int i = 0; i < texts.size(); ++i) {
+        QListWidgetItem *item = nullptr;
+        if (match[i] >= 0) {
+            item = oldItems[match[i]];
+            kept[match[i]] = true;
+        } else {
+            item = PhraseItem::create(texts[i], QString(), group, QString());
         }
+        list->insertItem(row + i, item);
     }
-    const QVector<QListWidgetItem *> items = itemsInGroup(mainWindow->phraseList(), group);
-    if (texts.count() != items.count()) {
-        QMessageBox::warning(mainWindow, "短语结构已变化", QString("原有 %1 条短语，编辑后识别出 %2 条。可能有分隔线或短语项被增删。\n\n为避免备注和快捷键错位，本次修改没有应用。").arg(items.count()).arg(texts.count()));
-        return;
-    }
-    const QString question = QString("记事本已关闭。确定用编辑后的内容替换分组“%1”下的全部 %2 条短语吗？\n\n备注和快捷键会保留，此操作无法撤销。").arg(group).arg(items.count());
-    if (!confirm(mainWindow, "确认替换短语", question)) return;
-    for (int i = 0; i < items.count(); ++i) {
-        PhraseItem::setText(items[i], texts[i]); // 只按原顺序换正文，备注、分组、快捷键不动
-        PhraseItem::refreshDisplay(items[i]);
+    for (int i = 0; i < oldItems.size(); ++i) {
+        if (!kept[i]) mainWindow->discardPhrase(oldItems[i]);
     }
     mainWindow->commitPhraseChanges();
 }
 
-void onNotepadFinished(Session *session, int exitCode, QProcess::ExitStatus exitStatus) {
-    if (session->finished) return;
-    session->finished = true;
-    unlock(*session);
+void onNotepadFinished() {
+    Session *session = g_session;
+    if (!session) return;
     MainWindow *mainWindow = session->mainWindow;
     const QString group = session->group;
+    const bool adding = session->adding;
     const QString separator = session->separator;
-    const QString filePath = session->filePath;
-
-    if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-        releaseResources(session);
-        QMessageBox::warning(mainWindow, "批量编辑未完成", "记事本没有正常退出，未修改任何短语。  ");
-        return;
-    }
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        const QString error = file.errorString();
-        releaseResources(session);
-        QMessageBox::warning(mainWindow, "批量编辑未完成", QString("无法读取编辑后的临时文件：%1").arg(error));
-        return;
-    }
-    QByteArray data = file.readAll();
+    const QByteArray written = session->written;
+    QFile file(session->filePath);
+    const bool opened = file.open(QIODevice::ReadOnly);
+    QByteArray data = opened ? file.readAll() : QByteArray();
+    const QString error = file.errorString();
     file.close();
+    endSession(); // 先解锁：主窗口禁用着，以它为父的提示框也会跟着被禁用
+    if (!opened) {
+        QMessageBox::warning(mainWindow, "批量编辑短语", QString("无法读取临时文件，未修改任何短语：%1").arg(error));
+        return;
+    }
+    if (data == written) return; // 没保存就关了
     if (data.startsWith(kUtf8Bom)) data.remove(0, 3);
-    QString text = QString::fromUtf8(data);
-    text.replace("\r\n", "\n");
-    text.replace('\r', '\n');
-    QStringList texts;
-    if (!text.isEmpty()) texts = text.split("\n" + separator + "\n", Qt::KeepEmptyParts);
-    releaseResources(session);
-    applyEditedText(mainWindow, group, texts);
+    if (adding) {
+        // 只往末尾加、不碰原有短语，什么都不会丢，所以不用确认
+        const QStringList lines = PhraseBatch::splitLines(QString::fromUtf8(data));
+        if (lines.isEmpty()) return;
+        mainWindow->appendPhrasesToGroup(group, lines);
+        showCursorHint(QString("已添加 %1 条短语到分组“%2”").arg(lines.size()).arg(group));
+        return;
+    }
+    const QStringList texts = PhraseBatch::split(QString::fromUtf8(data), separator);
+
+    const QVector<QListWidgetItem *> oldItems = itemsInGroup(mainWindow->phraseList(), group);
+    QStringList oldTexts;
+    for (QListWidgetItem *item : oldItems)
+        oldTexts.append(PhraseItem::text(item));
+    if (texts == oldTexts) return;
+    const QVector<int> match = PhraseBatch::matchByText(oldTexts, texts);
+    QVector<bool> kept(oldItems.size(), false);
+    for (int index : match) {
+        if (index >= 0) kept[index] = true;
+    }
+    QStringList lost;
+    for (int i = 0; i < oldItems.size(); ++i) {
+        if (!kept[i] && (!PhraseItem::remark(oldItems[i]).isEmpty() || !PhraseItem::hotkey(oldItems[i]).isEmpty())) lost.append("· " + describe(oldItems[i]));
+    }
+    if (!lost.isEmpty()) {
+        const int total = lost.size();
+        if (total > 10) {
+            lost = lost.mid(0, 10);
+            lost.append(QString("……共 %1 条").arg(total));
+        }
+        const QString question = "以下短语删掉了或改了正文，它们的备注和快捷键会一起丢掉：\n\n" + lost.join('\n') + "\n\n确定应用吗？选 No 放弃本次全部修改。";
+        if (!confirm(mainWindow, "批量编辑短语", question)) return;
+    }
+    applyTexts(mainWindow, group, texts, match, oldItems);
+}
+
+void openInNotepad(MainWindow *mainWindow, const QString &group, bool adding, const QString &separator, const QString &text, const QString &fileName, const QString &errorTitle) {
+    if (g_session) return; // 窗口全锁着，正常走不到这里
+    auto *tempDir = new QTemporaryDir(QDir::tempPath() + "/QuickSay-editor-XXXXXX");
+    if (!tempDir->isValid()) {
+        delete tempDir;
+        QMessageBox::warning(mainWindow, errorTitle, "无法创建临时编辑文件，请稍后重试。  ");
+        return;
+    }
+    const QString filePath = tempDir->filePath(fileName);
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        const QString error = file.errorString();
+        delete tempDir;
+        QMessageBox::warning(mainWindow, errorTitle, QString("无法写入临时编辑文件：%1").arg(error));
+        return;
+    }
+    const QByteArray content = kUtf8Bom + text.toUtf8(); // 带 BOM，Win10/11 记事本都能稳定识别成 UTF-8
+    if (file.write(content) != content.size()) {
+        const QString error = file.errorString();
+        file.close();
+        delete tempDir;
+        QMessageBox::warning(mainWindow, errorTitle, QString("无法完整写入临时编辑文件：%1").arg(error));
+        return;
+    }
+    file.close();
+
+    OutputRunner::stop(); // 上一段高级输入还没结束的话，绝不能让它继续粘进记事本
+    // 从这里起锁住所有窗口，记事本关掉这个文件之前这个分组不会被改名或删除
+    g_session = new Session{mainWindow, group, adding, separator, content, tempDir, filePath, new QProcess(qApp)};
+    mainWindow->setAllWindowsEnabled(false);
+    mainWindow->groupPanel()->hide();
+    QProcess *process = g_session->process;
+    // 必须在 start 之前连好，记事本秒退时才不会漏掉信号、让窗口永久锁死。退出码不管，只要退了就读文件
+    QObject::connect(process, &QProcess::finished, process, &onNotepadFinished);
+    process->start("notepad.exe", QStringList() << QDir::toNativeSeparators(filePath));
+    if (process->waitForStarted(3000)) return;
+    if (!g_session) return; // 已经秒退，退出处理里收过尾了
+    const QString error = process->errorString();
+    endSession();
+    QMessageBox::warning(mainWindow, errorTitle, QString("无法启动记事本：%1").arg(error));
 }
 
 } // namespace
@@ -122,74 +202,25 @@ void onNotepadFinished(Session *session, int exitCode, QProcess::ExitStatus exit
 namespace BatchEdit {
 
 bool isActive() {
-    return g_active;
+    return g_session != nullptr;
 }
 
 void start(MainWindow *mainWindow, int groupIndex) {
     GroupModel &groups = mainWindow->groups();
     if (groupIndex < 0 || groupIndex >= groups.count()) return;
-    if (g_active) {
-        QMessageBox::information(mainWindow, "提示", "已有一个分组正在记事本中编辑，请先保存并关闭该记事本。  ");
-        return;
-    }
-    // 从这里起锁住所有窗口，记事本关闭前这个分组不会被改名或删除
     const QString group = groups.name(groupIndex);
-    const QString warning = "即将在记事本中批量编辑该分组下的全部短语。\n\n"
-                            "短语之间会插入带有“请勿修改”字样的分隔线。修改、删除或复制分隔线，或者增删短语，都可能破坏短语项的结构。为保护备注和快捷键，QuickSay检测到短语数量变化时不会应用修改。\n\n"
-                            "建议先在设置中导出备份。是否继续？";
-    if (!confirm(mainWindow, "批量编辑短语", warning)) return;
-
-    // 带上时间戳，免得正文里恰好有同样一行被误拆
-    const QString separator = QString("========== QuickSay短语分隔线_%1（请勿修改） ==========").arg(QDateTime::currentMSecsSinceEpoch());
     QStringList texts;
     for (QListWidgetItem *item : itemsInGroup(mainWindow->phraseList(), group))
         texts.append(PhraseItem::text(item));
+    const QString separator = PhraseBatch::chooseSeparator(texts);
+    openInNotepad(mainWindow, group, false, separator, PhraseBatch::join(texts, separator), "QuickSay批量编辑短语.txt", "无法批量编辑");
+}
 
-    auto *tempDir = new QTemporaryDir(QDir::tempPath() + "/QuickSay-editor-XXXXXX");
-    if (!tempDir->isValid()) {
-        delete tempDir;
-        QMessageBox::warning(mainWindow, "无法批量编辑", "无法创建临时编辑文件，请稍后重试。  ");
-        return;
-    }
-    const QString filePath = tempDir->filePath("QuickSay批量编辑短语.txt");
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly)) {
-        const QString error = file.errorString();
-        delete tempDir;
-        QMessageBox::warning(mainWindow, "无法批量编辑", QString("无法写入临时编辑文件：%1").arg(error));
-        return;
-    }
-    const QByteArray content = kUtf8Bom + texts.join("\n" + separator + "\n").toUtf8(); // 带 BOM，Win10/11 记事本都能稳定识别成 UTF-8
-    if (file.write(content) != content.size()) {
-        const QString error = file.errorString();
-        file.close();
-        delete tempDir;
-        QMessageBox::warning(mainWindow, "无法批量编辑", QString("无法完整写入临时编辑文件：%1").arg(error));
-        return;
-    }
-    file.close();
-
-    auto *session = new Session{mainWindow, group, separator, tempDir, filePath, new QProcess(qApp)};
-    QObject::connect(session->process, &QObject::destroyed, [session]() {
-        delete session;
-    });
-    OutputRunner::stop(); // 上一段高级输入还没结束的话，绝不能让它继续粘进记事本
-    g_active = true;
-    mainWindow->setAllWindowsEnabled(false);
-    mainWindow->groupPanel()->hide();
-    // 必须在 start 之前连好，记事本秒退时才不会漏掉信号、让窗口永久锁死
-    QObject::connect(session->process, &QProcess::finished, session->process, [session](int exitCode, QProcess::ExitStatus exitStatus) {
-        onNotepadFinished(session, exitCode, exitStatus);
-    });
-    session->process->start("notepad.exe", QStringList() << QDir::toNativeSeparators(filePath));
-    if (session->process->waitForStarted(3000)) return;
-
-    if (session->finished) return; // 进程已经秒退，退出处理里清理过了
-    session->finished = true;
-    const QString error = session->process->errorString();
-    unlock(*session);
-    releaseResources(session);
-    QMessageBox::warning(mainWindow, "无法批量编辑", QString("无法启动记事本：%1").arg(error));
+void startAdd(MainWindow *mainWindow, int groupIndex) {
+    GroupModel &groups = mainWindow->groups();
+    if (groupIndex < 0 || groupIndex >= groups.count()) return;
+    // 文件里写不了说明（会被当成短语加进去），用法放在文件名里，记事本标签页上看得到
+    openInNotepad(mainWindow, groups.name(groupIndex), true, QString(), QString(), "（每行一条）QuickSay批量添加短语.txt", "无法批量添加");
 }
 
 } // namespace BatchEdit

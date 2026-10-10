@@ -80,6 +80,7 @@ class GroupPanel : public QObject {
     void newGroupRequested(int position); // position < 0 表示加在末尾
     void editGroupRequested(int index);
     void batchEditRequested(int index);
+    void batchAddRequested(int index);
     void deleteGroupRequested(int index);
 
   private:

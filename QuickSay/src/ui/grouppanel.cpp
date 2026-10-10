@@ -179,10 +179,12 @@ void GroupPanel::showContextMenu(QWidget *anchor, const QPoint &pos, int index, 
     menu.setStyleSheet(StyleSheets::kApp); // 没有父对象，样式表得自己挂
     QAction *editAction = nullptr;
     QAction *batchAction = nullptr;
+    QAction *addAction = nullptr;
     QAction *deleteAction = nullptr;
     if (index >= 0) {
-        editAction = menu.addAction("修改分组");
         batchAction = menu.addAction("批量编辑短语");
+        addAction = menu.addAction("批量添加短语");
+        editAction = menu.addAction("修改分组");
     }
     QAction *newAction = menu.addAction(insertAfterIndex && index >= 0 ? "在当前分组后新建分组" : "新建分组");
     if (index >= 0) deleteAction = menu.addAction("删除分组");
@@ -196,6 +198,8 @@ void GroupPanel::showContextMenu(QWidget *anchor, const QPoint &pos, int index, 
         emit editGroupRequested(index);
     } else if (chosen == batchAction) {
         emit batchEditRequested(index);
+    } else if (chosen == addAction) {
+        emit batchAddRequested(index);
     } else if (chosen == deleteAction) {
         emit deleteGroupRequested(index);
     }
