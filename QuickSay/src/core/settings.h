@@ -37,6 +37,7 @@ inline constexpr char SettingsWindowWidth[] = "shezhichuangkou_w";
 inline constexpr char SettingsWindowHeight[] = "shezhichuangkou_h";
 inline constexpr char ToolTipDelay[] = "tooltip_delay";
 inline constexpr char CaptureHotkey[] = "capture_hotkey";
+inline constexpr char SearchOnSummon[] = "search_on_summon";
 
 // 老版本用过的键，只在迁移时读一次
 inline constexpr char LegacyAutoStartAsAdmin[] = "ziqidong_guanliyuan";
@@ -130,6 +131,8 @@ class Settings {
     static void setSettingsWindowSize(const QSize &value);
     static QString captureHotkey(); // “把选中的文字存为新短语”的全局快捷键，空串表示不启用
     static void setCaptureHotkey(const QString &value);
+    static bool searchOnSummon(); // 用户呼出主窗口（快捷键、托盘、再次启动）后直接进入搜索
+    static void setSearchOnSummon(bool value);
     static int toolTipDelayMs(); // 鼠标停在短语项、分组上多久后显示悬停提示
     static void setToolTipDelayMs(int value);
 

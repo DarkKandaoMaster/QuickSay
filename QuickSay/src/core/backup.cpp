@@ -54,6 +54,7 @@ void upgradeSettings(QJsonObject &settings) {
     fill(GroupPanelSafePixels, 50);
     fill(ToolTipDelay, 0);
     fill(CaptureHotkey, "");
+    fill(SearchOnSummon, false);
 }
 
 bool validateSettings(const QJsonObject &settings, QString &error) {
@@ -65,7 +66,7 @@ bool validateSettings(const QJsonObject &settings, QString &error) {
         return qIsFinite(number) && number == qFloor(number) && number >= minimum && number <= maximum;
     };
 
-    const char *boolKeys[] = {AlwaysOnTop, BadgeTopLeft, BadgeKeyPassthrough, EnterKeyPassthrough, ArrowKeyPassthrough, BadgeKeyCtrl, EnterKeyCtrl, ArrowKeyCtrl, AutoStart, RunAsAdmin, Pinned, GroupPanelAlwaysVisible, SelectFirstOnGroupSwitch};
+    const char *boolKeys[] = {AlwaysOnTop, BadgeTopLeft, BadgeKeyPassthrough, EnterKeyPassthrough, ArrowKeyPassthrough, BadgeKeyCtrl, EnterKeyCtrl, ArrowKeyCtrl, AutoStart, RunAsAdmin, Pinned, GroupPanelAlwaysVisible, SelectFirstOnGroupSwitch, SearchOnSummon};
     for (const char *key : boolKeys) {
         if (!settings.value(key).isBool()) {
             error = QString("设置字段 %1 无效").arg(key);

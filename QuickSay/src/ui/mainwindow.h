@@ -38,6 +38,8 @@ class MainWindow : public QWidget {
 
     // 移到记住的位置并显示（不激活）
     void summon();
+    // 用户主动呼出（快捷键、托盘、再次启动 exe）：summon 之后按设置直接进入搜索
+    void summonByUser();
     void showWithoutActivating();
     // 呼出快捷键：没显示或被盖住就呼出，已在最前就收起
     void toggleFromHotkey();

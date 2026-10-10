@@ -39,8 +39,16 @@ bool isFrontmost(QWidget *widget) {
 void showNoActivate(WId window, bool topmost, WId insertAfter) {
     HWND hwnd = reinterpret_cast<HWND>(window);
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-    HWND after = topmost ? HWND_TOPMOST : (insertAfter ? reinterpret_cast<HWND>(insertAfter) : HWND_TOP);
-    SetWindowPos(hwnd, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    const UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+    if (!topmost && !insertAfter) {
+        // 不置顶时不能只用 HWND_TOP：窗口不激活，系统偶尔不肯把它排到前台窗口上面，按呼出快捷键就会“有时拉不到最前”。
+        // 先临时置顶再取消，HWND_NOTOPMOST 会把它放在所有非置顶窗口的最上面，而且全程不抢焦点
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        return;
+    }
+    HWND after = topmost ? HWND_TOPMOST : reinterpret_cast<HWND>(insertAfter);
+    SetWindowPos(hwnd, after, 0, 0, 0, 0, flags);
 }
 
 void setTransitionsDisabled(WId window, bool disabled) {

@@ -15,7 +15,7 @@ void setNoActivate(WId window, bool enabled);
 // 窗口中心点处最前面的顶层窗口是不是它自己（取不到窗口矩形时当作在最前）
 bool isFrontmost(QWidget *widget);
 
-// 显示（不激活）并按是否置顶调整 Z 序。insertAfter 为 0 时用 HWND_TOP。
+// 显示（不激活）并按是否置顶调整 Z 序。不置顶且 insertAfter 为 0 时排到所有非置顶窗口的最上面。
 void showNoActivate(WId window, bool topmost, WId insertAfter = 0);
 
 // 呼出时禁用 DWM 过渡动画、收起时恢复：窗口一按就出现，收起时仍有淡出动画

@@ -48,7 +48,7 @@ QuickSayApp::QuickSayApp(bool autostarted) {
     instanceNotifier_ = new QWinEventNotifier(SingleInstance::showWindowEvent(), this);
     connect(instanceNotifier_, &QWinEventNotifier::activated, this, [this]() {
         ResetEvent(SingleInstance::showWindowEvent()); // 手动重置事件，不重置会一直触发
-        if (mainWindow_) mainWindow_->summon();
+        if (mainWindow_) mainWindow_->summonByUser();
     });
 
     qApp->setQuitOnLastWindowClosed(false); // 关窗口只是收到托盘
@@ -108,7 +108,7 @@ void QuickSayApp::createTrayIcon() {
     connect(trayIcon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (BatchEdit::isActive()) return; // 记事本开着时不能让用户退出，否则会留下含短语正文的临时文件
         if (reason == QSystemTrayIcon::Trigger) {
-            mainWindow_->summon();
+            mainWindow_->summonByUser();
         } else if (reason == QSystemTrayIcon::Context) {
             switch (TrayMenu::exec()) {
             case TrayMenu::Choice::Settings:

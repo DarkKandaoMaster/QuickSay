@@ -88,6 +88,7 @@ MainWindow::MainWindow(GroupModel &groups, HotkeyRegistry &hotkeys) : QWidget(nu
     connect(list_, &QWidget::customContextMenuRequested, this, &MainWindow::showPhraseContextMenu);
 
     qApp->installEventFilter(this);
+    setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowCloseButtonHint); // 只留关闭按钮
     if (Settings::alwaysOnTop()) setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
     applySize();
 }
@@ -319,6 +320,11 @@ void MainWindow::summon() {
     showWithoutActivating();
 }
 
+void MainWindow::summonByUser() {
+    summon();
+    if (Settings::searchOnSummon() && !BatchEdit::isActive()) enterSearchMode();
+}
+
 void MainWindow::showWithoutActivating() {
     searchMode_ = false;
     setAttribute(Qt::WA_ShowWithoutActivating, true);
@@ -335,7 +341,7 @@ void MainWindow::toggleFromHotkey() {
     if (BatchEdit::isActive()) return; // 别把锁住的主窗口盖到记事本上面
     // 置顶时窗口显示着就必然在最前
     if (isVisible() && (Settings::alwaysOnTop() || WindowStyle::isFrontmost(this))) closeToTray();
-    else summon();
+    else summonByUser();
 }
 
 bool MainWindow::isSearchMode() const {

@@ -59,6 +59,7 @@ class SettingsWindow : public QWidget {
     QSpinBox *widthSpin_ = nullptr;
     QSpinBox *heightSpin_ = nullptr;
     QCheckBox *alwaysOnTopCheck_ = nullptr;
+    QCheckBox *searchOnSummonCheck_ = nullptr;
     QSpinBox *toolTipDelaySpin_ = nullptr;
     QSpinBox *itemHeightSpin_ = nullptr;
     QSpinBox *paddingHorizontalSpin_ = nullptr;

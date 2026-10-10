@@ -255,6 +255,8 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
     addRow(window, "主窗口高度（像素）", heightSpin_);
     alwaysOnTopCheck_ = new QCheckBox("主窗口始终置顶");
     addCheckBox(window, alwaysOnTopCheck_);
+    searchOnSummonCheck_ = new QCheckBox("呼出主窗口后直接进入搜索");
+    addCheckBox(window, searchOnSummonCheck_);
     toolTipDelaySpin_ = spin(0, 5000, 70);
     addRow(window, "鼠标悬停多久后显示提示（毫秒）", toolTipDelaySpin_);
 
@@ -396,7 +398,7 @@ void SettingsWindow::buildAboutPage(QTabWidget *tabs) {
 void SettingsWindow::connectChangeTracking() {
     connect(hotkeyEdit_, &QKeySequenceEdit::keySequenceChanged, this, &SettingsWindow::updateApplyButton);
     connect(captureHotkeyEdit_, &QKeySequenceEdit::keySequenceChanged, this, &SettingsWindow::updateApplyButton);
-    for (QCheckBox *check : {alwaysOnTopCheck_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
+    for (QCheckBox *check : {alwaysOnTopCheck_, searchOnSummonCheck_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
              badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_}) {
         connect(check, &QCheckBox::toggled, this, &SettingsWindow::updateApplyButton);
     }
@@ -413,7 +415,7 @@ void SettingsWindow::updateGroupPanelDelayVisibility() {
 
 // 把设置填回所有控件，等于丢弃未应用的修改
 void SettingsWindow::loadValues() {
-    const QList<QWidget *> controls = {hotkeyEdit_, captureHotkeyEdit_, alwaysOnTopCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
+    const QList<QWidget *> controls = {hotkeyEdit_, captureHotkeyEdit_, alwaysOnTopCheck_, searchOnSummonCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
         groupPanelDelaySpin_, groupPanelSafeAreaSpin_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, outputDelaySpin_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
         badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_};
     for (QWidget *control : controls)
@@ -422,6 +424,7 @@ void SettingsWindow::loadValues() {
     captureHotkeyEdit_->setKeySequence(QKeySequence(Settings::captureHotkey()));
     alwaysOnTopCheck_->setChecked(Settings::alwaysOnTop());
     toolTipDelaySpin_->setValue(Settings::toolTipDelayMs());
+    searchOnSummonCheck_->setChecked(Settings::searchOnSummon());
     widthSpin_->setValue(Settings::mainWidth());
     heightSpin_->setValue(Settings::mainHeight());
     itemHeightSpin_->setValue(Settings::defaultItemHeight());
@@ -459,6 +462,7 @@ bool SettingsWindow::hasUnappliedChanges() const {
         captureHotkeyEdit_->keySequence().toString() != Settings::captureHotkey() ||
         alwaysOnTopCheck_->isChecked() != Settings::alwaysOnTop() ||
         toolTipDelaySpin_->value() != Settings::toolTipDelayMs() ||
+        searchOnSummonCheck_->isChecked() != Settings::searchOnSummon() ||
         widthSpin_->value() != Settings::mainWidth() ||
         heightSpin_->value() != Settings::mainHeight() ||
         itemHeightSpin_->value() != Settings::defaultItemHeight() ||
@@ -535,6 +539,7 @@ bool SettingsWindow::apply() {
     Settings::setMainHeight(heightSpin_->value());
     Settings::setAlwaysOnTop(alwaysOnTopCheck_->isChecked());
     Settings::setToolTipDelayMs(toolTipDelaySpin_->value());
+    Settings::setSearchOnSummon(searchOnSummonCheck_->isChecked());
     Settings::setDefaultItemHeight(itemHeightSpin_->value());
     Settings::setItemPaddingHorizontal(paddingHorizontalSpin_->value());
     Settings::setItemPaddingVertical(paddingVerticalSpin_->value());

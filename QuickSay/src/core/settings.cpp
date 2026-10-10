@@ -64,6 +64,7 @@ void migrate(QJsonObject &c) {
     fill(IgnoredVersion, "");
     fill(ToolTipDelay, 0);
     fill(CaptureHotkey, "");
+    fill(SearchOnSummon, false);
     c.remove(LegacyAutoStartAsAdmin);
 }
 
@@ -107,7 +108,8 @@ QJsonObject defaults() {
     c[CheckUpdatesOnStartup] = true;
     c[IgnoredVersion] = "";
     c[ToolTipDelay] = 0;
-    c[CaptureHotkey] = ""; // 默认不启用，免得占掉别的程序的快捷键
+    c[CaptureHotkey] = "";
+    c[SearchOnSummon] = false; // 默认不启用，免得占掉别的程序的快捷键
     c["tianjiachuangkou_x"] = besideX;
     c["tianjiachuangkou_y"] = centerY;
     c["xiugaichuangkou_x"] = besideX;
@@ -356,6 +358,12 @@ QString Settings::captureHotkey() {
 }
 void Settings::setCaptureHotkey(const QString &value) {
     setValue(SettingsKey::CaptureHotkey, value);
+}
+bool Settings::searchOnSummon() {
+    return boolValue(SettingsKey::SearchOnSummon, false);
+}
+void Settings::setSearchOnSummon(bool value) {
+    setValue(SettingsKey::SearchOnSummon, value);
 }
 int Settings::toolTipDelayMs() {
     return intValue(SettingsKey::ToolTipDelay, 0);
