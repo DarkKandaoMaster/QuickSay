@@ -34,6 +34,7 @@ inline constexpr char CheckUpdatesOnStartup[] = "qidong_jiancha_gengxin";
 inline constexpr char IgnoredVersion[] = "hulve_banben";
 inline constexpr char SettingsWindowWidth[] = "shezhichuangkou_w";
 inline constexpr char SettingsWindowHeight[] = "shezhichuangkou_h";
+inline constexpr char ToolTipDelay[] = "tooltip_delay";
 
 // 老版本用过的键，只在迁移时读一次
 inline constexpr char LegacyAutoStartAsAdmin[] = "ziqidong_guanliyuan";
@@ -123,6 +124,8 @@ class Settings {
     static void setIgnoredVersion(const QString &value);
     static QSize settingsWindowSize(); // 设置窗口外框尺寸（含标题栏和边框）
     static void setSettingsWindowSize(const QSize &value);
+    static int toolTipDelayMs(); // 鼠标停在短语项、分组上多久后显示悬停提示
+    static void setToolTipDelayMs(int value);
 
     // main() 开头还没有 QApplication 时，直接从 config.json 里读“以管理员权限启动”。
     static bool readRunAsAdminFromFile();

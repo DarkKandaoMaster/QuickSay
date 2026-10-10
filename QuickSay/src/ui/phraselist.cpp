@@ -3,14 +3,23 @@
 #include "core/groupmodel.h"
 #include "core/phrase.h"
 #include "core/settings.h"
+#include "output/outputparser.h"
 #include "ui/grouppanel.h"
 
+#include <QApplication>
+#include <QBuffer>
+#include <QCursor>
+#include <QEvent>
+#include <QImageReader>
+#include <QListWidget>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolTip>
+
+#include <limits>
 
 namespace {
 
@@ -57,73 +66,98 @@ class BadgeDelegate : public QStyledItemDelegate {
     PhraseList *list_;
 };
 
-// 主窗口不抢焦点，Qt 默认的条目悬停提示不会触发，所以自己处理：停留 250ms 后显示
-class ToolTipFilter : public QObject {
-  public:
-    explicit ToolTipFilter(QListWidget *list) : QObject(list), list_(list) {
-        timer_.setSingleShot(true);
-        timer_.setInterval(250);
-        connect(&timer_, &QTimer::timeout, this, [this]() {
-            showForLastItem();
-        });
-    }
+const int kToolTipMaxImages = 3;
+const QSize kToolTipImageSize(240, 160); // 图片在悬停提示里最大多大，大图等比缩小
+const int kToolTipMaxBodyLines = 20; // 和纯文字提示有备注时一样，正文最多 20 行
+const int kToolTipMaxRemarkLines = 7;
+const int kToolTipCharsPerLine = 50; // 估算行数用，和 PhraseItem 的纯文字提示一致
 
-  protected:
-    bool eventFilter(QObject *watched, QEvent *event) override {
-        if (watched != list_->viewport()) return QObject::eventFilter(watched, event);
-        switch (event->type()) {
-        case QEvent::MouseMove: {
-            const QPoint pos = static_cast<QMouseEvent *>(event)->pos();
-            QListWidgetItem *item = list_->itemAt(pos);
-            if (!item || item->isHidden() || item->toolTip().isEmpty()) {
-                hide();
-                return false;
-            }
-            if (item != lastItem_ || pos != lastViewportPos_) {
-                QToolTip::hideText();
-                lastItem_ = item;
-                lastViewportPos_ = pos;
-                lastGlobalPos_ = list_->viewport()->mapToGlobal(pos);
-                timer_.start();
-            }
+// 把一段纯文字转成 HTML 接到 html 后面，按行数预算截断，超出时以“……”结尾并返回 false
+bool appendTextHtml(QString &html, const QString &text, int &linesLeft) {
+    if (text.isEmpty()) return true; // 比如正文以图片结尾，后面没东西了，别凭空冒出个“……”
+    const QStringList rows = text.split('\n');
+    for (int i = 0; i < rows.size(); ++i) {
+        const int rowLines = 1 + rows[i].length() / kToolTipCharsPerLine;
+        if (i > 0) html += "<br>";
+        if (linesLeft <= 0) {
+            html += "……";
             return false;
         }
-        case QEvent::ToolTip:
-            if (!showForLastItem()) hide();
-            return true;
-        case QEvent::Leave:
-        case QEvent::Wheel:
-        case QEvent::MouseButtonPress:
-        case QEvent::MouseButtonRelease:
-            hide();
-            break;
-        default:
+        if (rowLines > linesLeft) {
+            html += rows[i].left(linesLeft * kToolTipCharsPerLine).toHtmlEscaped() + "……";
+            linesLeft = 0;
+            return false;
+        }
+        html += rows[i].toHtmlEscaped();
+        linesLeft -= rowLines;
+    }
+    if (!rows.isEmpty()) ++linesLeft; // 最后一行没有换行，跟后面的内容接在同一行
+    return true;
+}
+
+// 把图片缩到提示里的大小，编成 data: URL；读不出来返回空串。displaySize 返回显示用的逻辑尺寸。
+// 不直接写文件路径：QLabel 不认 file:/// 地址，裸路径里有 # % 之类又会被当成网址拆坏；而且只解码缩小后的图，大照片也不卡
+QString toolTipImageSrc(const QString &filePath, QSize &displaySize) {
+    QImageReader reader(filePath);
+    const QSize original = reader.size(); // 只读文件头
+    if (!original.isValid()) return QString();
+    displaySize = original;
+    if (original.width() > kToolTipImageSize.width() || original.height() > kToolTipImageSize.height()) displaySize.scale(kToolTipImageSize, Qt::KeepAspectRatio);
+    // 高 DPI 屏按物理像素解码，不然缩放 150% 时图是糊的
+    const QSize decodeSize = (QSizeF(displaySize) * qApp->devicePixelRatio()).toSize().boundedTo(original);
+    if (decodeSize != original) reader.setScaledSize(decodeSize);
+    const QImage image = reader.read();
+    if (image.isNull()) return QString();
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (!buffer.open(QIODevice::WriteOnly) || !image.save(&buffer, "PNG")) return QString();
+    return "data:image/png;base64," + QString::fromLatin1(png.toBase64());
+}
+
+// 正文里有有效的 <img 路径> 时，悬停提示把图片直接画出来（主窗口里仍然只显示标签文字）。
+// 没有图片就用条目上现成的纯文字提示，行为和以前一样。只在提示真正弹出时调用，所以每次都现读图片文件
+QString phraseToolTip(QListWidgetItem *item) {
+    const QString body = PhraseItem::text(item);
+    const QVector<ImageTag> tags = findImageTags(body);
+    if (tags.isEmpty()) return item->toolTip();
+
+    QString html;
+    int linesLeft = kToolTipMaxBodyLines;
+    int imagesShown = 0;
+    int position = 0;
+    QSize size;
+    bool complete = true;
+    for (const ImageTag &tag : tags) {
+        if (!appendTextHtml(html, body.mid(position, tag.start - position), linesLeft)) {
+            complete = false;
             break;
         }
-        return QObject::eventFilter(watched, event);
+        position = tag.start + tag.length;
+        const QString imageSrc = imagesShown < kToolTipMaxImages ? toolTipImageSrc(tag.filePath, size) : QString();
+        if (imageSrc.isEmpty()) { // 不是图片、读不出来或者已经放够了：原样显示标签文字
+            if (!appendTextHtml(html, body.mid(tag.start, tag.length), linesLeft)) {
+                complete = false;
+                break;
+            }
+            continue;
+        }
+        // 图片独占一行；紧挨着的两张图之间不要多出一个空行
+        if (!html.isEmpty() && !html.endsWith("<br>")) html += "<br>";
+        html += QString("<img src=\"%1\" width=\"%2\" height=\"%3\"><br>").arg(imageSrc).arg(size.width()).arg(size.height());
+        ++imagesShown;
+        linesLeft -= size.height() / 16 + 1; // 图片也占篇幅，按大约一行 16px 折算
     }
+    if (complete) appendTextHtml(html, body.mid(position), linesLeft);
 
-  private:
-    bool showForLastItem() {
-        if (!lastItem_ || lastItem_->isHidden() || lastItem_->toolTip().isEmpty()) return false;
-        const QRect rect = list_->visualItemRect(lastItem_);
-        if (!rect.contains(lastViewportPos_)) return false;
-        QToolTip::showText(lastGlobalPos_, lastItem_->toolTip(), list_->viewport(), rect);
-        return true;
+    const QString remark = PhraseItem::remark(item);
+    if (!remark.isEmpty()) {
+        int remarkLines = kToolTipMaxRemarkLines;
+        html += "<br>────────────────────────<br>";
+        appendTextHtml(html, remark, remarkLines);
     }
-
-    void hide() {
-        timer_.stop();
-        lastItem_ = nullptr;
-        QToolTip::hideText();
-    }
-
-    QListWidget *list_;
-    QTimer timer_;
-    QPoint lastViewportPos_;
-    QPoint lastGlobalPos_;
-    QListWidgetItem *lastItem_ = nullptr;
-};
+    // pre-wrap：保留正文里连续的空格；<html> 开头让 QToolTip 按富文本显示
+    return "<html><body style=\"white-space:pre-wrap\">" + html + "</body></html>";
+}
 
 } // namespace
 
@@ -147,9 +181,7 @@ PhraseList::PhraseList(QWidget *parent) : QListWidget(parent) {
     setUniformItemSizes(true); // 所有条目同高才能正常折行，也省掉逐条量高度
     setItemDelegate(new BadgeDelegate(this));
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    setMouseTracking(true);
-    viewport()->setMouseTracking(true);
-    viewport()->installEventFilter(new ToolTipFilter(this));
+    installListToolTip(this, phraseToolTip);
     viewport()->installEventFilter(new PhraseListResizeFilter(this));
 
     setDragEnabled(true);
@@ -383,4 +415,119 @@ void PhraseNavigator::selectEdge(int direction) {
             return;
         }
     }
+}
+
+namespace {
+
+// 盯着“提示还该不该留着”的间隔。列表在鼠标不动时也会变（键盘滚动、翻组、搜索过滤），这时收不到鼠标事件，只能自己查
+const int kHoverCheckMs = 100;
+
+// QToolTip::hideText() 只是让提示 300ms 后才收起（Qt 自己移出 rect 时也一样），这里要鼠标一离开条目就收。
+// 提示框是 Qt 内部的 QTipLabel，只能按它固定的 objectName 找；用 close() 而不是 hide()，才能停掉系统开着提示淡入时的动画
+void hideToolTipNow() {
+    if (!QToolTip::isVisible()) return;
+    QToolTip::hideText();
+    for (QWidget *widget : QApplication::topLevelWidgets()) {
+        if (widget->objectName() == QLatin1String("qtooltip_label") && widget->isVisible()) widget->close();
+    }
+}
+
+class ToolTipFilter : public QObject {
+  public:
+    ToolTipFilter(QListWidget *list, std::function<QString(QListWidgetItem *)> textFor) : QObject(list), list_(list), textFor_(std::move(textFor)) {
+        timer_.setSingleShot(true);
+        connect(&timer_, &QTimer::timeout, this, [this]() {
+            showForLastItem();
+        });
+        hoverCheck_.setInterval(kHoverCheckMs);
+        connect(&hoverCheck_, &QTimer::timeout, this, [this]() {
+            // 鼠标底下已经换了条目（或者窗口藏起来了）就收起；提示被 Qt 自己收掉了（点了别处之类）就不再盯，等下次鼠标移动重新计时
+            if (itemUnderCursor() != lastItem_) hide();
+            else if (!QToolTip::isVisible()) hoverCheck_.stop();
+        });
+    }
+
+  protected:
+    bool eventFilter(QObject *watched, QEvent *event) override {
+        if (watched != list_->viewport()) return QObject::eventFilter(watched, event);
+        switch (event->type()) {
+        case QEvent::MouseMove: {
+            const QPoint pos = static_cast<QMouseEvent *>(event)->pos();
+            QListWidgetItem *item = list_->itemAt(pos);
+            if (!item || item->isHidden() || item->toolTip().isEmpty()) {
+                hide();
+                return false;
+            }
+            // 提示已经显示着、鼠标还在同一个条目里：不跟着鼠标重新计时。否则延迟设成 0 时提示会追着光标一闪一闪
+            if (item == lastItem_ && QToolTip::isVisible() && !timer_.isActive()) return false;
+            if (item != lastItem_ || pos != lastViewportPos_) {
+                hideToolTipNow();
+                hoverCheck_.stop();
+                lastItem_ = item;
+                lastViewportPos_ = pos;
+                timer_.start(Settings::toolTipDelayMs()); // 每次现读，设置里改完立即生效
+            }
+            return false;
+        }
+        case QEvent::ToolTip:
+            // 只认自己的计时器。Qt 认为窗口激活时（搜索模式下的主窗口；分组面板是没有父窗口的 Qt::Tool，
+            // Windows 风格下 Qt 一直当它是激活的）也会发这个事件：鼠标停 700ms 就发，上一个提示收起后 2 秒内
+            // 换条目只等 20ms。拿它来显示的话，延迟设成 1000 时新提示会几乎立即弹出来
+            return true;
+        case QEvent::Leave:
+        case QEvent::Wheel:
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+            hide();
+            break;
+        default:
+            break;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    // 现在光标底下、有提示的条目。不用上次鼠标事件记下的坐标：计时期间列表可能已经滚动、翻组、过滤，窗口也可能被藏起来
+    QListWidgetItem *itemUnderCursor() const {
+        QWidget *viewport = list_->viewport();
+        if (!viewport->isVisible()) return nullptr;
+        const QPoint pos = viewport->mapFromGlobal(QCursor::pos());
+        if (!viewport->rect().contains(pos)) return nullptr;
+        QListWidgetItem *item = list_->itemAt(pos);
+        if (!item || item->isHidden() || item->toolTip().isEmpty()) return nullptr;
+        return item;
+    }
+
+    bool showForLastItem() {
+        // 先比指针再解引用：lastItem_ 可能已经随短语删除被释放
+        if (!lastItem_ || itemUnderCursor() != lastItem_) return false;
+        const QString text = textFor_ ? textFor_(lastItem_) : lastItem_->toolTip();
+        if (text.isEmpty()) return false;
+        // 带上 rect：鼠标移出这个条目提示就自己消失。显示时长给到最大：Qt 默认十几秒后自动收起，这里只要鼠标还停在条目上就一直留着
+        QToolTip::showText(QCursor::pos(), text, list_->viewport(), list_->visualItemRect(lastItem_), std::numeric_limits<int>::max());
+        hoverCheck_.start();
+        return true;
+    }
+
+    void hide() {
+        timer_.stop();
+        hoverCheck_.stop();
+        lastItem_ = nullptr;
+        hideToolTipNow();
+    }
+
+    QListWidget *list_;
+    std::function<QString(QListWidgetItem *)> textFor_;
+    QTimer timer_;
+    QTimer hoverCheck_;
+    QPoint lastViewportPos_;
+    QListWidgetItem *lastItem_ = nullptr;
+};
+
+} // namespace
+
+void installListToolTip(QListWidget *list, std::function<QString(QListWidgetItem *)> textFor) {
+    list->setMouseTracking(true);
+    list->viewport()->setMouseTracking(true);
+    list->viewport()->installEventFilter(new ToolTipFilter(list, std::move(textFor)));
 }

@@ -61,6 +61,7 @@ void migrate(QJsonObject &c) {
     c.remove(LegacyScrollSafeRows);
     fill(CheckUpdatesOnStartup, true);
     fill(IgnoredVersion, "");
+    fill(ToolTipDelay, 0);
     c.remove(LegacyAutoStartAsAdmin);
 }
 
@@ -102,6 +103,7 @@ QJsonObject defaults() {
     c[SettingsWindowHeight] = 576;
     c[CheckUpdatesOnStartup] = true;
     c[IgnoredVersion] = "";
+    c[ToolTipDelay] = 0;
     c["tianjiachuangkou_x"] = besideX;
     c["tianjiachuangkou_y"] = centerY;
     c["xiugaichuangkou_x"] = besideX;
@@ -337,6 +339,13 @@ QSize Settings::settingsWindowSize() {
 void Settings::setSettingsWindowSize(const QSize &value) {
     setValue(SettingsKey::SettingsWindowWidth, value.width());
     setValue(SettingsKey::SettingsWindowHeight, value.height());
+}
+
+int Settings::toolTipDelayMs() {
+    return intValue(SettingsKey::ToolTipDelay, 0);
+}
+void Settings::setToolTipDelayMs(int value) {
+    setValue(SettingsKey::ToolTipDelay, value);
 }
 
 bool Settings::readRunAsAdminFromFile() {

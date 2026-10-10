@@ -255,6 +255,8 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
     addRow(window, "主窗口高度（像素）", heightSpin_);
     alwaysOnTopCheck_ = new QCheckBox("主窗口始终置顶");
     addCheckBox(window, alwaysOnTopCheck_);
+    toolTipDelaySpin_ = spin(0, 5000, 70);
+    addRow(window, "鼠标悬停多久后显示提示（毫秒）", toolTipDelaySpin_);
 
     QGridLayout *items = makeGroupBox("短语项", page);
     itemHeightSpin_ = spin(10, 100, 59);
@@ -384,7 +386,7 @@ void SettingsWindow::connectChangeTracking() {
              badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_}) {
         connect(check, &QCheckBox::toggled, this, &SettingsWindow::updateApplyButton);
     }
-    for (QSpinBox *spin : {widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_, groupPanelDelaySpin_, outputDelaySpin_}) {
+    for (QSpinBox *spin : {widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_, groupPanelDelaySpin_, outputDelaySpin_, toolTipDelaySpin_}) {
         connect(spin, &QSpinBox::valueChanged, this, &SettingsWindow::updateApplyButton);
     }
 }
@@ -397,13 +399,14 @@ void SettingsWindow::updateGroupPanelDelayVisibility() {
 
 // 把设置填回所有控件，等于丢弃未应用的修改
 void SettingsWindow::loadValues() {
-    const QList<QWidget *> controls = {hotkeyEdit_, alwaysOnTopCheck_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
+    const QList<QWidget *> controls = {hotkeyEdit_, alwaysOnTopCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
         groupPanelDelaySpin_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, outputDelaySpin_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
         badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_};
     for (QWidget *control : controls)
         control->blockSignals(true);
     hotkeyEdit_->setKeySequence(QKeySequence(Settings::hotkey()));
     alwaysOnTopCheck_->setChecked(Settings::alwaysOnTop());
+    toolTipDelaySpin_->setValue(Settings::toolTipDelayMs());
     widthSpin_->setValue(Settings::mainWidth());
     heightSpin_->setValue(Settings::mainHeight());
     itemHeightSpin_->setValue(Settings::defaultItemHeight());
@@ -438,6 +441,7 @@ void SettingsWindow::loadValues() {
 bool SettingsWindow::hasUnappliedChanges() const {
     return hotkeyEdit_->keySequence().toString() != Settings::hotkey() ||
         alwaysOnTopCheck_->isChecked() != Settings::alwaysOnTop() ||
+        toolTipDelaySpin_->value() != Settings::toolTipDelayMs() ||
         widthSpin_->value() != Settings::mainWidth() ||
         heightSpin_->value() != Settings::mainHeight() ||
         itemHeightSpin_->value() != Settings::defaultItemHeight() ||
@@ -485,10 +489,11 @@ bool SettingsWindow::apply() {
     const bool paddingChanged = paddingHorizontalSpin_->value() != Settings::itemPaddingHorizontal() || paddingVerticalSpin_->value() != Settings::itemPaddingVertical();
     const bool alwaysOnTopChanged = alwaysOnTopCheck_->isChecked() != Settings::alwaysOnTop();
 
-    // 安全区行数、面板延时、切组首选项、输出间隔这些都是用的时候现读设置，写进去就立即生效
+    // 安全区、面板延时、切组首选项、输出间隔、悬停提示延迟这些都是用的时候现读设置，写进去就立即生效
     Settings::setMainWidth(widthSpin_->value());
     Settings::setMainHeight(heightSpin_->value());
     Settings::setAlwaysOnTop(alwaysOnTopCheck_->isChecked());
+    Settings::setToolTipDelayMs(toolTipDelaySpin_->value());
     Settings::setDefaultItemHeight(itemHeightSpin_->value());
     Settings::setItemPaddingHorizontal(paddingHorizontalSpin_->value());
     Settings::setItemPaddingVertical(paddingVerticalSpin_->value());

@@ -131,6 +131,18 @@ bool startsWithKeyword(const QString &text, const QString &keyword) {
     return text.size() > keyword.size() && text.left(keyword.size()).compare(keyword, Qt::CaseInsensitive) == 0 && text.at(keyword.size()).isSpace();
 }
 
+// <img 路径>、<file 路径>（trimmed 是去掉尖括号、首尾空白后的标签内容）。路径必须是存在的文件的绝对路径
+bool parseFileTag(const QString &trimmed, bool &isImg, QString &filePath) {
+    isImg = startsWithKeyword(trimmed, "img");
+    if (!isImg && !startsWithKeyword(trimmed, "file")) return false;
+    QString path = cleanPath(trimmed.mid(isImg ? 4 : 5));
+    if ((path.startsWith('"') && path.endsWith('"')) || (path.startsWith('\'') && path.endsWith('\''))) path = cleanPath(path.mid(1, path.size() - 2));
+    const QFileInfo info(path);
+    if (!info.isAbsolute() || !info.exists() || !info.isFile()) return false;
+    filePath = info.absoluteFilePath();
+    return true;
+}
+
 bool parseTag(const QString &tag, OutputAction &action) {
     const QString trimmed = tag.trimmed();
     if (trimmed.isEmpty()) return false;
@@ -152,15 +164,9 @@ bool parseTag(const QString &tag, OutputAction &action) {
     }
     if (parts.size() == 2 && parts.at(0).compare("press", Qt::CaseInsensitive) == 0) return parseCombo(parts.at(1), action);
 
-    const bool isImg = startsWithKeyword(trimmed, "img");
-    const bool isFile = startsWithKeyword(trimmed, "file");
-    if (isImg || isFile) {
-        QString path = cleanPath(trimmed.mid(isImg ? 4 : 5));
-        if ((path.startsWith('"') && path.endsWith('"')) || (path.startsWith('\'') && path.endsWith('\''))) path = cleanPath(path.mid(1, path.size() - 2));
-        const QFileInfo info(path);
-        if (!info.isAbsolute() || !info.exists() || !info.isFile()) return false;
+    bool isImg = false;
+    if (parseFileTag(trimmed, isImg, action.filePath)) {
         action.type = OutputAction::Type::File;
-        action.filePath = info.absoluteFilePath();
         return true;
     }
 
@@ -215,4 +221,26 @@ QVector<OutputAction> parseOutputActions(const QString &text) {
     }
     appendText(actions, buffer);
     return actions;
+}
+
+// 扫描规则和 parseOutputActions 一模一样（\< 转义、解析失败的标签整段跳过），保证悬停提示里认出的图片就是输出时会粘的那些
+QVector<ImageTag> findImageTags(const QString &text) {
+    QVector<ImageTag> tags;
+    for (int i = 0; i < text.size();) {
+        if (text.at(i) == '\\' && i + 1 < text.size() && text.at(i + 1) == '<') {
+            i += 2;
+            continue;
+        }
+        if (text.at(i) != '<') {
+            ++i;
+            continue;
+        }
+        const int close = text.indexOf('>', i + 1);
+        if (close < 0) break;
+        bool isImg = false;
+        QString filePath;
+        if (parseFileTag(text.mid(i + 1, close - i - 1).trimmed(), isImg, filePath) && isImg) tags.append({i, close - i + 1, filePath});
+        i = close + 1;
+    }
+    return tags;
 }

@@ -80,8 +80,8 @@ void refreshDisplay(QListWidgetItem *item) {
         item->setForeground(QColor("#323130"));
         return;
     }
-    // 有备注时正文最多 20 行，分隔线占 3 行，给备注留 7 行，总高仍控制在 30 行内
-    item->setToolTip(clampTooltipText(body, 20) + "\n\n────────────────────────\n\n" + clampTooltipText(note, 7));
+    // 有备注时正文最多 20 行，分隔线占 1 行，给备注留 7 行，总高仍控制在 30 行内
+    item->setToolTip(clampTooltipText(body, 20) + "\n────────────────────────\n" + clampTooltipText(note, 7));
     item->setText(note);
     item->setForeground(QColor("#2E7D32"));
 }

@@ -22,3 +22,11 @@ struct OutputAction {
 };
 
 QVector<OutputAction> parseOutputActions(const QString &text);
+
+// 悬停提示用：正文里所有有效的 <img 路径> 标签在原文中的位置（start、length 含尖括号）和图片绝对路径
+struct ImageTag {
+    int start = 0;
+    int length = 0;
+    QString filePath;
+};
+QVector<ImageTag> findImageTags(const QString &text);

@@ -2,8 +2,11 @@
 
 #include <QListWidget>
 #include <QObject>
+#include <QString>
 #include <QTimer>
 #include <QVector>
+
+#include <functional>
 
 // 主窗口的短语列表。条目本身就是短语数据（见 phraseitem.h），这里负责显示：
 // 按分组和搜索词过滤并编角标、按分组设置排成一列或多列、画角标、悬停提示。
@@ -72,3 +75,13 @@ class PhraseNavigator : public QObject {
     bool groupInertia_ = false;
     QTimer inertiaTimer_;
 };
+
+class QListWidget;
+class QListWidgetItem;
+
+// 给不抢焦点的列表（主窗口短语列表、分组面板）装上条目悬停提示。
+// 这两个窗口都带 WS_EX_NOACTIVATE，Qt 默认只给激活窗口发 ToolTip 事件，所以自己盯鼠标移动：
+// 停在同一个条目上 Settings::toolTipDelayMs() 毫秒后显示该条目的 toolTip()，为空就不显示。
+// textFor 不为空时，真正显示前改用它算出提示内容（只在显示那一刻调一次，可以做读文件这类慢一点的事）；
+// 条目的 toolTip() 仍决定“有没有提示”。
+void installListToolTip(QListWidget *list, std::function<QString(QListWidgetItem *)> textFor = {});
