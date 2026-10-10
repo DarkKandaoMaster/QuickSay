@@ -1,30 +1,70 @@
-QT       += core gui
-
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
-
+QT += core gui widgets
 CONFIG += c++17
 
-# You can make your code fail to compile if it uses deprecated APIs.
-# In order to do so, uncomment the following line.
-#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
+# 不要 debug/release 子目录，Qt Creator 里也要取消影子构建：exe 必须和 icons/ 同级，数据文件也写在 exe 旁边
+CONFIG -= debug_and_release
+
+INCLUDEPATH += src
+OBJECTS_DIR = build/obj
+MOC_DIR = build/moc
+RCC_DIR = build/rcc
+UI_DIR = build/ui
 
 SOURCES += \
-    main.cpp \
-    mainwindow.cpp
+    src/app/quicksayapp.cpp \
+    src/app/updatechecker.cpp \
+    src/core/backup.cpp \
+    src/core/files.cpp \
+    src/core/groupmodel.cpp \
+    src/core/phrase.cpp \
+    src/core/settings.cpp \
+    src/hotkey/globalhotkey.cpp \
+    src/hotkey/hotkeyinput.cpp \
+    src/main.cpp \
+    src/output/keyinjector.cpp \
+    src/output/outputparser.cpp \
+    src/output/outputrunner.cpp \
+    src/platform/nativeui.cpp \
+    src/platform/startup.cpp \
+    src/ui/batchedit.cpp \
+    src/ui/grouppanel.cpp \
+    src/ui/mainwindow.cpp \
+    src/ui/phraseeditor.cpp \
+    src/ui/phraselist.cpp \
+    src/ui/popups.cpp \
+    src/ui/settingswindow.cpp \
+    src/ui/stylesheets.cpp
 
 HEADERS += \
-    mainwindow.h
+    src/app/quicksayapp.h \
+    src/app/updatechecker.h \
+    src/core/backup.h \
+    src/core/files.h \
+    src/core/groupmodel.h \
+    src/core/phrase.h \
+    src/core/settings.h \
+    src/core/version.h \
+    src/hotkey/globalhotkey.h \
+    src/hotkey/hotkeyinput.h \
+    src/output/keyinjector.h \
+    src/output/outputparser.h \
+    src/output/outputrunner.h \
+    src/platform/nativeui.h \
+    src/platform/startup.h \
+    src/ui/batchedit.h \
+    src/ui/grouppanel.h \
+    src/ui/mainwindow.h \
+    src/ui/phraseeditor.h \
+    src/ui/phraselist.h \
+    src/ui/popups.h \
+    src/ui/settingswindow.h \
+    src/ui/stylesheets.h
 
-FORMS += \
-    mainwindow.ui
+# 计划任务、SID、UAC：taskschd ole32 oleaut32 advapi32 shell32 uuid；会话通知：wtsapi32；
+# 托盘菜单图标：gdi32；检查更新：winhttp；窗口动画、圆角：dwmapi
+LIBS += -ltaskschd -lole32 -loleaut32 -ladvapi32 -lshell32 -lwtsapi32 -luuid -lgdi32 -lwinhttp -ldwmapi
 
-# Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
-!isEmpty(target.path): INSTALLS += target
+include(QHotkey-1.5.0/qhotkey.pri)
 
-LIBS += -ltaskschd -lole32 -loleaut32 -ladvapi32 -lshell32 -lwtsapi32 -luuid -lgdi32 -lwinhttp -ldwmapi #以管理员权限开机自启要用到计划任务、SID和UAC相关库；托盘原生右键菜单的图标位图要用gdi32的CreateDIBSection；高级输入停止机制用wtsapi32监听锁屏、注销和会话断开；备份导入后通过Explorer重启需要Shell COM接口的GUID；检查更新用winhttp向GitHub Releases API发请求；主窗口和分组面板只留关闭动画要用dwmapi
-
-include(.\QHotkey-1.5.0\qhotkey.pri)
-RC_ICONS += icons/icon.ico #哈哈哈！终于让这句代码运行成功了！一切造物的工都已完毕！说下我踩到的坑：1.这个ico文件不能是中文；2.是+=，不是=；3.一定要确保这个ico文件是真的ico文件呀，也就是说：1.如果你和我一样看图软件用的是ImageGlass，那么这个ico文件是打得开的；2.去查看ico文件的网站上，这个文件是能打得开的。woc我一开始是在一个破网站上转ico文件，结果就因为这个ico文件根本打不开，所以试了好久好久...
-CONFIG -= debug_and_release #写上这句代码，再取消影子构建，运行程序的时候就不会生成debug文件夹和release文件夹了
+# 文件名不能有中文，而且必须是真正的 ico 文件
+RC_ICONS += icons/icon.ico
