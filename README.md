@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./QuickSay/icons/软件图标.svg" alt="[图片不见了...]" width="150">
   <h1>QuickSay</h1>
-  <p>一款强大的快捷短语软件</p>
+  <p>Windows 上的快捷短语工具：把常用的话存起来，并在需要时使用 QuickSay 输入。</p>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases/latest"><img src="https://img.shields.io/github/v/release/DarkKandaoMaster/QuickSay?style=flat-square"></a>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/stargazers"><img src="https://img.shields.io/github/stars/DarkKandaoMaster/QuickSay?style=flat-square&logo=github&color=yellow"></a>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases"><img src="https://img.shields.io/github/downloads/DarkKandaoMaster/QuickSay/total?style=flat-square"></a><br>
@@ -34,6 +34,8 @@
 直接用 新QuickSay.exe **替换**掉 旧QuickSay.exe。  
 
 如果您是 v1.x.x 用户，可以在保留 config.json、data.json、tab.json 的基础上，把 QuickSay 文件夹里的其它文件都删掉，然后放入 新QuickSay.exe。  
+
+QuickSay 会在启动时检查更新。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证 QuickSay 新版本只会比旧版本更好用。  
 
 
 ## 许可证

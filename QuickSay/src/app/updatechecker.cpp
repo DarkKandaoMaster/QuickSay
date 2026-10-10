@@ -5,6 +5,7 @@
 #include "core/version.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QHBoxLayout>
@@ -15,9 +16,11 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScreen>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QtMath>
 
 #include <thread>
 
@@ -37,6 +40,8 @@ struct Result {
     bool ok = false;
     QString version; // 如 "1.8.1"
     QString url; // release 页面，更新日志和下载都在上面
+    QString notes; // release 正文里“更新内容”之后的部分，Markdown
+    QDate publishedAt; // 拿不到就是无效日期，不显示
 };
 
 // 同步阻塞，只能在后台线程调用
@@ -79,6 +84,12 @@ Result fetchLatestRelease() {
     result.ok = true;
     result.version = match.captured();
     result.url = url.startsWith("https://github.com/") ? url : kReleasesPage; // 只认 GitHub 自己的地址，防止响应被掉包把用户带去别处
+    // 正文开头是“点击下面的…就可以开始下载啦”“感谢使用”这几句套话，只要“## 更新内容：”往后的列表；找不到这个标题就整篇显示
+    QString notes = release["body"].toString().remove('\r');
+    const QRegularExpressionMatch heading = QRegularExpression("^#+\\s*更新内容[：:]?[ \\t]*$", QRegularExpression::MultilineOption).match(notes);
+    if (heading.hasMatch()) notes = notes.mid(heading.capturedEnd());
+    result.notes = notes.trimmed();
+    result.publishedAt = QDateTime::fromString(release["published_at"].toString(), Qt::ISODate).toLocalTime().date();
     return result;
 }
 
@@ -88,17 +99,32 @@ enum class Choice {
     Download = 2,
 };
 
-// 一行说明 + “查看更新日志”链接 + 两个按钮。不挂样式表，用原生外观，和设置窗口一致。
+// 一行说明 +（有的话）更新内容 + “查看更新日志”链接 + 两个按钮。不挂样式表，用原生外观，和设置窗口一致。
 // 左边按钮：自动检查时是“忽略该版本”，手动检查时是“取消”。
-Choice showUpdateDialog(const QString &message, const QString &url, const QString &leftButtonText) {
+Choice showUpdateDialog(const QString &message, const QString &url, const QString &leftButtonText, const QString &notes = QString()) {
     QDialog dialog;
     dialog.setWindowTitle("QuickSay");
     dialog.setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
-    dialog.setWindowFlags(dialog.windowFlags() & ~Qt::WindowContextHelpButtonHint);
+    // 置顶：自动检查是启动几秒后自己弹出来的，不置顶很容易被别的窗口盖住；主窗口默认也置顶，不置顶会被它挡住
+    dialog.setWindowFlags((dialog.windowFlags() & ~Qt::WindowContextHelpButtonHint) | Qt::WindowStaysOnTopHint);
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(16, 16, 16, 14);
     layout->setSpacing(10);
-    layout->addWidget(new QLabel(message));
+    auto *messageLabel = new QLabel(message);
+    messageLabel->setWordWrap(true);
+    layout->addWidget(messageLabel);
+    const int width = notes.isEmpty() ? 300 : 440;
+    if (!notes.isEmpty()) {
+        auto *notesView = new QTextBrowser(&dialog);
+        notesView->setOpenExternalLinks(true);
+        // 不认 HTML：更新内容里常有 <img 图片路径>、<press Ctrl+C> 这种标签写法，当成 HTML 会被吃掉
+        notesView->document()->setMarkdown(notes, QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub) | QTextDocument::MarkdownNoHTML);
+        // 内容少就按内容高度来，免得一两条更新也撑出一大块空白；太长就封顶，靠滚动条看
+        const int frame = notesView->frameWidth() * 2;
+        notesView->document()->setTextWidth(width - layout->contentsMargins().left() - layout->contentsMargins().right() - frame);
+        notesView->setFixedHeight(qMin(qCeil(notesView->document()->size().height()) + frame + 2, 280));
+        layout->addWidget(notesView);
+    }
     auto *changelog = new QLabel(QString("<a href=\"%1\">查看更新日志</a>").arg(url));
     changelog->setOpenExternalLinks(true);
     changelog->setCursor(Qt::PointingHandCursor);
@@ -121,7 +147,7 @@ Choice showUpdateDialog(const QString &message, const QString &url, const QStrin
     QObject::connect(downloadButton, &QPushButton::clicked, &dialog, [&dialog]() {
         dialog.done(int(Choice::Download));
     });
-    dialog.setFixedSize(300, 148);
+    dialog.setFixedSize(width, qMax(148, layout->totalHeightForWidth(width)));
     const QRect screen = QGuiApplication::primaryScreen()->geometry();
     dialog.move(screen.center() - QPoint(dialog.width() / 2, dialog.height() / 2)); // 没有父窗口，自己居中
     return static_cast<Choice>(dialog.exec());
@@ -132,6 +158,7 @@ void showUpToDate() {
     box.setWindowTitle("QuickSay");
     box.setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
     box.setIcon(QMessageBox::Information);
+    box.setWindowFlags(box.windowFlags() | Qt::WindowStaysOnTopHint); // 同上，别被置顶的主窗口挡住
     box.setText("当前已经是最新版本。  ");
     box.setStandardButtons(QMessageBox::Ok);
     box.button(QMessageBox::Ok)->setText("确定");
@@ -160,7 +187,9 @@ void handleResult(bool manual, const Result &result) {
         return;
     }
     if (!manual && result.version == Settings::ignoredVersion()) return;
-    const Choice choice = showUpdateDialog(QString("发现新版本 %1").arg(result.version), result.url, manual ? "取消" : "忽略该版本");
+    QString message = QString("发现新版本：%1 → %2").arg(kAppVersion, result.version);
+    if (result.publishedAt.isValid()) message += QString("　·　%1 发布").arg(result.publishedAt.toString("yyyy-MM-dd"));
+    const Choice choice = showUpdateDialog(message, result.url, manual ? "取消" : "忽略该版本", result.notes);
     if (choice == Choice::Download) {
         QDesktopServices::openUrl(QUrl(result.url));
     } else if (choice == Choice::Left && !manual) { // 直接关窗口不算忽略，只是这次不想看
