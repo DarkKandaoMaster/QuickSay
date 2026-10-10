@@ -51,6 +51,7 @@ void upgradeSettings(QJsonObject &settings) {
         settings[ScrollSafePixels] = settings[LegacyScrollSafeRows].toInt() * settings[DefaultItemHeight].toInt(40);
     fill(ScrollSafePixels, 60);
     settings.remove(LegacyScrollSafeRows);
+    fill(GroupPanelSafePixels, 50);
     fill(ToolTipDelay, 0);
 }
 
@@ -77,6 +78,7 @@ bool validateSettings(const QJsonObject &settings, QString &error) {
         !integerInRange(DefaultItemHeight, 10, 100) || !integerInRange(ItemPaddingHorizontal, 0, 100) ||
         !integerInRange(ItemPaddingVertical, 0, 100) || !integerInRange(ScrollStep, 1, 100) || !integerInRange(OutputDelay, 0, 2000) ||
         !integerInRange(GroupPanelDelay, 0, 5000) || !integerInRange(ScrollSafePixels, 0, 1000) ||
+        !integerInRange(GroupPanelSafePixels, 0, 1000) ||
         !integerInRange(ToolTipDelay, 0, 5000)) {
         error = "备份中的基础设置无效";
         return false;

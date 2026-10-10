@@ -272,7 +272,7 @@ void PhraseList::selectFirstVisible() {
     }
 }
 
-void selectWithSafeArea(QListWidget *list, QListWidgetItem *item, int direction) {
+void selectWithSafeArea(QListWidget *list, QListWidgetItem *item, int direction, int safePixels) {
     if (!list || !item) return;
     QScrollBar *scrollBar = list->verticalScrollBar();
     const int oldValue = scrollBar->value(); // 某些样式下 setCurrentItem 会顺手滚动，先记住，完全按安全区规则决定滚不滚
@@ -289,7 +289,7 @@ void selectWithSafeArea(QListWidget *list, QListWidgetItem *item, int direction)
     }
 
     // 视口不够高时安全区跟着缩小，至少给选中项自己留出位置
-    const int safeHeight = qMin(Settings::scrollSafePixels(), qMax(0, (viewportHeight - itemHeight) / 2));
+    const int safeHeight = qMin(safePixels, qMax(0, (viewportHeight - itemHeight) / 2));
     const int safeTop = safeHeight;
     const int safeBottom = viewportHeight - safeHeight; // 右开区间，和 bottom()+1 比
     const bool crossedTop = rect.top() < safeTop;
@@ -331,7 +331,7 @@ void PhraseNavigator::clearGroupInertia() {
 void PhraseNavigator::selectVisibleWithSafeArea(int index, int direction) {
     const QVector<QListWidgetItem *> items = list_->visibleItems();
     if (index < 0 || index >= items.size()) return;
-    selectWithSafeArea(list_, items[index], direction);
+    selectWithSafeArea(list_, items[index], direction, Settings::scrollSafePixels());
 }
 
 void PhraseNavigator::moveVertical(int direction) {

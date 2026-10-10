@@ -20,6 +20,7 @@ inline constexpr char GroupPanelDelay[] = "fenzu_yanshi";
 inline constexpr char SelectFirstOnGroupSwitch[] = "fenzu_shouxuan_diyitiao";
 inline constexpr char GroupPanelAlwaysVisible[] = "fenzu_changxian";
 inline constexpr char ScrollSafePixels[] = "anquanqu_xiangsu";
+inline constexpr char GroupPanelSafePixels[] = "fenzu_anquanqu_xiangsu";
 inline constexpr char BadgeTopLeft[] = "jiaobiao";
 inline constexpr char BadgeKeyPassthrough[] = "badge_key_passthrough_when_pinned";
 inline constexpr char EnterKeyPassthrough[] = "enter_key_passthrough_when_pinned";
@@ -98,6 +99,8 @@ class Settings {
     static void setGroupPanelAlwaysVisible(bool value);
     static int scrollSafePixels();
     static void setScrollSafePixels(int value);
+    static int groupPanelSafePixels(); // 翻组时分组面板上下各留出的距离，和短语列表的分开设
+    static void setGroupPanelSafePixels(int value);
     static bool badgeTopLeft();
     static void setBadgeTopLeft(bool value);
     static bool badgeKeyPassthroughWhenPinned();

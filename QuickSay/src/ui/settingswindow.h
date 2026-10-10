@@ -65,6 +65,7 @@ class SettingsWindow : public QWidget {
     QCheckBox *groupPanelAlwaysVisibleCheck_ = nullptr;
     QWidget *groupPanelDelayLabel_ = nullptr;
     QSpinBox *groupPanelDelaySpin_ = nullptr;
+    QSpinBox *groupPanelSafeAreaSpin_ = nullptr;
     QCheckBox *selectFirstCheck_ = nullptr;
     QSpinBox *scrollStepSpin_ = nullptr;
     QSpinBox *safeAreaSpin_ = nullptr;

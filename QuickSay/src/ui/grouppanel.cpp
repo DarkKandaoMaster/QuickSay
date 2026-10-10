@@ -29,6 +29,7 @@ namespace {
 const int kButtonMaxWidth = 150; // 左上角分组按钮最宽多少，主窗口窄时会更窄
 const int kPanelItemWidth = 150; // 面板里每个分组多宽，面板宽度由它推出来
 const int kPanelItemHeight = 40; // 面板里每个分组多高（含上下各 2px 外边距）
+const int kPanelItemTextMargin = 12; // 估算分组名会不会被截断时，给外边距和边框预留的宽度，宁可多报也别漏报
 const int kHoverPollIntervalMs = 120;
 
 } // namespace
@@ -76,7 +77,7 @@ void GroupButton::paintEvent(QPaintEvent *event) {
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
     QPolygonF arrow;
-    arrow << QPointF(-5, -2.5) << QPointF(0, 2.5) << QPointF(5, -2.5); // 倒着的 ^，顺时针转 90° 后尖端朝左
+    arrow << QPointF(-5, -2.5) << QPointF(0, 2.5) << QPointF(5, -2.5); // 倒着的 ^，顺时针转 90° 后尖端朝左，逆时针转 90° 后朝右
     painter.drawPolyline(arrow);
 }
 
@@ -91,6 +92,7 @@ GroupPanelWindow::GroupPanelWindow() : QListWidget(nullptr) {
     setTextElideMode(Qt::ElideRight);
     setDragDropMode(QAbstractItemView::InternalMove); // 上下拖动改分组顺序
     setDefaultDropAction(Qt::MoveAction);
+    installListToolTip(this); // 和主窗口一样不激活，Qt 自带的悬停提示出不来
 }
 
 void GroupPanelWindow::prepareNativeFrame() {
@@ -133,14 +135,7 @@ GroupPanel::GroupPanel(MainWindow *mainWindow, GroupModel &groups, GroupButton *
     // 用轮询光标坐标而不是 Enter/Leave：按钮和面板是两个顶层窗口，面板里还套着视口，
     // 鼠标在它们之间移动时 Enter/Leave 对不齐。直接比两个矩形最省事也最准。
     hoverPoll_.setInterval(kHoverPollIntervalMs);
-    connect(&hoverPoll_, &QTimer::timeout, this, [this]() {
-        const QPoint cursor = QCursor::pos();
-        const bool onButton = button_->isVisible() && QRect(button_->mapToGlobal(QPoint(0, 0)), button_->size()).contains(cursor);
-        const bool onPanel = window_->isVisible() && window_->frameGeometry().contains(cursor);
-        hovering_ = onButton || onPanel;
-        if (hovering_) hideTimer_.stop();
-        else if (!hideTimer_.isActive()) hideTimer_.start(Settings::groupPanelDelayMs());
-    });
+    connect(&hoverPoll_, &QTimer::timeout, this, &GroupPanel::pollHover);
 
     connect(button_, &GroupButton::hovered, this, &GroupPanel::show);
     connect(button_, &GroupButton::wheelScrolled, this, &GroupPanel::switchByWheel);
@@ -217,11 +212,12 @@ void GroupPanel::switchByWheel(int delta) {
 void GroupPanel::refreshButtonText() {
     const QString name = groups_.currentName();
     const int available = button_->width() - 24; // 扣掉左边箭头和右边留白（QSS padding 左 20 右 2）
+    // & 在按钮文字里是助记符，“A&B”会显示成带下划线的“AB”
     if (available <= 0) { // 按钮宽度还没定，等 MainWindow::applySize 里再截一次
-        button_->setText(name);
+        button_->setText(QString(name).replace('&', "&&"));
         return;
     }
-    button_->setText(QFontMetrics(button_->font()).elidedText(name, Qt::ElideRight, available));
+    button_->setText(QFontMetrics(button_->font()).elidedText(name, Qt::ElideRight, available).replace('&', "&&"));
 }
 
 int GroupPanel::buttonMaxWidth() {
@@ -232,7 +228,7 @@ void GroupPanel::syncSelection() {
     const int row = groups_.currentIndex();
     if (row < 0 || row >= window_->count()) return;
     const int direction = row >= window_->currentRow() ? 1 : -1; // 往后翻当成↓；刚重建过 currentRow 是 -1，也按↓
-    selectWithSafeArea(window_, window_->item(row), direction);
+    selectWithSafeArea(window_, window_->item(row), direction, Settings::groupPanelSafePixels());
 }
 
 void GroupPanel::rebuild() {
@@ -244,18 +240,33 @@ void GroupPanel::rebuild() {
     // 内容真变了才重建：用左右键连续翻组时每翻一次都会走到这里
     if (!unchanged) {
         window_->clear();
+        window_->ensurePolished(); // 字体由 QSS 定，量宽度前先让样式表生效
+        const QFontMetrics metrics = window_->fontMetrics();
         for (int i = 0; i < groups_.count(); ++i) {
             auto *item = new QListWidgetItem(groups_.name(i), window_);
             item->setTextAlignment(Qt::AlignCenter);
             item->setSizeHint(QSize(0, kPanelItemHeight));
+            // 名字长到被截成“…”时才给悬停提示，显示完整分组名
+            if (metrics.horizontalAdvance(groups_.name(i)) > kPanelItemWidth - kPanelItemTextMargin) item->setToolTip(groups_.name(i));
         }
     }
     syncSelection();
 }
 
+void GroupPanel::pollHover() {
+    const QPoint cursor = QCursor::pos();
+    const bool onButton = button_->isVisible() && QRect(button_->mapToGlobal(QPoint(0, 0)), button_->size()).contains(cursor);
+    const bool onPanel = window_->isVisible() && window_->frameGeometry().contains(cursor);
+    hovering_ = onButton || onPanel;
+    if (hovering_) hideTimer_.stop();
+    else if (!hideTimer_.isActive()) hideTimer_.start(Settings::groupPanelDelayMs());
+}
+
 void GroupPanel::startHoverPolling() {
-    hovering_ = true; // 刚弹出来先当鼠标在上面，下一次轮询会纠正
     hideTimer_.stop();
+    // 当场量一次，不能先假定鼠标在面板上：用方向键翻组时每翻一次都会走到这里，
+    // 紧接着按 ↑↓ 清掉翻组惯性时 hovering_ 还是假定的 true，面板就收不回去，还得再等一整个延时
+    pollHover();
     hoverPoll_.start();
 }
 
@@ -271,11 +282,15 @@ void GroupPanel::show() {
     const QRect mainFrame = mainWindow_->frameGeometry(); // 带边框，才是真正贴着主窗口外沿
     int x = mainFrame.left() - width;
     int y = button_->mapToGlobal(QPoint(0, 0)).y() - 2; // 比按钮高 2px 才显得齐平
+    bool onRight = false;
     QScreen *screen = QGuiApplication::screenAt(mainFrame.center());
     if (!screen) screen = QGuiApplication::primaryScreen();
     if (screen) {
         const QRect available = screen->availableGeometry();
-        if (x < available.left()) x = mainFrame.right() + 1; // 左边放不下就放到主窗口右边
+        if (x < available.left()) { // 左边放不下就放到主窗口右边
+            x = mainFrame.right() + 1;
+            onRight = true;
+        }
         y = qBound(available.top(), y, qMax(available.top(), available.bottom() - height));
     }
     window_->move(x, y);
@@ -287,7 +302,7 @@ void GroupPanel::show() {
     WindowStyle::showNoActivate(window_->winId(), Settings::alwaysOnTop(), mainWindow_->winId());
 
     syncSelection(); // 面板藏着时量不到视口高度，显示出来后再滚一次
-    button_->rotateArrowTo(90);
+    button_->rotateArrowTo(onRight ? -90 : 90); // 箭头指向面板实际所在的那一边
     if (!Settings::groupPanelAlwaysVisible()) startHoverPolling();
 }
 
@@ -303,8 +318,11 @@ void GroupPanel::hideIfIdle() {
     if (!window_->isVisible()) return;
     if (Settings::groupPanelAlwaysVisible()) return;
     if (hovering_ || mainWindow_->navigator()->groupInertiaActive()) return;
-    // 右键菜单开着、或者正按着鼠标拖分组时不收；轮询发现计时器停了会重新计时
-    if (QApplication::activePopupWidget() || QApplication::mouseButtons() != Qt::NoButton) return;
+    // 右键菜单开着、或者正按着鼠标拖分组时不收；轮询发现计时器停了会重新计时。
+    // 鼠标键直接问系统：QApplication::mouseButtons() 是 Qt 自己记的，松开时消息没到 Qt 就会一直以为左键按着，
+    // 面板就再也收不回去（实测抓到过：Qt 说左键按着、GetAsyncKeyState 说没按）
+    const bool mousePressed = (GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) | GetAsyncKeyState(VK_MBUTTON)) & 0x8000;
+    if (QApplication::activePopupWidget() || mousePressed) return;
     hide();
 }
 

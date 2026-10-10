@@ -9,13 +9,13 @@ class GroupModel;
 class MainWindow;
 class QVariantAnimation;
 
-// 主窗口左上角“箭头+当前分组名”的按钮。鼠标移上去弹出分组面板，箭头顺时针转 90° 指向面板。
+// 主窗口左上角“箭头+当前分组名”的按钮。鼠标移上去弹出分组面板，箭头转 90° 指向面板（面板通常在左边，主窗口贴着屏幕左边时在右边）。
 class GroupButton : public QPushButton {
     Q_OBJECT
 
   public:
     explicit GroupButton(QWidget *parent);
-    // 0° 朝下（面板收着），90° 朝左（面板弹出）
+    // 0° 朝下（面板收着），90° 朝左、-90° 朝右（面板弹出）
     void rotateArrowTo(qreal degrees);
 
   signals:
@@ -84,6 +84,7 @@ class GroupPanel : public QObject {
 
   private:
     void switchByWheel(int delta);
+    void pollHover();
     void startHoverPolling();
     void showContextMenu(QWidget *anchor, const QPoint &pos, int index, bool insertAfterIndex);
     void onRowsMoved(int start, int row);

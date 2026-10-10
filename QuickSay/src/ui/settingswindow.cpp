@@ -280,6 +280,8 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
         updateGroupPanelDelayVisibility();
     });
     updateGroupPanelDelayVisibility();
+    groupPanelSafeAreaSpin_ = spin(0, 1000, 59);
+    addRow(groups, "翻分组时分组面板上下各留出的距离（像素）", groupPanelSafeAreaSpin_);
     selectFirstCheck_ = new QCheckBox("切换分组后始终选中第一条短语");
     addCheckBox(groups, selectFirstCheck_);
 
@@ -287,7 +289,7 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
     scrollStepSpin_ = spin(1, 100, 59);
     addRow(scroll, "滚动条滚动速度", scrollStepSpin_);
     safeAreaSpin_ = spin(0, 1000, 59);
-    addRow(scroll, "浏览时上下各留出的距离（像素）", safeAreaSpin_);
+    addRow(scroll, "浏览短语时上下各留出的距离（像素）", safeAreaSpin_);
     page->addStretch();
 }
 
@@ -386,7 +388,7 @@ void SettingsWindow::connectChangeTracking() {
              badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_}) {
         connect(check, &QCheckBox::toggled, this, &SettingsWindow::updateApplyButton);
     }
-    for (QSpinBox *spin : {widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_, groupPanelDelaySpin_, outputDelaySpin_, toolTipDelaySpin_}) {
+    for (QSpinBox *spin : {widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_, groupPanelSafeAreaSpin_, groupPanelDelaySpin_, outputDelaySpin_, toolTipDelaySpin_}) {
         connect(spin, &QSpinBox::valueChanged, this, &SettingsWindow::updateApplyButton);
     }
 }
@@ -400,7 +402,7 @@ void SettingsWindow::updateGroupPanelDelayVisibility() {
 // 把设置填回所有控件，等于丢弃未应用的修改
 void SettingsWindow::loadValues() {
     const QList<QWidget *> controls = {hotkeyEdit_, alwaysOnTopCheck_, toolTipDelaySpin_, widthSpin_, heightSpin_, itemHeightSpin_, paddingHorizontalSpin_, paddingVerticalSpin_, scrollStepSpin_, safeAreaSpin_,
-        groupPanelDelaySpin_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, outputDelaySpin_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
+        groupPanelDelaySpin_, groupPanelSafeAreaSpin_, groupPanelAlwaysVisibleCheck_, selectFirstCheck_, badgeTopLeftCheck_, outputDelaySpin_, badgePassthroughCheck_, enterPassthroughCheck_, arrowPassthroughCheck_,
         badgeCtrlCheck_, enterCtrlCheck_, arrowCtrlCheck_, autoStartCheck_, runAsAdminCheck_, checkUpdatesCheck_};
     for (QWidget *control : controls)
         control->blockSignals(true);
@@ -415,6 +417,7 @@ void SettingsWindow::loadValues() {
     scrollStepSpin_->setValue(Settings::scrollStep());
     safeAreaSpin_->setValue(Settings::scrollSafePixels());
     groupPanelDelaySpin_->setValue(Settings::groupPanelDelayMs());
+    groupPanelSafeAreaSpin_->setValue(Settings::groupPanelSafePixels());
     groupPanelAlwaysVisibleCheck_->setChecked(Settings::groupPanelAlwaysVisible());
     selectFirstCheck_->setChecked(Settings::selectFirstOnGroupSwitch());
     updateGroupPanelDelayVisibility(); // 信号被屏蔽了，显隐要手动摆正
@@ -450,6 +453,7 @@ bool SettingsWindow::hasUnappliedChanges() const {
         scrollStepSpin_->value() != Settings::scrollStep() ||
         safeAreaSpin_->value() != Settings::scrollSafePixels() ||
         groupPanelDelaySpin_->value() != Settings::groupPanelDelayMs() ||
+        groupPanelSafeAreaSpin_->value() != Settings::groupPanelSafePixels() ||
         groupPanelAlwaysVisibleCheck_->isChecked() != Settings::groupPanelAlwaysVisible() ||
         selectFirstCheck_->isChecked() != Settings::selectFirstOnGroupSwitch() ||
         badgeTopLeftCheck_->isChecked() != Settings::badgeTopLeft() ||
@@ -500,6 +504,7 @@ bool SettingsWindow::apply() {
     Settings::setScrollStep(scrollStepSpin_->value());
     Settings::setScrollSafePixels(safeAreaSpin_->value());
     Settings::setGroupPanelDelayMs(groupPanelDelaySpin_->value());
+    Settings::setGroupPanelSafePixels(groupPanelSafeAreaSpin_->value());
     Settings::setGroupPanelAlwaysVisible(groupPanelAlwaysVisibleCheck_->isChecked());
     Settings::setSelectFirstOnGroupSwitch(selectFirstCheck_->isChecked());
     Settings::setBadgeTopLeft(badgeTopLeftCheck_->isChecked());

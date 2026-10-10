@@ -59,6 +59,7 @@ void migrate(QJsonObject &c) {
         c[ScrollSafePixels] = c[LegacyScrollSafeRows].toInt() * c[DefaultItemHeight].toInt(40);
     fill(ScrollSafePixels, 60);
     c.remove(LegacyScrollSafeRows);
+    fill(GroupPanelSafePixels, 50);
     fill(CheckUpdatesOnStartup, true);
     fill(IgnoredVersion, "");
     fill(ToolTipDelay, 0);
@@ -85,6 +86,7 @@ QJsonObject defaults() {
     c[SelectFirstOnGroupSwitch] = true;
     c[GroupPanelAlwaysVisible] = false;
     c[ScrollSafePixels] = 60;
+    c[GroupPanelSafePixels] = 50; // 比一个分组略多一点
     c[BadgeTopLeft] = false;
     c[BadgeKeyPassthrough] = true;
     c[EnterKeyPassthrough] = true;
@@ -258,6 +260,12 @@ int Settings::scrollSafePixels() {
 }
 void Settings::setScrollSafePixels(int value) {
     setValue(SettingsKey::ScrollSafePixels, value);
+}
+int Settings::groupPanelSafePixels() {
+    return intValue(SettingsKey::GroupPanelSafePixels, 50);
+}
+void Settings::setGroupPanelSafePixels(int value) {
+    setValue(SettingsKey::GroupPanelSafePixels, value);
 }
 bool Settings::badgeTopLeft() {
     return boolValue(SettingsKey::BadgeTopLeft, false);

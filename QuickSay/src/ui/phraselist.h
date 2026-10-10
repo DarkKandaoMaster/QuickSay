@@ -38,9 +38,9 @@ class PhraseList : public QListWidget {
     int columns_ = 1;
 };
 
-// 选中 item，只在它越过上下安全区（Settings::scrollSafePixels 像素）时才滚动列表，不每次都强制居中。
-// direction：-1 往上、1 往下。短语列表的上下浏览和分组面板翻组共用这一套。
-void selectWithSafeArea(QListWidget *list, QListWidgetItem *item, int direction);
+// 选中 item，只在它越过上下安全区（各 safePixels 像素）时才滚动列表，不每次都强制居中。
+// direction：-1 往上、1 往下。短语列表的上下浏览和分组面板翻组共用这一套，安全区大小分开设。
+void selectWithSafeArea(QListWidget *list, QListWidgetItem *item, int direction, int safePixels);
 
 class GroupModel;
 class GroupPanel;
