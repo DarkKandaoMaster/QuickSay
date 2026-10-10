@@ -151,8 +151,16 @@ void PhraseEditorWindow::acceptEdit() {
 }
 
 bool PhraseEditorWindow::eventFilter(QObject *watched, QEvent *event) {
-    if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape && isActiveWindow()) {
+    if (event->type() != QEvent::KeyPress || !isActiveWindow()) return QWidget::eventFilter(watched, event);
+    const auto *keyEvent = static_cast<QKeyEvent *>(event);
+    if (keyEvent->key() == Qt::Key_Escape) {
         cancelButton_->click();
+        return true;
+    }
+    // Ctrl+回车等同于点“添加/修改”。快捷键输入框里不拦：Ctrl+Return 本身就能录成短语快捷键
+    const bool isEnter = keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter;
+    if (isEnter && (keyEvent->modifiers() & ~Qt::KeypadModifier) == Qt::ControlModifier && !hotkeyEdit_->hasFocus()) {
+        accept();
         return true;
     }
     return QWidget::eventFilter(watched, event);

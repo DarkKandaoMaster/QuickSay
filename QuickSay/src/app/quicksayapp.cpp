@@ -19,10 +19,20 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QSystemTrayIcon>
+#include <QTranslator>
 #include <QWinEventNotifier>
 
 #include <windows.h>
 #include <wtsapi32.h>
+
+// 程序没带 Qt 的翻译文件，快捷键输入框空着时会显示英文的 “Press shortcut”。
+// 只翻这一句，不值得为它带一整套 qm。要在建任何窗口之前装上。
+class BuiltinTranslator : public QTranslator {
+  public:
+    using QTranslator::QTranslator;
+    bool isEmpty() const override;
+    QString translate(const char *context, const char *sourceText, const char *disambiguation, int n) const override;
+};
 
 // 进程级的 Win32 消息处理：
 //   - 锁屏、注销、会话断开、睡眠时立即停止正在进行的高级输入
@@ -35,7 +45,7 @@ class AppNativeEventFilter : public QAbstractNativeEventFilter {
 
 namespace {
 const int kHookWatchdogIntervalMs = 60 * 1000; // 钩子被系统摘掉后最多失灵这么久
-}
+} // namespace
 
 QuickSayApp::QuickSayApp(bool autostarted) {
     // 必须抢在任何可能显示主窗口、装浏览钩子的代码之前装好，原因见 HotkeyHook::install
@@ -51,6 +61,7 @@ QuickSayApp::QuickSayApp(bool autostarted) {
         if (mainWindow_) mainWindow_->summonByUser();
     });
 
+    qApp->installTranslator(new BuiltinTranslator(this)); // 要赶在建任何窗口之前，见 BuiltinTranslator
     qApp->setQuitOnLastWindowClosed(false); // 关窗口只是收到托盘
     Settings::load();
     Settings::save(); // 立即保存一次，把老版本缺的字段补上
@@ -184,6 +195,15 @@ void QuickSayApp::restartAfterImport(QWidget *errorDialogParent) {
         QMessageBox::critical(errorDialogParent, "重启失败", QString("备份已经导入，但无法通过 Windows Explorer 重新启动 QuickSay：%1\n\n请手动启动 QuickSay。").arg(error));
     }
     qApp->quit();
+}
+
+bool BuiltinTranslator::isEmpty() const {
+    return false; // 返回 true 的话 Qt 根本不来问
+}
+
+QString BuiltinTranslator::translate(const char *context, const char *sourceText, const char *, int) const {
+    if (qstrcmp(context, "QKeySequenceEdit") == 0 && qstrcmp(sourceText, "Press shortcut") == 0) return QStringLiteral("请按下快捷键");
+    return QString(); // 空串表示不翻，用原文
 }
 
 bool AppNativeEventFilter::nativeEventFilter(const QByteArray &, void *message, qintptr *result) {
