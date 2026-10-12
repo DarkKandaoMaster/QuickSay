@@ -1,4 +1,5 @@
 #include "app/quicksayapp.h"
+#include "core/files.h"
 #include "core/settings.h"
 #include "platform/startup.h"
 
@@ -15,6 +16,9 @@ int main(int argc, char *argv[]) {
 
     // 必须在 QApplication 之前：后启动的实例要在什么 Qt 对象都还没建的时候就退出
     if (SingleInstance::notifyIfRunning()) return 0;
+
+    // 2.1.0 以前的数据文件搬进 data/。要赶在下面读“以管理员权限启动”之前
+    DataFile::migrateLegacyFiles();
 
     // “以管理员权限启动”：手动启动时自己提权重开一份。放在单实例检测之后——已经在跑时双击 exe 只是想叫出窗口，不该弹 UAC。
     // 开机自启的那份绝不走这里：要么由计划任务直接以管理员权限起来，要么宁可这次以普通权限跑，也不在开机时弹 UAC

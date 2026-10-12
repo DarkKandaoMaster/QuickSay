@@ -1,6 +1,7 @@
 #include "core/settings.h"
 
 #include "core/files.h"
+#include "core/version.h"
 
 #include <QFile>
 #include <QGuiApplication>
@@ -27,47 +28,46 @@ void setValue(const char *key, const QJsonValue &value) {
     g_values[key] = value;
 }
 
-// 老版本缺的字段逐个补上默认值，再把改过名的老字段迁移过来
-void migrate(QJsonObject &c) {
-    using namespace SettingsKey;
-    auto fill = [&c](const char *key, const QJsonValue &value) {
-        if (!c.contains(key)) c[key] = value;
-    };
-    fill(OutputDelay, 200);
-    fill(DefaultItemHeight, 40);
-    fill(ItemPaddingHorizontal, 16);
-    fill(ItemPaddingVertical, 12);
-    fill(ScrollStep, 10);
-    // 旧开关是“钉住时输入短语”，新开关是“钉住时不输入短语”，含义相反所以要取反；老字段不存在时新开关默认勾选
-    fill(BadgeKeyPassthrough, !c[LegacyBadgeKeyInputPhrase].toBool(false));
-    fill(EnterKeyPassthrough, !c[LegacyEnterKeyInputPhrase].toBool(false));
-    fill(ArrowKeyPassthrough, true);
-    fill(BadgeKeyCtrl, false);
-    fill(EnterKeyCtrl, false);
-    fill(ArrowKeyCtrl, false);
-    c.remove(LegacyBadgeKeyInputPhrase);
-    c.remove(LegacyEnterKeyInputPhrase);
-    // 2.0.0 以前“以管理员权限开机自启”是一个开关，现在拆成了独立的“以管理员权限启动”
-    fill(RunAsAdmin, c[LegacyAutoStartAsAdmin].toBool(false));
-    fill(SettingsWindowWidth, 620);
-    fill(SettingsWindowHeight, 576);
-    fill(GroupPanelDelay, 1500);
-    fill(SelectFirstOnGroupSwitch, true);
-    fill(GroupPanelAlwaysVisible, false);
-    // 2.0.2 及以前安全区按行数算，短语项高度一变就跟着变，现在改成固定像素。老默认的 1 行换成新默认，改过的按默认项高折算
-    if (!c.contains(ScrollSafePixels) && c.value(LegacyScrollSafeRows).isDouble() && c[LegacyScrollSafeRows].toInt() != 1)
-        c[ScrollSafePixels] = c[LegacyScrollSafeRows].toInt() * c[DefaultItemHeight].toInt(40);
-    fill(ScrollSafePixels, 60);
-    c.remove(LegacyScrollSafeRows);
-    fill(GroupPanelSafePixels, 50);
-    fill(CheckUpdatesOnStartup, true);
-    fill(IgnoredVersion, "");
-    fill(ToolTipDelay, 0);
-    fill(CaptureHotkey, "");
-    fill(SearchOnSummon, false);
-    fill(StopOutputOnSwitch, true);
-    c.remove(LegacyAutoStartAsAdmin);
-}
+// 2.1.0 以前的 config.json 用拼音和几个含义不清的键名，2.1.0 起改成现在的名字
+struct RenamedKey {
+    const char *oldKey;
+    const char *newKey;
+};
+const RenamedKey kRenamedKeys[] = {
+    {"hotkey", SettingsKey::Hotkey},
+    {"zhiding", SettingsKey::AlwaysOnTop},
+    {"delay", SettingsKey::OutputDelay},
+    {"width", SettingsKey::MainWidth},
+    {"height", SettingsKey::MainHeight},
+    {"gundong", SettingsKey::ScrollStep},
+    {"fenzu_yanshi", SettingsKey::GroupPanelDelay},
+    {"fenzu_shouxuan_diyitiao", SettingsKey::SelectFirstOnGroupSwitch},
+    {"fenzu_changxian", SettingsKey::GroupPanelAlwaysVisible},
+    {"anquanqu_xiangsu", SettingsKey::ScrollSafePixels},
+    {"fenzu_anquanqu_xiangsu", SettingsKey::GroupPanelSafePixels},
+    {"jiaobiao", SettingsKey::BadgeTopLeft},
+    {"ziqidong", SettingsKey::AutoStart},
+    {"guanliyuan", SettingsKey::RunAsAdmin},
+    {"tudingflag", SettingsKey::Pinned},
+    {"qidong_jiancha_gengxin", SettingsKey::CheckUpdatesOnStartup},
+    {"hulve_banben", SettingsKey::IgnoredVersion},
+    {"shezhichuangkou_w", SettingsKey::SettingsWindowWidth},
+    {"shezhichuangkou_h", SettingsKey::SettingsWindowHeight},
+    {"chuangkou_x", "main_window_x"},
+    {"chuangkou_y", "main_window_y"},
+    {"shezhichuangkou_x", "settings_window_x"},
+    {"shezhichuangkou_y", "settings_window_y"},
+    {"tianjiachuangkou_x", "add_phrase_window_x"},
+    {"tianjiachuangkou_y", "add_phrase_window_y"},
+    {"xiugaichuangkou_x", "edit_phrase_window_x"},
+    {"xiugaichuangkou_y", "edit_phrase_window_y"},
+};
+
+// 更早的版本里含义不同的键，不能直接改名，见 Settings::upgrade
+const char *const kLegacyAutoStartAsAdmin = "ziqidong_guanliyuan";
+const char *const kLegacyBadgeKeyInputPhrase = "badge_key_input_phrase_when_pinned";
+const char *const kLegacyEnterKeyInputPhrase = "enter_key_input_phrase_when_pinned";
+const char *const kLegacyScrollSafeRows = "anquanqu_hangshu";
 
 QJsonObject defaults() {
     using namespace SettingsKey;
@@ -100,10 +100,15 @@ QJsonObject defaults() {
     c[AutoStart] = true;
     c[RunAsAdmin] = false;
     c[Pinned] = true;
-    c["chuangkou_x"] = centerX;
-    c["chuangkou_y"] = centerY;
-    c["shezhichuangkou_x"] = besideX;
-    c["shezhichuangkou_y"] = centerY;
+    auto setPos = [&c](WindowSlot slot, int x, int y) {
+        const QString prefix = Settings::windowKeyPrefix(slot);
+        c[prefix + "_x"] = x;
+        c[prefix + "_y"] = y;
+    };
+    setPos(WindowSlot::Main, centerX, centerY);
+    setPos(WindowSlot::Settings, besideX, centerY);
+    setPos(WindowSlot::AddPhrase, besideX, centerY);
+    setPos(WindowSlot::EditPhrase, besideX, centerY);
     c[SettingsWindowWidth] = 620; // 和 TrafficMonitor 中文设置窗口一致
     c[SettingsWindowHeight] = 576;
     c[CheckUpdatesOnStartup] = true;
@@ -112,28 +117,74 @@ QJsonObject defaults() {
     c[CaptureHotkey] = ""; // 默认不启用，免得占掉别的程序的快捷键
     c[SearchOnSummon] = false;
     c[StopOutputOnSwitch] = true; // 短语里用 <press Alt+Tab> 之类故意切窗口的人自己去设置里关掉
-    c["tianjiachuangkou_x"] = besideX;
-    c["tianjiachuangkou_y"] = centerY;
-    c["xiugaichuangkou_x"] = besideX;
-    c["xiugaichuangkou_y"] = centerY;
+    c[Version] = kAppVersion;
     return c;
 }
 
 } // namespace
 
 void Settings::load() {
-    if (DataFile::readObject(Paths::configFile(), g_values)) {
-        migrate(g_values);
+    if (DataFile::readObject(Paths::settingsFile(), g_values)) {
+        upgrade(g_values);
         return;
     }
     g_values = defaults();
     save();
 }
 
+void Settings::upgrade(QJsonObject &c) {
+    using namespace SettingsKey;
+    for (const RenamedKey &renamed : kRenamedKeys) {
+        if (!c.contains(renamed.oldKey)) continue;
+        // 不能写 c[new] = c[old]：QJsonValueRef 记的是下标，插入新键会让指向老键的那个错位
+        if (!c.contains(renamed.newKey)) c.insert(renamed.newKey, c.value(renamed.oldKey));
+        c.remove(renamed.oldKey);
+    }
+
+    auto fill = [&c](const char *key, const QJsonValue &value) {
+        if (!c.contains(key)) c[key] = value;
+    };
+    fill(OutputDelay, 200);
+    fill(DefaultItemHeight, 40);
+    fill(ItemPaddingHorizontal, 16);
+    fill(ItemPaddingVertical, 12);
+    fill(ScrollStep, 10);
+    // 旧开关是“钉住时输入短语”，新开关是“钉住时不输入短语”，含义相反所以要取反；老字段不存在时新开关默认勾选
+    fill(BadgeKeyPassthrough, !c[kLegacyBadgeKeyInputPhrase].toBool(false));
+    fill(EnterKeyPassthrough, !c[kLegacyEnterKeyInputPhrase].toBool(false));
+    fill(ArrowKeyPassthrough, true);
+    fill(BadgeKeyCtrl, false);
+    fill(EnterKeyCtrl, false);
+    fill(ArrowKeyCtrl, false);
+    c.remove(kLegacyBadgeKeyInputPhrase);
+    c.remove(kLegacyEnterKeyInputPhrase);
+    // 2.0.0 以前“以管理员权限开机自启”是一个开关，现在拆成了独立的“以管理员权限启动”
+    fill(RunAsAdmin, c[kLegacyAutoStartAsAdmin].toBool(false));
+    c.remove(kLegacyAutoStartAsAdmin);
+    fill(SettingsWindowWidth, 620);
+    fill(SettingsWindowHeight, 576);
+    fill(GroupPanelDelay, 1500);
+    fill(SelectFirstOnGroupSwitch, true);
+    fill(GroupPanelAlwaysVisible, false);
+    // 2.0.2 及以前安全区按行数算，短语项高度一变就跟着变，现在改成固定像素。老默认的 1 行换成新默认，改过的按默认项高折算
+    if (!c.contains(ScrollSafePixels) && c.value(kLegacyScrollSafeRows).isDouble() && c[kLegacyScrollSafeRows].toInt() != 1)
+        c[ScrollSafePixels] = c[kLegacyScrollSafeRows].toInt() * c[DefaultItemHeight].toInt(40);
+    fill(ScrollSafePixels, 60);
+    c.remove(kLegacyScrollSafeRows);
+    fill(GroupPanelSafePixels, 50);
+    fill(CheckUpdatesOnStartup, true);
+    fill(IgnoredVersion, "");
+    fill(ToolTipDelay, 0);
+    fill(CaptureHotkey, "");
+    fill(SearchOnSummon, false);
+    fill(StopOutputOnSwitch, true);
+    c[Version] = kAppVersion; // 上面已经升级成当前格式了
+}
+
 void Settings::save() {
     if (g_saveTimer) g_saveTimer->stop(); // 整份都写了，排着的延迟保存不用再写
     if (g_writesFrozen) return;
-    DataFile::writeJson(Paths::configFile(), QJsonDocument(g_values));
+    DataFile::writeJson(Paths::settingsFile(), QJsonDocument(g_values));
 }
 
 void Settings::saveLater() {
@@ -167,13 +218,13 @@ bool Settings::writesFrozen() {
 QString Settings::windowKeyPrefix(WindowSlot slot) {
     switch (slot) {
     case WindowSlot::Main:
-        return "chuangkou";
+        return "main_window";
     case WindowSlot::Settings:
-        return "shezhichuangkou";
+        return "settings_window";
     case WindowSlot::AddPhrase:
-        return "tianjiachuangkou";
+        return "add_phrase_window";
     case WindowSlot::EditPhrase:
-        return "xiugaichuangkou";
+        return "edit_phrase_window";
     }
     return QString();
 }
@@ -381,8 +432,7 @@ void Settings::setToolTipDelayMs(int value) {
 }
 
 bool Settings::readRunAsAdminFromFile() {
-    QFile file(Paths::configFile());
+    QFile file(Paths::settingsFile());
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false; // 第一次运行，还没有配置文件
-    const QJsonObject c = QJsonDocument::fromJson(file.readAll()).object();
-    return c[SettingsKey::RunAsAdmin].toBool(c[SettingsKey::LegacyAutoStartAsAdmin].toBool(false));
+    return QJsonDocument::fromJson(file.readAll()).object().value(SettingsKey::RunAsAdmin).toBool(false);
 }

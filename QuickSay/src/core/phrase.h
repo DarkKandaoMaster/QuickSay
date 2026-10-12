@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -9,13 +10,13 @@
 class QListWidgetItem;
 
 // 短语直接存在 QListWidgetItem 的这几个数据角色里，列表本身就是数据模型。
-// 改动任何一个角色都要同步 phrasestore.cpp 里的读写。
+// 改动任何一个角色都要同步 phrase.cpp 里 PhraseStore 的读写。
 namespace PhraseRole {
 enum : int {
-    Text = Qt::UserRole, // 短语正文         data.json: text
-    Remark, // 备注，非空时代替正文显示 data.json: remark
-    Group, // 所属分组名        data.json: tab
-    Hotkey, // 短语快捷键        data.json: hotkey
+    Text = Qt::UserRole, // 短语正文         phrases.json: text
+    Remark, // 备注，非空时代替正文显示 phrases.json: remark
+    Group, // 所属分组名        phrases.json: 短语所在分组的 group
+    Hotkey, // 短语快捷键        phrases.json: hotkey
     Badge, // 角标字符，运行期由 PhraseList::applyFilter 算出，不落盘
 };
 }
@@ -40,16 +41,25 @@ void refreshDisplay(QListWidgetItem *item);
 } // namespace PhraseItem
 
 class QListWidget;
+class GroupModel;
 
-// data.json 的读写。短语本身存在 QListWidget 的条目里，见 phraseitem.h。
+// data/phrases.json 的读写，分组和短语存在一起：
+// {"groups": [{"group": 分组名, "item_height": 行高, "columns": 列数, "phrases": [{"text", "remark", "hotkey"}, ...]}, ...]}
+// 磁盘上短语嵌在分组里，内存里摊平成一个列表，每条短语用 PhraseRole::Group 记分组名。
 namespace PhraseStore {
 
-// data.json 不存在时写入新手教程那几条默认短语
-void load(QListWidget &list);
-void save(QListWidget &list);
+// 文件不存在时写入默认的三个分组和新手教程那几条短语；一个分组都没有时补一个，界面才转得起来
+void load(QListWidget &list, GroupModel &groups);
+void save(const QListWidget &list, const GroupModel &groups);
 
-// 只读导出，供备份使用
-QJsonArray toJson(const QListWidget &list);
+// 上面 "groups" 数组的内容，备份也用它
+QJsonArray toJson(const QListWidget &list, const GroupModel &groups);
+// 整份 data/phrases.json：groups 加上写文件的 QuickSay 版本号（"version"），以后改格式时按它判断是哪一版的数据
+QJsonObject fileContent(const QJsonArray &groups);
+
+// 2.1.0 以前分组（tab.json）和短语（data.json）分开存，短语用 "tab" 字段记分组名。合并成 toJson 的格式：
+// 分组表里没有的分组名按出现顺序补成新分组，一条短语都不丢
+QJsonArray fromLegacy(const QJsonArray &groups, const QJsonArray &phrases, int defaultItemHeight);
 
 } // namespace PhraseStore
 

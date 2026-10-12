@@ -1,4 +1,5 @@
 #include "core/backup.h"
+#include "core/files.h"
 #include "core/groupmodel.h"
 #include "core/phrase.h"
 #include "core/settings.h"
@@ -6,7 +7,9 @@
 #include "output/outputparser.h"
 
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QDir>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QListWidget>
 #include <QTemporaryDir>
@@ -27,10 +30,51 @@ class CoreTest : public QObject {
         return parseOutputActions(text);
     }
 
-    static void writeConfig(const QByteArray &content) {
-        QFile file(QCoreApplication::applicationDirPath() + "/config.json");
+    // 2.1.0 以前放在 exe 旁边的数据文件
+    static QString legacyFile(const QString &name) {
+        return QCoreApplication::applicationDirPath() + "/" + name;
+    }
+
+    static void writeFile(const QString &path, const QByteArray &content) {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QFile file(path);
         QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
         file.write(content);
+    }
+
+    static QJsonObject readObject(const QString &path) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return QJsonObject();
+        return QJsonDocument::fromJson(file.readAll()).object();
+    }
+
+    static void removeDataFiles() {
+        QFile::remove(Paths::settingsFile());
+        QFile::remove(Paths::phrasesFile());
+    }
+
+    static QStringList texts(const QListWidget &list) {
+        QStringList result;
+        for (int i = 0; i < list.count(); ++i)
+            result << PhraseItem::text(list.item(i)) + "@" + PhraseItem::group(list.item(i));
+        return result;
+    }
+
+    // 把 Backup::create 出来的文件换成另一份正文（文件头固定 6 行：开始标记、导出时间、格式版本、程序版本、校验和、分隔线）
+    static QByteArray rewrapBackup(const QByteArray &file, QJsonObject root, const QString &formatVersion) {
+        QList<QByteArray> lines = file.split('\n');
+        const QJsonObject original = QJsonDocument::fromJson(QByteArray::fromBase64(lines.mid(6, lines.size() - 7).join())).object();
+        root["format_version"] = formatVersion;
+        root["quicksay_version"] = original["quicksay_version"];
+        root["exported_at"] = original["exported_at"];
+        const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Compact);
+        QByteArray result = lines[0] + "\n" + lines[1] + "\n";
+        result += "- FORMAT VERSION:    " + formatVersion.toUtf8() + "\n" + lines[3] + "\n";
+        result += "- SHA256:            " + QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex() + "\n" + lines[5] + "\n";
+        const QByteArray base64 = payload.toBase64();
+        for (int i = 0; i < base64.size(); i += 64)
+            result += base64.mid(i, 64) + "\n";
+        return result + lines.last();
     }
 
   private slots:
@@ -201,22 +245,29 @@ class CoreTest : public QObject {
     }
 
     void backupRoundTrip() {
-        Settings::load(); // 第一次跑会在测试程序旁边写一份默认 config.json
+        Settings::load(); // 第一次跑会在测试程序旁边写一份默认 data/settings.json
         GroupModel groups;
         groups.insert(0, {"A", 40, 1});
         groups.insert(1, {"B&C", 55, 3});
         QListWidget list;
         list.addItem(PhraseItem::create("第一条<Enter>", "备注", "A", "Ctrl+Num+4"));
         list.addItem(PhraseItem::create("second", "", "B&C", ""));
+        list.addItem(PhraseItem::create("third", "", "A", ""));
 
         const QByteArray file = Backup::create(list, groups);
         Backup::Data data;
         QString error;
         QVERIFY2(Backup::parse(file, data, error), qPrintable(error));
-        QCOMPARE(data.groups, groups.toJson());
-        QCOMPARE(data.phrases.size(), 2);
-        QCOMPARE(data.phrases[0].toObject()["text"].toString(), QString("第一条<Enter>"));
-        QCOMPARE(data.phrases[0].toObject()["hotkey"].toString(), QString("Ctrl+Num+4"));
+        QCOMPARE(data.groups, PhraseStore::toJson(list, groups));
+        QCOMPARE(data.groups.size(), 2);
+        const QJsonObject groupA = data.groups[0].toObject();
+        QCOMPARE(groupA["group"].toString(), QString("A"));
+        const QJsonArray phrasesA = groupA["phrases"].toArray(); // 摊平的列表里隔开的两条收拢到同一个分组下
+        QCOMPARE(phrasesA.size(), 2);
+        QCOMPARE(phrasesA[0].toObject()["text"].toString(), QString("第一条<Enter>"));
+        QCOMPARE(phrasesA[0].toObject()["hotkey"].toString(), QString("Ctrl+Num+4"));
+        QCOMPARE(phrasesA[1].toObject()["text"].toString(), QString("third"));
+        QCOMPARE(data.groups[1].toObject()["columns"].toInt(), 3);
         QCOMPARE(data.appVersion, kAppVersion);
 
         // Base64 正文里改一个字符（文件头固定 6 行，正文从第 7 行开始）：必须是校验和拦下来，而不是别的检查
@@ -235,14 +286,68 @@ class CoreTest : public QObject {
         QVERIFY2(Backup::parse(crlf + "\r\n", data, error), qPrintable(error));
     }
 
-    // config.json 的键名是磁盘格式，老版本的配置必须原样迁移过来
+    // 2.1.0 以前导出的 1.0.0 格式备份：设置是老键名，分组和短语分成两个数组
+    void backupImportsLegacyFormat() {
+        GroupModel groups;
+        groups.insert(0, {"A", 40, 1});
+        QListWidget list;
+        QJsonObject settings = Settings::json();
+        settings.remove("summon_hotkey");
+        settings.remove("always_on_top");
+        settings.remove("main_window_x");
+        settings.remove("run_as_admin");
+        settings["hotkey"] = "Ctrl+Q";
+        settings["zhiding"] = false;
+        settings["chuangkou_x"] = 123;
+        settings["ziqidong_guanliyuan"] = true;
+        QJsonObject root;
+        root["settings"] = settings;
+        root["groups"] = QJsonDocument::fromJson(R"([{"tab":"A","item_height":40,"columns":1},{"tab":"B","item_height":55,"columns":3}])").array();
+        root["phrases"] = QJsonDocument::fromJson(R"([{"text":"b1","remark":"","tab":"B","hotkey":""},{"text":"a1","remark":"r","tab":"A","hotkey":"Ctrl+1"}])").array();
+        const QByteArray file = rewrapBackup(Backup::create(list, groups), root, "1.0.0");
+
+        Backup::Data data;
+        QString error;
+        QVERIFY2(Backup::parse(file, data, error), qPrintable(error));
+        QCOMPARE(data.settings["summon_hotkey"].toString(), QString("Ctrl+Q"));
+        QCOMPARE(data.settings["always_on_top"].toBool(true), false);
+        QCOMPARE(data.settings["main_window_x"].toInt(), 123);
+        QCOMPARE(data.settings["run_as_admin"].toBool(false), true);
+        QVERIFY(!data.settings.contains("hotkey"));
+        QVERIFY(!data.settings.contains("chuangkou_x"));
+        QVERIFY(!data.settings.contains("ziqidong_guanliyuan"));
+        QCOMPARE(data.groups.size(), 2);
+        QCOMPARE(data.groups[0].toObject()["group"].toString(), QString("A"));
+        QCOMPARE(data.groups[0].toObject()["phrases"].toArray()[0].toObject()["hotkey"].toString(), QString("Ctrl+1"));
+        QCOMPARE(data.groups[1].toObject()["columns"].toInt(), 3);
+        QCOMPARE(data.groups[1].toObject()["phrases"].toArray()[0].toObject()["text"].toString(), QString("b1"));
+
+        QVERIFY(!Backup::parse(rewrapBackup(Backup::create(list, groups), root, "9.9.9"), data, error)); // 不认识的格式版本
+    }
+
+    void backupRejectsDuplicateGroup() {
+        GroupModel groups;
+        groups.insert(0, {"A", 40, 1});
+        groups.insert(1, {"A", 40, 1});
+        QListWidget list;
+        Backup::Data data;
+        QString error;
+        QVERIFY(!Backup::parse(Backup::create(list, groups), data, error));
+    }
+
+    // 2.1.0 以前的 config.json 搬进 data/settings.json，老键名全部换掉，老文件删掉
     void settingsMigrateLegacyKeys() {
-        writeConfig(R"({"hotkey":"Ctrl+Q","ziqidong_guanliyuan":true,"anquanqu_hangshu":2,"default_item_height":30,
-                        "badge_key_input_phrase_when_pinned":true,"enter_key_input_phrase_when_pinned":false,"my_unknown_key":123})");
-        QVERIFY(Settings::readRunAsAdminFromFile()); // 还没有 QApplication 时直接读文件，也要认老键
+        removeDataFiles();
+        writeFile(legacyFile("config.json"), R"({"hotkey":"Ctrl+Q","zhiding":false,"chuangkou_x":77,"ziqidong_guanliyuan":true,"anquanqu_hangshu":2,
+                        "default_item_height":30,"badge_key_input_phrase_when_pinned":true,"enter_key_input_phrase_when_pinned":false,"my_unknown_key":123})");
+        DataFile::migrateLegacyFiles();
+        QVERIFY(!QFile::exists(legacyFile("config.json")));
+        QVERIFY(Settings::readRunAsAdminFromFile()); // 还没有 QApplication 时直接读文件
         Settings::load();
         QCOMPARE(Settings::hotkey(), QString("Ctrl+Q"));
-        QVERIFY(Settings::runAsAdmin()); // ziqidong_guanliyuan → guanliyuan
+        QVERIFY(!Settings::alwaysOnTop());
+        QCOMPARE(Settings::windowPos(WindowSlot::Main).x(), 77);
+        QVERIFY(Settings::runAsAdmin()); // ziqidong_guanliyuan → run_as_admin
         QCOMPARE(Settings::scrollSafePixels(), 60); // 2 行 × 默认行高 30
         QVERIFY(!Settings::badgeKeyPassthroughWhenPinned()); // 旧开关含义相反
         QVERIFY(Settings::enterKeyPassthroughWhenPinned());
@@ -250,40 +355,91 @@ class CoreTest : public QObject {
         QCOMPARE(Settings::toolTipDelayMs(), 0);
         QVERIFY(!Settings::searchOnSummon());
         QVERIFY(Settings::stopOutputOnWindowSwitch());
-        const QJsonObject json = Settings::json();
-        QVERIFY(!json.contains("ziqidong_guanliyuan"));
-        QVERIFY(!json.contains("anquanqu_hangshu"));
-        QVERIFY(!json.contains("badge_key_input_phrase_when_pinned"));
+        const QJsonObject json = readObject(Paths::settingsFile());
+        for (const char *key : {"hotkey", "zhiding", "chuangkou_x", "ziqidong_guanliyuan", "anquanqu_hangshu", "badge_key_input_phrase_when_pinned"})
+            QVERIFY2(!json.contains(key), key);
+        QCOMPARE(json.value("summon_hotkey").toString(), QString("Ctrl+Q"));
         QCOMPARE(json.value("my_unknown_key").toInt(), 123); // 不认识的键原样保留
+        QCOMPARE(json.value("version").toString(), kAppVersion);
     }
 
     void settingsOldDefaultSafeRowsBecomesNewDefault() {
-        writeConfig(R"({"anquanqu_hangshu":1,"default_item_height":30})");
+        writeFile(Paths::settingsFile(), R"({"anquanqu_hangshu":1,"default_item_height":30})");
         Settings::load();
         QCOMPARE(Settings::scrollSafePixels(), 60); // 老默认 1 行不按行高折算，直接换成新默认
     }
 
+    // tab.json 和 data.json 合并成 data/phrases.json：短语按分组收拢，分组表里没有的分组补出来
+    void phrasesMigrateLegacyFiles() {
+        removeDataFiles();
+        writeFile(legacyFile("config.json"), R"({"default_item_height":30})");
+        writeFile(legacyFile("tab.json"), R"([{"tab":"A","item_height":0,"columns":2},{"tab":"B","item_height":55}])");
+        writeFile(legacyFile("data.json"), R"([{"text":"b1","remark":"","tab":"B","hotkey":""},{"text":"a1","remark":"r","tab":"A","hotkey":"Ctrl+1"},
+                                              {"text":"x1","remark":"","tab":"X","hotkey":""},{"text":"b2","remark":"","tab":"B","hotkey":""},
+                                              {"text":"old","remark":"","tab":"","hotkey":""}])");
+        DataFile::migrateLegacyFiles();
+        for (const char *name : {"config.json", "tab.json", "data.json"})
+            QVERIFY2(!QFile::exists(legacyFile(name)), name);
+
+        const QJsonObject root = readObject(Paths::phrasesFile());
+        QCOMPARE(root.value("version").toString(), kAppVersion);
+        const QJsonArray groups = root.value("groups").toArray();
+        QCOMPARE(groups.size(), 4);
+        QCOMPARE(groups[0].toObject()["item_height"].toInt(), 30); // 没设行高的取默认行高
+        QCOMPARE(groups[0].toObject()["columns"].toInt(), 2);
+        QCOMPARE(groups[1].toObject()["columns"].toInt(), 1); // 很老的版本没有 columns
+        QCOMPARE(groups[2].toObject()["group"].toString(), QString("X"));
+        QCOMPARE(groups[3].toObject()["group"].toString(), QString("短语1")); // 很老的版本没有分组
+
+        Settings::load();
+        GroupModel model;
+        QListWidget list;
+        PhraseStore::load(list, model);
+        QCOMPARE(model.count(), 4);
+        QCOMPARE(model.currentIndex(), 0);
+        QCOMPARE(model.itemHeight(1), 55);
+        QCOMPARE(texts(list), QStringList({"a1@A", "b1@B", "b2@B", "x1@X", "old@短语1"}));
+        QCOMPARE(PhraseItem::remark(list.item(0)), QString("r"));
+        QCOMPARE(PhraseItem::hotkey(list.item(0)), QString("Ctrl+1"));
+    }
+
+    // data/ 里已经有新文件（上次搬到一半被打断）：以新文件为准，老文件只删不搬
+    void migrationKeepsExistingNewFiles() {
+        writeFile(Paths::settingsFile(), R"({"summon_hotkey":"Ctrl+N"})");
+        writeFile(legacyFile("config.json"), R"({"hotkey":"Ctrl+O"})");
+        writeFile(legacyFile("tab.json"), R"([{"tab":"Old","item_height":40,"columns":1}])");
+        DataFile::migrateLegacyFiles();
+        QVERIFY(!QFile::exists(legacyFile("config.json")));
+        QVERIFY(!QFile::exists(legacyFile("tab.json")));
+        QCOMPARE(readObject(Paths::settingsFile()).value("summon_hotkey").toString(), QString("Ctrl+N"));
+        QCOMPARE(readObject(Paths::phrasesFile()).value("groups").toArray()[0].toObject()["group"].toString(), QString("A"));
+    }
+
+    void phrasesWithoutGroupsArrayIsKeptAside() {
+        writeFile(Paths::phrasesFile(), R"({"something":"else"})");
+        Settings::load();
+        GroupModel model;
+        QListWidget list;
+        PhraseStore::load(list, model);
+        QCOMPARE(model.count(), 3); // 换成了默认的三个分组和新手教程
+        QCOMPARE(list.count(), 4);
+        const QStringList broken = QDir(Paths::dataDir()).entryList({"phrases.json.broken.*"});
+        QCOMPARE(broken.size(), 1);
+        QFile::remove(QDir(Paths::dataDir()).filePath(broken.first()));
+    }
+
+    // 放在最后：留下一份默认设置给 tst_ui
     void settingsBrokenFileIsKeptAside() {
-        writeConfig("{ this is not json");
+        writeFile(Paths::settingsFile(), "{ this is not json");
         Settings::load();
         QCOMPARE(Settings::hotkey(), QString("Ctrl+Shift+V")); // 换成了默认设置
-        const QStringList broken = QDir(QCoreApplication::applicationDirPath()).entryList({"config.json.broken.*"});
+        const QStringList broken = QDir(Paths::dataDir()).entryList({"settings.json.broken.*"});
         QCOMPARE(broken.size(), 1); // 原文件改名留底，没被覆盖
-        QFile file(QDir(QCoreApplication::applicationDirPath()).filePath(broken.first()));
+        QFile file(QDir(Paths::dataDir()).filePath(broken.first()));
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(file.readAll(), QByteArray("{ this is not json"));
         file.close();
         file.remove();
-    }
-
-    void backupRejectsPhraseInMissingGroup() {
-        GroupModel groups;
-        groups.insert(0, {"A", 40, 1});
-        QListWidget list;
-        list.addItem(PhraseItem::create("orphan", "", "不存在的分组", ""));
-        Backup::Data data;
-        QString error;
-        QVERIFY(!Backup::parse(Backup::create(list, groups), data, error));
     }
 };
 

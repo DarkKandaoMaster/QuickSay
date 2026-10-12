@@ -35,24 +35,13 @@ MainWindow::MainWindow(GroupModel &groups, HotkeyRegistry &hotkeys) : QWidget(nu
     setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
 
     list_ = new PhraseList(this);
-    PhraseStore::load(*list_);
-    PhraseStore::save(*list_); // 立即保存一次，把老版本缺的字段补上
+    PhraseStore::load(*list_, groups_);
     applyScrollStep();
     hotkeys_.rebuildPhraseHotkeys(*list_);
     connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
         if (searchMode_) leaveSearchMode();
         outputPhrase(item);
     });
-
-    groups_.load();
-    // 短语按分组名挂靠，分组表里没有的名字对应的短语永远显示不出来。改分组名时 tab.json 和 data.json 是先后两次写盘，
-    // 中间进程被杀就会这样；手改坏了 tab.json 也会。所以缺哪个分组就按短语里的名字补回来，一条短语都不丢
-    for (int i = 0; i < list_->count(); ++i) {
-        const QString name = PhraseItem::group(list_->item(i));
-        if (!name.isEmpty() && !groups_.contains(name)) groups_.insert(groups_.count(), {name, Settings::defaultItemHeight(), 1});
-    }
-    if (groups_.count() == 0) groups_.insert(0, {"短语1", Settings::defaultItemHeight(), 1}); // 至少要有一个分组，界面才转得起来
-    groups_.save();
 
     navigator_ = new PhraseNavigator(list_, groups_, this);
     groupButton_ = new GroupButton(this);
@@ -71,7 +60,7 @@ MainWindow::MainWindow(GroupModel &groups, HotkeyRegistry &hotkeys) : QWidget(nu
         commitPhraseChanges();
     }); // 拖动排序完成
     connect(&groups_, &GroupModel::moved, this, [this]() {
-        groups_.save();
+        PhraseStore::save(*list_, groups_);
     });
 
     // 过滤要在量行高之前做，量到的才是当前分组里看得见的条目
@@ -206,7 +195,7 @@ void MainWindow::refreshFilter() {
 }
 
 void MainWindow::commitPhraseChanges() {
-    PhraseStore::save(*list_);
+    PhraseStore::save(*list_, groups_);
     hotkeys_.rebuildPhraseHotkeys(*list_);
     refreshFilter();
 }
@@ -272,7 +261,7 @@ void MainWindow::createGroup(int position) {
     const int index = position < 0 ? groups_.count() : position;
     groups_.insert(index, {name, itemHeight, columns});
     groups_.setCurrentIndex(index);
-    groups_.save();
+    PhraseStore::save(*list_, groups_);
     groupPanel_->rebuild();
 }
 
@@ -293,8 +282,7 @@ void MainWindow::editGroup(int index) {
     for (int i = 0; i < list_->count(); ++i) {
         if (PhraseItem::group(list_->item(i)) == oldName) PhraseItem::setGroup(list_->item(i), newName);
     }
-    groups_.save();
-    PhraseStore::save(*list_);
+    PhraseStore::save(*list_, groups_); // 分组和短语在同一个文件里，一次写完，不会出现改了一半的分组名
     refreshFilter();
     groupPanel_->refreshButtonText();
     groupPanel_->rebuild();
@@ -313,7 +301,6 @@ void MainWindow::deleteGroup(int index) {
         if (PhraseItem::group(item) != name) continue;
         discardPhrase(item);
     }
-    groups_.save();
     commitPhraseChanges();
     groupPanel_->refreshButtonText();
     groupPanel_->rebuild();

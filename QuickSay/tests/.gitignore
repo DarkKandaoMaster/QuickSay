@@ -1,4 +1,5 @@
 build/
 *.json
+data/
 *.broken.*
 target_wrapper.*

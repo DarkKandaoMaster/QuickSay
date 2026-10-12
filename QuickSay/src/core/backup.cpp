@@ -30,33 +30,8 @@ const char *const kFormatVersionPrefix = "- FORMAT VERSION:    ";
 const char *const kAppVersionPrefix = "- QUICKSAY VERSION:  ";
 const char *const kChecksumPrefix = "- SHA256:            ";
 
-// 老版本导出的备份缺字段时按新版默认值补齐，改过名的字段按相反含义迁移
-void upgradeSettings(QJsonObject &settings) {
-    using namespace SettingsKey;
-    if (!settings.contains(BadgeKeyPassthrough) && settings.value(LegacyBadgeKeyInputPhrase).isBool()) settings[BadgeKeyPassthrough] = !settings[LegacyBadgeKeyInputPhrase].toBool();
-    if (!settings.contains(EnterKeyPassthrough) && settings.value(LegacyEnterKeyInputPhrase).isBool()) settings[EnterKeyPassthrough] = !settings[LegacyEnterKeyInputPhrase].toBool();
-    settings.remove(LegacyBadgeKeyInputPhrase);
-    settings.remove(LegacyEnterKeyInputPhrase);
-    auto fill = [&settings](const char *key, const QJsonValue &value) {
-        if (!settings.contains(key)) settings[key] = value;
-    };
-    fill(ArrowKeyPassthrough, true);
-    fill(BadgeKeyCtrl, false);
-    fill(EnterKeyCtrl, false);
-    fill(ArrowKeyCtrl, false);
-    fill(SelectFirstOnGroupSwitch, true);
-    fill(GroupPanelAlwaysVisible, false);
-    fill(GroupPanelDelay, 1500);
-    if (!settings.contains(ScrollSafePixels) && settings.value(LegacyScrollSafeRows).isDouble() && settings[LegacyScrollSafeRows].toInt() != 1)
-        settings[ScrollSafePixels] = settings[LegacyScrollSafeRows].toInt() * settings[DefaultItemHeight].toInt(40);
-    fill(ScrollSafePixels, 60);
-    settings.remove(LegacyScrollSafeRows);
-    fill(GroupPanelSafePixels, 50);
-    fill(ToolTipDelay, 0);
-    fill(CaptureHotkey, "");
-    fill(SearchOnSummon, false);
-    fill(StopOutputOnSwitch, true);
-}
+// 2.1.0 以前导出的备份：设置是老键名，分组（"groups"，分组名在 "tab"）和短语（"phrases"）是两个数组
+const char *const kLegacyFormatVersion = "1.0.0";
 
 bool validateSettings(const QJsonObject &settings, QString &error) {
     using namespace SettingsKey;
@@ -104,33 +79,9 @@ bool validateSettings(const QJsonObject &settings, QString &error) {
     return true;
 }
 
-bool validateGroups(const QJsonArray &groups, QSet<QString> &names, QString &error) {
-    if (groups.isEmpty() || groups.size() > 10000) {
-        error = "备份中的分组数量无效";
-        return false;
-    }
-    for (const QJsonValue &value : groups) {
-        if (!value.isObject()) {
-            error = "备份中存在无效分组";
-            return false;
-        }
-        const QJsonObject group = value.toObject();
-        const QString name = group.value("tab").toString();
-        const double itemHeight = group.value("item_height").toDouble(-1);
-        const double columns = group.value("columns").toDouble(-1);
-        if (!group.value("tab").isString() || name.isEmpty() || names.contains(name) ||
-            !group.value("item_height").isDouble() || itemHeight != qFloor(itemHeight) || itemHeight < 10 || itemHeight > 100 ||
-            !group.value("columns").isDouble() || columns != qFloor(columns) || columns < 1 || columns > 10) {
-            error = "备份中的分组名称或分组设置无效";
-            return false;
-        }
-        names.insert(name);
-    }
-    return true;
-}
-
-bool validatePhrases(const QJsonArray &phrases, const QSet<QString> &groupNames, QString &error) {
-    if (phrases.size() > 100000) {
+bool validatePhrases(const QJsonArray &phrases, int &total, QString &error) {
+    total += phrases.size();
+    if (total > 100000) {
         error = "备份中的短语数量过多";
         return false;
     }
@@ -140,11 +91,38 @@ bool validatePhrases(const QJsonArray &phrases, const QSet<QString> &groupNames,
             return false;
         }
         const QJsonObject phrase = value.toObject();
-        if (!phrase.value("text").isString() || !phrase.value("remark").isString() || !phrase.value("tab").isString() || !phrase.value("hotkey").isString() ||
-            !groupNames.contains(phrase.value("tab").toString()) || phrase.value("hotkey").toString().size() > 128) {
-            error = "备份中的短语字段或所属分组无效";
+        if (!phrase.value("text").isString() || !phrase.value("remark").isString() || !phrase.value("hotkey").isString() || phrase.value("hotkey").toString().size() > 128) {
+            error = "备份中的短语字段无效";
             return false;
         }
+    }
+    return true;
+}
+
+bool validateGroups(const QJsonArray &groups, QString &error) {
+    if (groups.isEmpty() || groups.size() > 10000) {
+        error = "备份中的分组数量无效";
+        return false;
+    }
+    QSet<QString> names;
+    int totalPhrases = 0;
+    for (const QJsonValue &value : groups) {
+        if (!value.isObject()) {
+            error = "备份中存在无效分组";
+            return false;
+        }
+        const QJsonObject group = value.toObject();
+        const QString name = group.value("group").toString();
+        const double itemHeight = group.value("item_height").toDouble(-1);
+        const double columns = group.value("columns").toDouble(-1);
+        if (!group.value("group").isString() || name.isEmpty() || names.contains(name) ||
+            !group.value("item_height").isDouble() || itemHeight != qFloor(itemHeight) || itemHeight < 10 || itemHeight > 100 ||
+            !group.value("columns").isDouble() || columns != qFloor(columns) || columns < 1 || columns > 10 || !group.value("phrases").isArray()) {
+            error = "备份中的分组名称或分组设置无效";
+            return false;
+        }
+        if (!validatePhrases(group.value("phrases").toArray(), totalPhrases, error)) return false;
+        names.insert(name);
     }
     return true;
 }
@@ -161,8 +139,7 @@ QByteArray create(const QListWidget &phrases, const GroupModel &groups) {
     root["quicksay_version"] = kAppVersion;
     root["exported_at"] = exportedAt;
     root["settings"] = Settings::json();
-    root["groups"] = groups.toJson();
-    root["phrases"] = PhraseStore::toJson(phrases);
+    root["groups"] = PhraseStore::toJson(phrases, groups);
 
     const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Compact);
     const QByteArray checksum = QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex();
@@ -229,7 +206,8 @@ bool parse(const QByteArray &fileData, Data &backup, QString &error) {
         error = "文件头元数据无效";
         return false;
     }
-    if (formatVersion != kBackupFormatVersion) {
+    const bool legacyFormat = formatVersion == kLegacyFormatVersion;
+    if (formatVersion != kBackupFormatVersion && !legacyFormat) {
         error = QString("不支持的备份格式版本：%1").arg(formatVersion);
         return false;
     }
@@ -275,25 +253,21 @@ bool parse(const QByteArray &fileData, Data &backup, QString &error) {
     }
     const QJsonObject root = document.object();
     if (root.value("format_version").toString() != formatVersion || root.value("quicksay_version").toString() != appVersion || root.value("exported_at").toString() != exportedAtText ||
-        !root.value("settings").isObject() || !root.value("groups").isArray() || !root.value("phrases").isArray()) {
+        !root.value("settings").isObject() || !root.value("groups").isArray() || (legacyFormat && !root.value("phrases").isArray())) {
         error = "文件头与备份正文不一致，或未找到完整数据";
         return false;
     }
 
     QJsonObject settings = root.value("settings").toObject();
-    upgradeSettings(settings);
+    Settings::upgrade(settings);
     if (!validateSettings(settings, error)) return false;
 
-    const QJsonArray groups = root.value("groups").toArray();
-    QSet<QString> groupNames;
-    if (!validateGroups(groups, groupNames, error)) return false;
-
-    const QJsonArray phrases = root.value("phrases").toArray();
-    if (!validatePhrases(phrases, groupNames, error)) return false;
+    QJsonArray groups = root.value("groups").toArray();
+    if (legacyFormat) groups = PhraseStore::fromLegacy(groups, root.value("phrases").toArray(), settings.value(SettingsKey::DefaultItemHeight).toInt());
+    if (!validateGroups(groups, error)) return false;
 
     backup.settings = settings;
     backup.groups = groups;
-    backup.phrases = phrases;
     backup.appVersion = appVersion;
     backup.exportedAtUtc = exportedAt.toUTC();
     return true;
@@ -346,9 +320,8 @@ bool replaceDataFiles(const Data &backup, QString &error) {
         return file;
     };
     QVector<FileChange> files = {
-        change(Paths::configFile(), QJsonDocument(backup.settings).toJson()),
-        change(Paths::phrasesFile(), QJsonDocument(backup.phrases).toJson()),
-        change(Paths::groupsFile(), QJsonDocument(backup.groups).toJson()),
+        change(Paths::settingsFile(), QJsonDocument(backup.settings).toJson()),
+        change(Paths::phrasesFile(), QJsonDocument(PhraseStore::fileContent(backup.groups)).toJson()),
     };
     auto cleanupStaged = [&files]() {
         for (const FileChange &file : files)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QJsonArray>
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -11,7 +10,7 @@ struct Group {
     int columns = 1; // 列数
 };
 
-// 分组列表和“当前分组”。短语靠分组名字符串关联到分组，不是 id。
+// 分组列表和“当前分组”。短语靠分组名字符串关联到分组，不是 id。读写文件在 PhraseStore（分组和短语存在同一个文件里）。
 // 增删移动时当前分组的变化规则照搬 QTabBar（分组曾经就存在一个隐藏的 QTabBar 里），
 // 所以 currentChanged 的触发时机和老版本一致。
 class GroupModel : public QObject {
@@ -35,11 +34,8 @@ class GroupModel : public QObject {
     void move(int from, int to);
     void rename(int index, const QString &name);
     void setLayout(int index, int itemHeight, int columns);
-
-    // tab.json 不存在时写入默认的三个分组
-    void load();
-    void save() const;
-    QJsonArray toJson() const;
+    // 整体换掉（读文件时用）：当前分组回到第一个，不发 currentChanged
+    void reset(const QVector<Group> &groups);
 
   signals:
     void currentChanged(int index);

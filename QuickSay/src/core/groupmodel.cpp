@@ -1,10 +1,6 @@
 #include "core/groupmodel.h"
 
-#include "core/files.h"
 #include "core/settings.h"
-
-#include <QJsonDocument>
-#include <QJsonObject>
 
 bool GroupModel::isValid(int index) const {
     return index >= 0 && index < groups_.size();
@@ -96,44 +92,7 @@ void GroupModel::setLayout(int index, int itemHeight, int columns) {
     groups_[index].columns = columns;
 }
 
-void GroupModel::load() {
-    QJsonArray array;
-    if (DataFile::readArray(Paths::groupsFile(), array)) {
-        groups_.clear();
-        for (const QJsonValue &value : std::as_const(array)) {
-            if (!value.isObject()) continue;
-            const QJsonObject obj = value.toObject();
-            Group group;
-            group.name = obj["tab"].toString();
-            group.itemHeight = obj["item_height"].toInt();
-            group.columns = obj["columns"].toInt();
-            if (group.itemHeight == 0) group.itemHeight = Settings::defaultItemHeight();
-            if (group.columns < 1) group.columns = 1; // 老版本没有 columns 字段
-            groups_.append(group);
-        }
-        current_ = groups_.isEmpty() ? -1 : 0;
-        return;
-    }
-
-    const int defaultHeight = Settings::defaultItemHeight();
-    groups_ = {{"短语1", 70, 1}, {"短语2", defaultHeight, 1}, {"此处可右键点击", defaultHeight, 1}};
-    current_ = 0;
-    save();
-}
-
-void GroupModel::save() const {
-    if (Settings::writesFrozen()) return;
-    DataFile::writeJson(Paths::groupsFile(), QJsonDocument(toJson()));
-}
-
-QJsonArray GroupModel::toJson() const {
-    QJsonArray array;
-    for (int i = 0; i < groups_.size(); ++i) {
-        QJsonObject obj;
-        obj["tab"] = groups_[i].name;
-        obj["item_height"] = itemHeight(i);
-        obj["columns"] = columns(i);
-        array.append(obj);
-    }
-    return array;
+void GroupModel::reset(const QVector<Group> &groups) {
+    groups_ = groups;
+    current_ = groups_.isEmpty() ? -1 : 0;
 }
