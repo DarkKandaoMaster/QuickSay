@@ -227,6 +227,27 @@ bool AppNativeEventFilter::nativeEventFilter(const QByteArray &, void *message, 
         if (msg->hwnd == mainHwnd || (panelHwnd && msg->hwnd == panelHwnd)) WindowStyle::setTransitionsDisabled(reinterpret_cast<WId>(msg->hwnd), msg->wParam != 0);
     }
 
+    // 主窗口是固定尺寸，但还带着 WS_THICKFRAME，系统照样在边框上显示拉伸光标。Qt 自己会把边框改成 HTBORDER，
+    // 可它只管激活的窗口，而主窗口从不激活，只好自己来：顶边并进标题栏（照样能拖着移动），其余边框不给拉伸光标
+    if (msg->message == WM_NCHITTEST && msg->hwnd == reinterpret_cast<HWND>(window->winId())) {
+        const LRESULT hit = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
+        switch (hit) {
+        case HTTOP:
+        case HTTOPLEFT:
+        case HTTOPRIGHT:
+            *result = HTCAPTION;
+            return true;
+        case HTLEFT:
+        case HTRIGHT:
+        case HTBOTTOM:
+        case HTBOTTOMLEFT:
+        case HTBOTTOMRIGHT:
+            *result = HTBORDER;
+            return true;
+        }
+        return false;
+    }
+
     if (msg->message == WM_MOUSEACTIVATE && !window->isSearchMode()) {
         const HWND mainHwnd = reinterpret_cast<HWND>(window->winId());
         // 对搜索框调 winId() 会让它（连同兄弟控件）变成原生子窗口，之后点它们都会收到各自的 WM_MOUSEACTIVATE
