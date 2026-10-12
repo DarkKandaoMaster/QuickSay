@@ -217,6 +217,7 @@ SettingsWindow::SettingsWindow(QuickSayApp *app, MainWindow *mainWindow, HotkeyR
     buildMainWindowPage(tabs);
     buildInputPage(tabs);
     buildGeneralPage(tabs);
+    buildExperimentPage(tabs);
     buildAboutPage(tabs);
 
     auto *buttons = new QHBoxLayout;
@@ -255,8 +256,6 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
     addRow(window, "主窗口高度（像素）", heightSpin_);
     alwaysOnTopCheck_ = new QCheckBox("主窗口始终置顶");
     addCheckBox(window, alwaysOnTopCheck_);
-    searchOnSummonCheck_ = new QCheckBox("呼出主窗口后直接进入搜索");
-    addCheckBox(window, searchOnSummonCheck_);
     toolTipDelaySpin_ = spin(0, 5000, 70);
     addRow(window, "鼠标悬停多久后显示提示（毫秒）", toolTipDelaySpin_);
 
@@ -282,8 +281,6 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
         updateGroupPanelDelayVisibility();
     });
     updateGroupPanelDelayVisibility();
-    groupPanelSafeAreaSpin_ = spin(0, 1000, 59);
-    addRow(groups, "翻分组时分组面板上下各留出的距离（像素）", groupPanelSafeAreaSpin_);
     selectFirstCheck_ = new QCheckBox("切换分组后始终选中第一条短语");
     addCheckBox(groups, selectFirstCheck_);
 
@@ -292,6 +289,8 @@ void SettingsWindow::buildMainWindowPage(QTabWidget *tabs) {
     addRow(scroll, "滚动条滚动速度", scrollStepSpin_);
     safeAreaSpin_ = spin(0, 1000, 59);
     addRow(scroll, "浏览短语时上下各留出的距离（像素）", safeAreaSpin_);
+    groupPanelSafeAreaSpin_ = spin(0, 1000, 59);
+    addRow(scroll, "浏览分组时上下各留出的距离（像素）", groupPanelSafeAreaSpin_);
     page->addStretch();
 }
 
@@ -370,6 +369,16 @@ void SettingsWindow::buildGeneralPage(QTabWidget *tabs) {
     addHint(backup, "备份包含全部设置、分组和短语。导入会完全覆盖现有内容，并立即重启QuickSay。");
     connect(exportButton, &QPushButton::clicked, this, &SettingsWindow::exportBackup);
     connect(importButton, &QPushButton::clicked, this, &SettingsWindow::importBackup);
+    page->addStretch();
+}
+
+void SettingsWindow::buildExperimentPage(QTabWidget *tabs) {
+    QVBoxLayout *page = nullptr;
+    makePage(tabs, "experiment.ico", "实验", page);
+
+    QGridLayout *experiment = makeGroupBox("实验功能", page);
+    searchOnSummonCheck_ = new QCheckBox("呼出主窗口后直接进入搜索");
+    addCheckBox(experiment, searchOnSummonCheck_);
     page->addStretch();
 }
 

@@ -32,6 +32,7 @@ class SettingsWindow : public QWidget {
     void buildMainWindowPage(QTabWidget *tabs);
     void buildInputPage(QTabWidget *tabs);
     void buildGeneralPage(QTabWidget *tabs);
+    void buildExperimentPage(QTabWidget *tabs);
     void buildAboutPage(QTabWidget *tabs);
     void connectChangeTracking();
 
