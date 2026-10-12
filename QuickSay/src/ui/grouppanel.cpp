@@ -355,7 +355,6 @@ namespace GroupDialog {
 bool exec(QWidget *parent, const QString &title, QString &name, int &itemHeight, int &columns) {
     QDialog dialog(parent);
     dialog.setWindowTitle(title);
-    dialog.setFixedSize(280, 167);
     QFormLayout layout(&dialog);
 
     QLineEdit nameEdit(&dialog);
@@ -371,6 +370,7 @@ bool exec(QWidget *parent, const QString &title, QString &name, int &itemHeight,
     columnsSpin.setRange(1, 10);
     columnsSpin.setValue(columns);
     layout.addRow("列数：", &columnsSpin);
+    nameEdit.setFixedHeight(heightSpin.sizeHint().height()); // 单行框没有上下内边距，不拉高会比下面两个数字框矮一截
 
     QHBoxLayout buttons;
     QPushButton cancelButton("取消", &dialog);
@@ -380,6 +380,7 @@ bool exec(QWidget *parent, const QString &title, QString &name, int &itemHeight,
     buttons.addWidget(&cancelButton);
     buttons.addWidget(&okButton);
     layout.addRow(&buttons);
+    dialog.setFixedSize(280, dialog.sizeHint().height()); // 高度跟着布局走，写死的话不够高时会把输入框压扁、裁掉字
 
     QObject::connect(&okButton, &QPushButton::clicked, &dialog, &QDialog::accept);
     QObject::connect(&cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);

@@ -109,6 +109,11 @@ QLineEdit,QPlainTextEdit,QTextEdit{
     selection-background-color: #0078d4;
     selection-color: #ffffff;
 }
+/* 单行框不留上下内边距：高度由代码定死，文字本来就垂直居中；中文回退到雅黑，行高比 Segoe UI 高，
+   上下各占 8px 的话 35px 高的搜索框只剩 15px，字的下半截会被裁掉 */
+QLineEdit{
+    padding: 0px 4px;
+}
 QLineEdit:focus,QPlainTextEdit:focus,QTextEdit:focus{
     outline: none;
 }
