@@ -421,8 +421,8 @@ class CoreTest : public QObject {
         GroupModel model;
         QListWidget list;
         PhraseStore::load(list, model);
-        QCOMPARE(model.count(), 3); // 换成了默认的三个分组和新手教程
-        QCOMPARE(list.count(), 4);
+        QCOMPARE(model.count(), 2); // 换成了默认的两个分组和一条示例短语
+        QCOMPARE(list.count(), 1);
         const QStringList broken = QDir(Paths::dataDir()).entryList({"phrases.json.broken.*"});
         QCOMPARE(broken.size(), 1);
         QFile::remove(QDir(Paths::dataDir()).filePath(broken.first()));
