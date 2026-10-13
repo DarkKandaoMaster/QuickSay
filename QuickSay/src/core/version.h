@@ -5,7 +5,7 @@
 #include <QStringList>
 
 // 更新内容写在 src/main.cpp 开头，发版时那里的版本号和这里一起改
-inline const QString kAppVersion = QStringLiteral("2.1.0");
+inline const QString kAppVersion = QStringLiteral("2.1.1");
 
 // 只在备份文件结构发生不兼容变化时才改，不跟着程序版本走。2.1.0 起是 2.0.0（英文设置键名、短语嵌在分组里），
 // 1.0.0 的老备份仍能导入，见 backup.cpp
