@@ -14,8 +14,9 @@
 
 
 ## QuickSay 是干什么的？
-如果您经常把常用短语（<strong title="输入 prompt 很好用">AI 提示词</strong>、命令行、固定的话术）保存在一个文本文件里，并在需要时打开这个文件复制粘贴。  
-那么您就可以试用一下 QuickSay。把常用短语保存在 QuickSay 里，并在需要时使用 QuickSay 输入。  
+如果您有重复性文本输入的需求，那么您可以试试 QuickSay。
+
+把常用文本存进去，需要时按快捷键呼出，点一下就输入到光标处。
 
 软件窗口截图↓  
 <img src="./README_Pictures/软件窗口的全家福.png" alt="[图片不见了...]"><br>
@@ -52,4 +53,4 @@ QuickSay 会在启动时检查更新。放心，是检查更新不是自动更�
 https://www.52pojie.cn/thread-2129139-1-1.html  
 https://www.52pojie.cn/thread-2061920-1-1.html  
 
-其实最开始我开发 QuickSay 只是为了输入常用语，但在 AI 时代，QuickSay 可能莫名其妙成了 Windows 最好用的 prompt 输入工具。
+其实一开始我开发 QuickSay 只是为了方便自己输入颜文字，方便聊天。但在 AI 时代，QuickSay 可能莫名其妙成了 Windows 最好的常用 prompt 输入工具。
