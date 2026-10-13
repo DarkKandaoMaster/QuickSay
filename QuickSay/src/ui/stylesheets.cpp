@@ -230,7 +230,7 @@ QToolTip{
 )";
 
 const char *const kGroupPanel = R"(
-/* 无边框顶层窗口画不出圆角，四角会露出桌面，所以改回直角；分组四周的留白靠分组自己的 2px 外边距 */
+/* 顶层窗口的圆角由 DWM 切（GroupPanelWindow::prepareNativeFrame），这里画圆角四角会露出桌面；分组四周的留白靠分组自己的 2px 外边距 */
 QListWidget#groupPanel{
     border-radius: 0px;
     border: none;

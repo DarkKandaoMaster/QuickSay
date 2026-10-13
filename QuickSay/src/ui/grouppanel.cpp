@@ -105,10 +105,10 @@ void GroupPanelWindow::prepareNativeFrame() {
     // 系统就不会给它建任务栏按钮——前提是显示之前就挂上
     const LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
     SetWindowLongPtr(hwnd, GWL_EXSTYLE, (exStyle & ~WS_EX_TOOLWINDOW) | WS_EX_NOACTIVATE);
-    // 带标题栏的窗口在 Win11 上会被切成圆角，要求保持直角。MinGW 头文件没有这两个常量：
-    // 33 = DWMWA_WINDOW_CORNER_PREFERENCE，1 = DWMWCP_DONOTROUND。Win10 上调用失败也无所谓
-    DWORD noRounding = 1;
-    DwmSetWindowAttribute(hwnd, 33, &noRounding, sizeof(noRounding));
+    // 圆角交给 DWM 切（QSS 的 border-radius 切不了顶层窗口本身），和主窗口一样用 8px。MinGW 头文件没有这两个常量：
+    // 33 = DWMWA_WINDOW_CORNER_PREFERENCE，2 = DWMWCP_ROUND。Win10 不支持，调用失败就保持直角
+    DWORD rounding = 2;
+    DwmSetWindowAttribute(hwnd, 33, &rounding, sizeof(rounding));
     // 必须带 SWP_FRAMECHANGED，nativeEvent 才会收到 WM_NCCALCSIZE
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
