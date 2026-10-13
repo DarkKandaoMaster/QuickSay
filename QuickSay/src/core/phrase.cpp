@@ -132,12 +132,9 @@ void load(QListWidget &list, GroupModel &groups) {
     }
 
     const int defaultHeight = Settings::defaultItemHeight();
-    groups.reset({{kDefaultGroup, 70, 1}, {"短语2", defaultHeight, 1}, {"此处可右键点击", defaultHeight, 1}});
+    groups.reset({{kDefaultGroup, defaultHeight, 1}, {"此处可右键点击", defaultHeight, 1}});
     list.clear();
-    list.addItem(PhraseItem::create("快捷键：按下快捷键（默认Ctrl+Shift+V）呼出QuickSay\n添加短语：右上角加号\n修改/删除：右键短语\n排序：拖动短语", "", kDefaultGroup, ""));
-    list.addItem(PhraseItem::create("点击短语：输入对应短语\n上下方向键↑↓：移动光标\n回车键Enter：输入光标处短语", "", kDefaultGroup, ""));
-    list.addItem(PhraseItem::create("右键左上角分组：新建/修改/删除分组\n分组排序：拖动分组\n左右方向键←→：切换分组\n鼠标滚轮：也可以切换分组", "", kDefaultGroup, ""));
-    list.addItem(PhraseItem::create("感谢使用QuickSay！\n如果觉得好用记得点个Star！\n让我们开始吧！把这些短语都删掉，然后新建一个短语~", "", kDefaultGroup, ""));
+    list.addItem(PhraseItem::create("点一下短语，就会输入到光标处~", "", kDefaultGroup, ""));
     save(list, groups);
 }
 
