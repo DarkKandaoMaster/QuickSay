@@ -14,12 +14,12 @@
 
 
 ## QuickSay 是干什么的？
-如果您有重复性文本输入的需求，那么您可以试试 QuickSay。
+如果您有重复性文本输入的需求，那么您可以试试 QuickSay。  
 
-把常用文本存进去，需要时按快捷键呼出，点一下就输入到光标处。
+把常用文本存进去，需要时按快捷键呼出，点一下就输入到光标处。  
 
-软件窗口截图↓  
-<img src="./README_Pictures/软件窗口的全家福.png" alt="[图片不见了...]"><br>
+软件截图↓  
+<img src="./README_Pictures/软件截图.png" alt="[图片不见了...]" width="400"><br>
 
 ###### 该软件目前只支持 Windows 10/11，不打算支持 macOS/Linux/Windows 7
 
@@ -36,8 +36,6 @@
 
 如果您是 v1.x.x 用户，可以在保留 config.json、data.json、tab.json 的基础上，把 QuickSay 文件夹里的其它文件都删掉，然后放入 新QuickSay.exe。  
 
-QuickSay 会在启动时检查更新。放心，是检查更新不是自动更新，并且这个可以在设置里关掉，并且我（会尽力）保证 QuickSay 新版本只会比旧版本更好用。  
-
 
 ## 许可证
 本项目采用 MIT 许可证。  
@@ -53,4 +51,4 @@ QuickSay 会在启动时检查更新。放心，是检查更新不是自动更�
 https://www.52pojie.cn/thread-2129139-1-1.html  
 https://www.52pojie.cn/thread-2061920-1-1.html  
 
-其实一开始我开发 QuickSay 只是为了方便自己输入颜文字，方便聊天。但在 AI 时代，QuickSay 可能莫名其妙成了 Windows 最好的常用 prompt 输入工具。
+其实一开始我开发 QuickSay 只是为了方便自己输入颜文字，方便聊天。但在 AI 时代，QuickSay 可能莫名其妙成了 Windows 最好的常用 prompt 输入工具。  
