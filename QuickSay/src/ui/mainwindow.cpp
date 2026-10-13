@@ -32,7 +32,7 @@ MainWindow::MainWindow(GroupModel &groups, HotkeyRegistry &hotkeys) : QWidget(nu
     instance_ = this;
     setStyleSheet(StyleSheets::kApp);
     setWindowTitle("QuickSay");
-    setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
+    setWindowIcon(QIcon(Paths::icon("logo.svg")));
 
     list_ = new PhraseList(this);
     PhraseStore::load(*list_, groups_);
@@ -139,7 +139,7 @@ void MainWindow::createIconButtons() {
         addWindow_->openForAdd(groups_.currentName(), -1);
     });
 
-    pinButton_ = makeButton(Settings::pinned() ? "实心图钉.svg" : "空心图钉.svg", "钉住/取消钉住窗口（ ` ）");
+    pinButton_ = makeButton(Settings::pinned() ? "pin_on.svg" : "pin_off.svg", "钉住/取消钉住窗口（ ` ）");
     connect(pinButton_, &QPushButton::clicked, this, &MainWindow::togglePinned);
 }
 
@@ -341,7 +341,7 @@ void MainWindow::togglePinned() {
 }
 
 void MainWindow::updatePinButton() {
-    pinButton_->setIcon(QIcon(Paths::icon(Settings::pinned() ? "实心图钉.svg" : "空心图钉.svg")));
+    pinButton_->setIcon(QIcon(Paths::icon(Settings::pinned() ? "pin_on.svg" : "pin_off.svg")));
 }
 
 void MainWindow::outputPhrase(QListWidgetItem *item) {

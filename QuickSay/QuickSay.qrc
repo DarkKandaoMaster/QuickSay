@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/add.svg</file>
+        <file>icons/exit.ico</file>
+        <file>icons/experiment.ico</file>
+        <file>icons/icon.ico</file>
+        <file>icons/info.ico</file>
+        <file>icons/item.ico</file>
+        <file>icons/logo.svg</file>
+        <file>icons/pin_off.svg</file>
+        <file>icons/pin_on.svg</file>
+        <file>icons/setting.ico</file>
+        <file>icons/settings.svg</file>
+        <file>icons/taskbar_window.ico</file>
+    </qresource>
+</RCC>

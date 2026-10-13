@@ -38,12 +38,8 @@ QString phrasesFile() {
     return dataDir() + "/phrases.json";
 }
 
-QString iconDir() {
-    return appDir() + "/icons";
-}
-
 QString icon(const QString &fileName) {
-    return iconDir() + "/" + fileName;
+    return ":/icons/" + fileName;
 }
 
 } // namespace Paths

@@ -5,7 +5,7 @@
 #include <QJsonObject>
 #include <QString>
 
-// 图标在 exe 同目录的 icons/ 下，数据文件在 data/ 下。
+// 数据文件在 exe 同目录的 data/ 下；图标编在资源里（QuickSay.qrc）。
 namespace Paths {
 
 // exe 的完整路径（反斜杠）。不依赖 QCoreApplication，提权建任务的那个实例和 main() 开头都能用。
@@ -15,7 +15,6 @@ QString appDir();
 QString dataDir();
 QString settingsFile();
 QString phrasesFile();
-QString iconDir();
 QString icon(const QString &fileName);
 
 } // namespace Paths

@@ -30,7 +30,7 @@ PhraseEditorWindow::PhraseEditorWindow(Mode mode, MainWindow *mainWindow, Hotkey
     const bool adding = mode == Mode::Add;
     setStyleSheet(StyleSheets::kApp);
     setWindowTitle(adding ? "QuickSay-添加" : "QuickSay-修改");
-    setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
+    setWindowIcon(QIcon(Paths::icon("logo.svg")));
 
     textEdit_ = new QPlainTextEdit(this);
     auto *helpButton = new QPushButton("如何更高级地输入？", this);

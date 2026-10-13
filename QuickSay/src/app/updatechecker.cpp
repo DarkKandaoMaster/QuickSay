@@ -104,7 +104,7 @@ enum class Choice {
 Choice showUpdateDialog(const QString &message, const QString &url, const QString &leftButtonText, const QString &notes = QString()) {
     QDialog dialog;
     dialog.setWindowTitle("QuickSay");
-    dialog.setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
+    dialog.setWindowIcon(QIcon(Paths::icon("logo.svg")));
     // 置顶：自动检查是启动几秒后自己弹出来的，不置顶很容易被别的窗口盖住；主窗口默认也置顶，不置顶会被它挡住
     dialog.setWindowFlags((dialog.windowFlags() & ~Qt::WindowContextHelpButtonHint) | Qt::WindowStaysOnTopHint);
     auto *layout = new QVBoxLayout(&dialog);
@@ -156,7 +156,7 @@ Choice showUpdateDialog(const QString &message, const QString &url, const QStrin
 void showUpToDate() {
     QMessageBox box;
     box.setWindowTitle("QuickSay");
-    box.setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
+    box.setWindowIcon(QIcon(Paths::icon("logo.svg")));
     box.setIcon(QMessageBox::Information);
     box.setWindowFlags(box.windowFlags() | Qt::WindowStaysOnTopHint); // 同上，别被置顶的主窗口挡住
     box.setText("当前已经是最新版本。  ");

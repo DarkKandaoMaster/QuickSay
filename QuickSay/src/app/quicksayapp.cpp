@@ -66,7 +66,10 @@ QuickSayApp::QuickSayApp(bool autostarted) {
     Settings::load();
     Settings::save(); // 立即保存一次，把老版本缺的字段补上
     // 纠正程序挪过位置后过期的路径，保证注册表项和计划任务互斥。不打扰模式：这里绝不弹 UAC
+    // Debug 版不做：开发时一启动就会把开机自启改指到 build/debug，或者把日常在用那份的自启删掉
+#ifndef QT_DEBUG
     AutoStart::apply(true);
+#endif
 
     mainWindow_ = std::make_unique<MainWindow>(groups_, hotkeys_);
     nativeFilter_ = std::make_unique<AppNativeEventFilter>();
@@ -115,7 +118,7 @@ void QuickSayApp::reinstallHooks() {
 
 void QuickSayApp::createTrayIcon() {
     trayIcon_ = new QSystemTrayIcon(this);
-    trayIcon_->setIcon(QIcon(Paths::icon("软件图标.svg")));
+    trayIcon_->setIcon(QIcon(Paths::icon("logo.svg")));
     connect(trayIcon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (BatchEdit::isActive()) return; // 记事本开着时不能让用户退出，否则会留下含短语正文的临时文件
         if (reason == QSystemTrayIcon::Trigger) {

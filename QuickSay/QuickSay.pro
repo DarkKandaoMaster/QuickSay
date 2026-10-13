@@ -1,14 +1,15 @@
 QT += core gui widgets
 CONFIG += c++17
 
-# 不要 debug/release 子目录，Qt Creator 里也要取消影子构建：exe 必须和 icons/ 同级，数据文件也写在 exe 旁边
+# 影子构建：Debug 编到 build/debug，Release 编到 build/release，各有各的 data/。
+# 一个构建目录只放一种配置，不要 qmake 再套一层 debug/、release/ 子目录，exe 直接落在构建目录里
 CONFIG -= debug_and_release
 
 INCLUDEPATH += src
-OBJECTS_DIR = build/obj
-MOC_DIR = build/moc
-RCC_DIR = build/rcc
-UI_DIR = build/ui
+OBJECTS_DIR = obj
+MOC_DIR = moc
+RCC_DIR = rcc
+UI_DIR = ui
 
 SOURCES += \
     src/app/quicksayapp.cpp \
@@ -65,6 +66,9 @@ HEADERS += \
 LIBS += -ltaskschd -lole32 -loleaut32 -ladvapi32 -lshell32 -lwtsapi32 -luuid -lgdi32 -lwinhttp -ldwmapi
 
 include(QHotkey-1.5.0/qhotkey.pri)
+
+# 图标编进 exe，exe 旁边不用再带 icons/
+RESOURCES += QuickSay.qrc
 
 # 文件名不能有中文，而且必须是真正的 ico 文件
 RC_ICONS += icons/icon.ico

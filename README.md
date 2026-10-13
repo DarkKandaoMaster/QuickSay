@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./QuickSay/icons/软件图标.svg" alt="[图片不见了...]" width="150">
+  <img src="./QuickSay/icons/logo.svg" alt="[图片不见了...]" width="150">
   <h1>QuickSay</h1>
   <p>Windows 上的快捷短语工具：把常用的话存起来，并在需要时使用 QuickSay 输入。</p>
   <a href="https://github.com/DarkKandaoMaster/QuickSay/releases/latest"><img src="https://img.shields.io/github/v/release/DarkKandaoMaster/QuickSay?style=flat-square"></a>

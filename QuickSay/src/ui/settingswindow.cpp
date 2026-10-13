@@ -204,7 +204,7 @@ SettingsWindow::SettingsWindow(QuickSayApp *app, MainWindow *mainWindow, HotkeyR
     setObjectName("settingsWindow"); // 专用 QSS 靠这个 ID
     setStyleSheet(StyleSheets::kSettings);
     setWindowTitle("QuickSay-设置");
-    setWindowIcon(QIcon(Paths::icon("软件图标.svg")));
+    setWindowIcon(QIcon(Paths::icon("logo.svg")));
 
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(13, 14, 13, 14); // 照 TrafficMonitor 量的
